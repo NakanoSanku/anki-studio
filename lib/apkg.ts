@@ -1,0 +1,544 @@
+import JSZip from "jszip"
+import type { Database, SqlJsStatic } from "sql.js"
+
+import { csvToDeck } from "./csv"
+import {
+  createCard,
+  decodeTtsMeta,
+  dedupeCardsByFirstField,
+  encodeTtsMeta,
+  parseDeckJson,
+  ttsOf,
+  type Deck,
+} from "./deck"
+import { cacheSet, getTtsClip, listTtsJobs, parseTtsFilename, resolveTtsFieldValue } from "./tts"
+
+const FIELD_SEP = "\x1f"
+const SCHEMA_SQL = `
+CREATE TABLE col (
+    id              integer primary key,
+    crt             integer not null,
+    mod             integer not null,
+    scm             integer not null,
+    ver             integer not null,
+    dty             integer not null,
+    usn             integer not null,
+    ls              integer not null,
+    conf            text not null,
+    models          text not null,
+    decks           text not null,
+    dconf           text not null,
+    tags            text not null
+);
+CREATE TABLE notes (
+    id              integer primary key,
+    guid            text not null,
+    mid             integer not null,
+    mod             integer not null,
+    usn             integer not null,
+    tags            text not null,
+    flds            text not null,
+    sfld            integer not null,
+    csum            integer not null,
+    flags           integer not null,
+    data            text not null
+);
+CREATE TABLE cards (
+    id              integer primary key,
+    nid             integer not null,
+    did             integer not null,
+    ord             integer not null,
+    mod             integer not null,
+    usn             integer not null,
+    type            integer not null,
+    queue           integer not null,
+    due             integer not null,
+    ivl             integer not null,
+    factor          integer not null,
+    reps            integer not null,
+    lapses          integer not null,
+    left            integer not null,
+    odue            integer not null,
+    odid            integer not null,
+    flags           integer not null,
+    data            text not null
+);
+CREATE TABLE revlog (
+    id              integer primary key,
+    cid             integer not null,
+    usn             integer not null,
+    ease            integer not null,
+    ivl             integer not null,
+    lastIvl         integer not null,
+    factor          integer not null,
+    time            integer not null,
+    type            integer not null
+);
+CREATE TABLE graves (
+    usn             integer not null,
+    oid             integer not null,
+    type            integer not null
+);
+CREATE INDEX ix_notes_usn on notes (usn);
+CREATE INDEX ix_cards_usn on cards (usn);
+CREATE INDEX ix_revlog_usn on revlog (usn);
+CREATE INDEX ix_cards_nid on cards (nid);
+CREATE INDEX ix_cards_sched on cards (did, queue, due);
+CREATE INDEX ix_revlog_cid on revlog (cid);
+CREATE INDEX ix_notes_csum on notes (csum);
+`
+
+let sqlPromise: Promise<SqlJsStatic> | null = null
+
+async function loadSql(): Promise<SqlJsStatic> {
+  if (!sqlPromise) {
+    sqlPromise = import("sql.js").then((mod) => {
+      const initSqlJs = mod.default
+      return initSqlJs({ locateFile: () => "/sql-wasm.wasm" })
+    })
+  }
+  return sqlPromise
+}
+
+async function sha1Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text)
+  const digest = await crypto.subtle.digest("SHA-1", bytes)
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+}
+
+function stripHtmlMedia(value: string): string {
+  return value
+    .replace(/<img[^>]*>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+}
+
+async function fieldChecksum(value: string): Promise<number> {
+  const hex = await sha1Hex(stripHtmlMedia(value))
+  return Number.parseInt(hex.slice(0, 8), 16)
+}
+
+function guid(): string {
+  return crypto.randomUUID().replaceAll("-", "").slice(0, 10)
+}
+
+type AnkiField = { name?: string; ord?: number; description?: string }
+type AnkiTmpl = { qfmt?: string; afmt?: string; name?: string; ord?: number }
+type AnkiModel = {
+  id?: number
+  name?: string
+  css?: string
+  flds?: AnkiField[]
+  tmpls?: AnkiTmpl[]
+  type?: number
+}
+type AnkiDeck = { id?: number; name?: string; dyn?: number }
+
+function asModels(raw: string): Record<string, AnkiModel> {
+  const parsed = JSON.parse(raw) as unknown
+  if (typeof parsed !== "object" || parsed === null) return {}
+  return parsed as Record<string, AnkiModel>
+}
+
+function asDecks(raw: string): Record<string, AnkiDeck> {
+  const parsed = JSON.parse(raw) as unknown
+  if (typeof parsed !== "object" || parsed === null) return {}
+  return parsed as Record<string, AnkiDeck>
+}
+
+export async function exportApkg(
+  deck: Deck,
+  options?: {
+    onProgress?: (done: number, total: number) => void
+    signal?: AbortSignal
+  }
+): Promise<Blob> {
+  const jobs = await listTtsJobs(deck)
+  const mediaFiles = new Map<string, Uint8Array>()
+  const media: Record<string, string> = {}
+  for (let i = 0; i < jobs.length; i += 1) {
+    if (options?.signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError")
+    }
+    const job = jobs[i]
+    const clip = await getTtsClip({ ...job, signal: options?.signal })
+    const index = String(i)
+    media[index] = job.filename
+    mediaFiles.set(index, new Uint8Array(await clip.blob.arrayBuffer()))
+    options?.onProgress?.(i + 1, jobs.length)
+  }
+  if (jobs.length === 0) options?.onProgress?.(0, 0)
+
+  const SQL = await loadSql()
+  const db = new SQL.Database()
+  db.run(SCHEMA_SQL)
+
+  const now = Date.now()
+  const nowSec = Math.floor(now / 1000)
+  const modelId = now
+  const deckId = now + 1
+  const modelName = `${deck.name} 模板`
+  const fieldTts = ttsOf(deck)
+
+  const flds = deck.fields.map((name, ord) => ({
+    name,
+    ord,
+    sticky: false,
+    rtl: false,
+    font: "Arial",
+    size: 20,
+    description: fieldTts[name] ? encodeTtsMeta(fieldTts[name]) : "",
+    plainText: false,
+    collapsed: false,
+    excludeFromSearch: false,
+  }))
+
+  const models = {
+    [modelId]: {
+      id: modelId,
+      name: modelName,
+      type: 0,
+      mod: nowSec,
+      usn: -1,
+      sortf: 0,
+      did: deckId,
+      tmpls: [
+        {
+          name: "Card 1",
+          ord: 0,
+          qfmt: deck.front,
+          afmt: deck.back,
+          bqfmt: "",
+          bafmt: "",
+          did: null,
+          bfont: "",
+          bsize: 0,
+        },
+      ],
+      flds,
+      css: deck.css,
+      latexPre:
+        "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+      latexPost: "\\end{document}",
+      latexsvg: false,
+      req: [[0, "any", [0]]],
+      tags: [],
+      vers: [],
+    },
+  }
+
+  const decks = {
+    "1": {
+      id: 1,
+      name: "Default",
+      collapsed: false,
+      browserCollapsed: false,
+      desc: "",
+      dyn: 0,
+      conf: 1,
+      extendNew: 10,
+      extendRev: 50,
+      newToday: [0, 0],
+      revToday: [0, 0],
+      lrnToday: [0, 0],
+      timeToday: [0, 0],
+      usn: 0,
+      mod: nowSec,
+    },
+    [deckId]: {
+      id: deckId,
+      name: deck.name,
+      collapsed: false,
+      browserCollapsed: false,
+      desc: "",
+      dyn: 0,
+      conf: 1,
+      extendNew: 10,
+      extendRev: 50,
+      newToday: [0, 0],
+      revToday: [0, 0],
+      lrnToday: [0, 0],
+      timeToday: [0, 0],
+      usn: -1,
+      mod: nowSec,
+    },
+  }
+
+  const conf = {
+    nextPos: 1,
+    estTimes: true,
+    activeDecks: [deckId],
+    sortType: "noteFld",
+    timeLim: 0,
+    sortBackwards: false,
+    addToCur: true,
+    curDeck: deckId,
+    newBury: true,
+    newSpread: 0,
+    dueCounts: true,
+    curModel: String(modelId),
+    collapseTime: 1200,
+  }
+
+  const dconf = {
+    "1": {
+      id: 1,
+      name: "Default",
+      mod: 0,
+      usn: 0,
+      maxTaken: 60,
+      autoplay: true,
+      timer: 0,
+      replayq: true,
+      new: {
+        bury: true,
+        delays: [1, 10],
+        initialFactor: 2500,
+        ints: [1, 4, 7],
+        order: 1,
+        perDay: 20,
+      },
+      rev: {
+        bury: true,
+        ease4: 1.3,
+        ivlFct: 1,
+        maxIvl: 36500,
+        perDay: 200,
+        fuzz: 0.05,
+        minSpace: 1,
+      },
+      lapse: {
+        delays: [10],
+        leechAction: 0,
+        leechFails: 8,
+        minInt: 1,
+        mult: 0,
+      },
+    },
+  }
+
+  db.run(
+    `INSERT INTO col (id, crt, mod, scm, ver, dty, usn, ls, conf, models, decks, dconf, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      1,
+      nowSec,
+      now,
+      now,
+      11,
+      0,
+      0,
+      0,
+      JSON.stringify(conf),
+      JSON.stringify(models),
+      JSON.stringify(decks),
+      JSON.stringify(dconf),
+      "{}",
+    ]
+  )
+
+  const insertNote = db.prepare(
+    `INSERT INTO notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  const insertCard = db.prepare(
+    `INSERT INTO cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, lapses, left, odue, odid, flags, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+
+  for (let i = 0; i < deck.cards.length; i += 1) {
+    const card = deck.cards[i]
+    const noteId = now + 10 + i * 2
+    const cardId = noteId + 1
+    const fieldValues = await Promise.all(
+      deck.fields.map((field) => {
+        const tts = fieldTts[field]
+        if (tts) return resolveTtsFieldValue(tts, card.values)
+        return card.values[field] ?? ""
+      })
+    )
+    const fldsText = fieldValues.join(FIELD_SEP)
+    const sfld = fieldValues[0] ?? ""
+    const csum = await fieldChecksum(sfld)
+
+    insertNote.run([
+      noteId,
+      guid(),
+      modelId,
+      nowSec,
+      -1,
+      "",
+      fldsText,
+      sfld,
+      csum,
+      0,
+      "",
+    ])
+    insertCard.run([
+      cardId,
+      noteId,
+      deckId,
+      0,
+      nowSec,
+      -1,
+      0,
+      0,
+      i + 1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      "",
+    ])
+  }
+
+  insertNote.free()
+  insertCard.free()
+
+  const exported = db.export()
+  db.close()
+
+  const zip = new JSZip()
+  zip.file("collection.anki2", exported)
+  zip.file("media", JSON.stringify(media))
+  for (const [index, bytes] of mediaFiles) {
+    zip.file(index, bytes)
+  }
+  return zip.generateAsync({ type: "blob" })
+}
+
+function pickModel(
+  models: Record<string, AnkiModel>,
+  noteCounts: Map<string, number>
+): AnkiModel | null {
+  const entries = Object.values(models).filter((model) => model && Array.isArray(model.flds))
+  if (entries.length === 0) return null
+
+  const withNotes = entries
+    .filter((model) => (noteCounts.get(String(model.id)) ?? 0) > 0)
+    .sort((a, b) => (noteCounts.get(String(b.id)) ?? 0) - (noteCounts.get(String(a.id)) ?? 0))
+
+  return withNotes[0] ?? entries.find((model) => model.type !== 1) ?? entries[0]
+}
+
+function pickDeckName(decks: Record<string, AnkiDeck>): string {
+  const named = Object.values(decks).filter(
+    (deck) => deck && deck.dyn !== 1 && deck.name && deck.name !== "Default"
+  )
+  return named[0]?.name ?? "导入卡包"
+}
+
+export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
+  const zip = await JSZip.loadAsync(buffer)
+  const colFile = zip.file("collection.anki2") ?? zip.file("collection.anki21")
+  if (!colFile) {
+    throw new Error("卡包里没有 collection 数据库")
+  }
+
+  const SQL = await loadSql()
+  const bytes = await colFile.async("uint8array")
+  const db: Database = new SQL.Database(bytes)
+
+  const col = db.exec("SELECT models, decks FROM col LIMIT 1")
+  if (!col[0]?.values[0]) {
+    db.close()
+    throw new Error("卡包数据库是空的")
+  }
+
+  const models = asModels(String(col[0].values[0][0]))
+  const decks = asDecks(String(col[0].values[0][1]))
+
+  const notes = db.exec("SELECT mid, flds FROM notes")
+  const noteRows = notes[0]?.values ?? []
+  const noteCounts = new Map<string, number>()
+  for (const row of noteRows) {
+    const mid = String(row[0])
+    noteCounts.set(mid, (noteCounts.get(mid) ?? 0) + 1)
+  }
+
+  const model = pickModel(models, noteCounts)
+  if (!model?.flds?.length) {
+    db.close()
+    throw new Error("卡包里没有可用的笔记模板")
+  }
+
+  const sortedFlds = [...model.flds].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+  const fields = sortedFlds.map((field, index) => field.name?.trim() || `字段${index + 1}`)
+  const importedTts = Object.fromEntries(
+    sortedFlds.flatMap((field, index) => {
+      const name = fields[index]
+      const tts = decodeTtsMeta(field.description)
+      return name && tts ? [[name, tts] as const] : []
+    })
+  )
+  const fieldTts = ttsOf({ fields, fieldTts: importedTts })
+
+  const tmpl = [...(model.tmpls ?? [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))[0]
+  const mid = String(model.id)
+  const cards = noteRows
+    .filter((row) => String(row[0]) === mid)
+    .map((row) => {
+      const parts = String(row[1] ?? "").split(FIELD_SEP)
+      const values: Record<string, string> = {}
+      fields.forEach((field, index) => {
+        values[field] = fieldTts[field] ? "" : (parts[index] ?? "")
+      })
+      return createCard(fields, values)
+    })
+
+  db.close()
+
+  const mediaFile = zip.file("media")
+  if (mediaFile) {
+    try {
+      const raw = JSON.parse(await mediaFile.async("string")) as unknown
+      if (raw && typeof raw === "object") {
+        for (const [index, filename] of Object.entries(raw as Record<string, unknown>)) {
+          if (typeof filename !== "string") continue
+          const parsed = parseTtsFilename(filename)
+          const bin = zip.file(index)
+          if (!parsed || !bin) continue
+          await cacheSet(parsed.id, await bin.async("arraybuffer"))
+        }
+      }
+    } catch {
+      // ignore broken media map
+    }
+  }
+
+  return {
+    version: 1,
+    name: pickDeckName(decks),
+    fields,
+    fieldNotes: Object.fromEntries(fields.map((field) => [field, ""])),
+    fieldTts,
+    front: tmpl?.qfmt ?? "{{" + fields[0] + "}}",
+    back: tmpl?.afmt ?? "{{FrontSide}}",
+    css: model.css ?? "",
+    cards: dedupeCardsByFirstField(cards, fields),
+  }
+}
+
+export async function importDeckFile(file: File, current: Deck): Promise<Deck> {
+  const name = file.name.toLowerCase()
+  if (name.endsWith(".json")) {
+    return parseDeckJson(await file.text())
+  }
+  if (name.endsWith(".csv")) {
+    return csvToDeck(await file.text(), current)
+  }
+  if (name.endsWith(".apkg") || name.endsWith(".colpkg")) {
+    return importApkg(await file.arrayBuffer())
+  }
+  throw new Error("只支持 .json、.csv 或 .apkg")
+}
