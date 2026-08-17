@@ -10,6 +10,7 @@ import {
   writeAiSettings,
   type AiSettings,
 } from "@/lib/ai-settings"
+import { listProviderModels, withBrowserFallback } from "@/lib/ai-upstream"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -61,20 +62,34 @@ export function SettingsForm() {
     setBusy(true)
     setStatus("正在拉取模型…")
     try {
-      const response = await fetch("/api/ai/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: next }),
-      })
-      const data = (await response.json()) as { models?: string[]; error?: string }
-      if (!response.ok || !data.models?.length) {
-        throw new Error(data.error || "拉取模型失败")
+      let usedBrowser = false
+      const models = await withBrowserFallback(
+        async () => {
+          const response = await fetch("/api/ai/models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ settings: next }),
+          })
+          const data = (await response.json()) as { models?: string[]; error?: string }
+          if (!response.ok || !data.models?.length) {
+            throw new Error(data.error || "拉取模型失败")
+          }
+          return data.models
+        },
+        async () => {
+          usedBrowser = true
+          return listProviderModels(next)
+        }
+      )
+      setModels(models)
+      if (!next.model || !models.includes(next.model)) {
+        patch({ model: models[0] ?? next.model })
       }
-      setModels(data.models)
-      if (!next.model || !data.models.includes(next.model)) {
-        patch({ model: data.models[0] ?? next.model })
-      }
-      setStatus(`已拉取 ${data.models.length} 个模型`)
+      setStatus(
+        usedBrowser
+          ? `已拉取 ${models.length} 个模型（浏览器直连，Vercel 被 Cloudflare 拦截）`
+          : `已拉取 ${models.length} 个模型`
+      )
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "拉取模型失败")
     } finally {
@@ -92,16 +107,25 @@ export function SettingsForm() {
     setBusy(true)
     setStatus("正在测试…")
     try {
-      const response = await fetch("/api/ai/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: next }),
-      })
-      const data = (await response.json()) as { ok?: boolean; error?: string }
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "测试失败")
-      }
-      setStatus("连接成功")
+      let usedBrowser = false
+      await withBrowserFallback(
+        async () => {
+          const response = await fetch("/api/ai/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ settings: next }),
+          })
+          const data = (await response.json()) as { ok?: boolean; error?: string }
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "测试失败")
+          }
+        },
+        async () => {
+          usedBrowser = true
+          await (await import("@/lib/ai-run")).runTestAi(next)
+        }
+      )
+      setStatus(usedBrowser ? "连接成功（浏览器直连）" : "连接成功")
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "测试失败")
     } finally {

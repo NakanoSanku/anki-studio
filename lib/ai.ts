@@ -1,5 +1,25 @@
 import { readAiSettings, type AiSettings } from "./ai-settings"
+import { withBrowserFallback } from "./ai-upstream"
 import type { TtsField } from "./deck"
+
+async function postAi<T>(
+  url: string,
+  body: unknown,
+  pick: (data: Record<string, unknown>) => T | undefined,
+  fallback: string
+): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  const data = ((await response.json().catch(() => null)) ?? {}) as Record<string, unknown>
+  const value = pick(data)
+  if (!response.ok || value === undefined) {
+    throw new Error(typeof data.error === "string" && data.error ? data.error : fallback)
+  }
+  return value
+}
 
 export type AiAction = "complete" | "rewrite"
 
@@ -64,16 +84,17 @@ export function formatTemplateFields(fields: string[], fieldTts: Record<string, 
 }
 
 export async function requestFieldAi(input: FieldAiInput): Promise<string> {
-  const response = await fetch("/api/ai/field", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(withSettings(input)),
-  })
-  const data = (await response.json()) as { text?: string; error?: string }
-  if (!response.ok || !data.text) {
-    throw new Error(data.error || "字段生成失败")
-  }
-  return data.text
+  const payload = withSettings(input)
+  return withBrowserFallback(
+    () =>
+      postAi(
+        "/api/ai/field",
+        payload,
+        (data) => (typeof data.text === "string" ? data.text : undefined),
+        "字段生成失败"
+      ),
+    async () => (await import("./ai-run")).runFieldAi(payload)
+  )
 }
 
 export type BatchAiInput = {
@@ -86,29 +107,34 @@ export type BatchAiInput = {
 }
 
 export async function requestBatchAi(input: BatchAiInput): Promise<Record<string, string>[]> {
-  const response = await fetch("/api/ai/batch", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(withSettings(input)),
-  })
-  const data = (await response.json()) as { cards?: Record<string, string>[]; error?: string }
-  if (!response.ok || !data.cards) {
-    throw new Error(data.error || "批量生成失败")
-  }
-  return data.cards
+  const payload = withSettings(input)
+  return withBrowserFallback(
+    () =>
+      postAi(
+        "/api/ai/batch",
+        payload,
+        (data) => (Array.isArray(data.cards) ? (data.cards as Record<string, string>[]) : undefined),
+        "批量生成失败"
+      ),
+    async () => (await import("./ai-run")).runBatchAi(payload)
+  )
 }
 
 export async function requestCardAi(input: CardAiInput): Promise<Record<string, string>> {
-  const response = await fetch("/api/ai/card", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(withSettings(input)),
-  })
-  const data = (await response.json()) as { values?: Record<string, string>; error?: string }
-  if (!response.ok || !data.values) {
-    throw new Error(data.error || "卡片生成失败")
-  }
-  return data.values
+  const payload = withSettings(input)
+  return withBrowserFallback(
+    () =>
+      postAi(
+        "/api/ai/card",
+        payload,
+        (data) =>
+          data.values && typeof data.values === "object"
+            ? (data.values as Record<string, string>)
+            : undefined,
+        "卡片生成失败"
+      ),
+    async () => (await import("./ai-run")).runCardAi(payload)
+  )
 }
 
 export type TemplateAiTarget = "current" | "html" | "all"
@@ -134,14 +160,18 @@ export type TemplateAiResult = {
 }
 
 export async function requestTemplateAi(input: TemplateAiInput): Promise<TemplateAiResult> {
-  const response = await fetch("/api/ai/template", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(withSettings(input)),
-  })
-  const data = (await response.json()) as TemplateAiResult & { error?: string }
-  if (!response.ok || typeof data.front !== "string" || typeof data.back !== "string" || typeof data.css !== "string") {
-    throw new Error(data.error || "模板生成失败")
-  }
-  return { front: data.front, back: data.back, css: data.css }
+  const payload = withSettings(input)
+  return withBrowserFallback(
+    () =>
+      postAi(
+        "/api/ai/template",
+        payload,
+        (data) =>
+          typeof data.front === "string" && typeof data.back === "string" && typeof data.css === "string"
+            ? { front: data.front, back: data.back, css: data.css }
+            : undefined,
+        "模板生成失败"
+      ),
+    async () => (await import("./ai-run")).runTemplateAi(payload)
+  )
 }
