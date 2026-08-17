@@ -1,15 +1,5 @@
 import { extractModelIds, parseAiSettings, validateProviderEndpoint } from "@/lib/ai-settings"
-
-function readErrorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== "object") return fallback
-  const error = (payload as { error?: unknown }).error
-  if (typeof error === "string" && error.trim()) return error
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === "string" && message.trim()) return message
-  }
-  return fallback
-}
+import { describeUpstreamError, providerFetch } from "@/lib/ai-upstream"
 
 export async function POST(request: Request) {
   let settingsRaw: unknown
@@ -33,13 +23,26 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch(endpoint, { headers })
-    const payload = (await response.json().catch(() => null)) as unknown
+    const response = await providerFetch(endpoint, { headers })
+    const body = await response.text()
     if (!response.ok) {
       return Response.json(
-        { error: `拉取模型失败：${readErrorMessage(payload, `HTTP ${response.status}`)}` },
+        {
+          error: `拉取模型失败：${describeUpstreamError({
+            status: response.status,
+            body,
+            cfRay: response.headers.get("cf-ray"),
+          })}`,
+        },
         { status: 502 }
       )
+    }
+
+    let payload: unknown = null
+    try {
+      payload = body ? JSON.parse(body) : null
+    } catch {
+      return Response.json({ error: "接口没有返回 JSON" }, { status: 502 })
     }
 
     const models = extractModelIds(payload)
