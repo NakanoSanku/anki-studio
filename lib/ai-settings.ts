@@ -1,7 +1,10 @@
+export type AiTransport = "auto" | "server" | "browser"
+
 export type AiSettings = {
   model: string
   apiKey: string
   baseURL: string
+  transport: AiTransport
   systemPrompt: string
   fieldCompletePrompt: string
   fieldRewritePrompt: string
@@ -82,6 +85,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   model: "gpt-4o-mini",
   apiKey: "",
   baseURL: "https://api.openai.com/v1",
+  transport: "auto",
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   fieldCompletePrompt: DEFAULT_FIELD_COMPLETE_PROMPT,
   fieldRewritePrompt: DEFAULT_FIELD_REWRITE_PROMPT,
@@ -99,12 +103,17 @@ function text(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback
 }
 
+export function parseAiTransport(value: unknown): AiTransport {
+  return value === "server" || value === "browser" ? value : "auto"
+}
+
 export function parseAiSettings(raw: unknown): AiSettings {
   if (!isRecord(raw)) return { ...DEFAULT_AI_SETTINGS }
   return {
     model: text(raw.model, DEFAULT_AI_SETTINGS.model),
     apiKey: text(raw.apiKey, ""),
     baseURL: text(raw.baseURL, DEFAULT_AI_SETTINGS.baseURL),
+    transport: parseAiTransport(raw.transport),
     systemPrompt: text(raw.systemPrompt, DEFAULT_SYSTEM_PROMPT),
     fieldCompletePrompt: text(raw.fieldCompletePrompt, DEFAULT_FIELD_COMPLETE_PROMPT),
     fieldRewritePrompt: text(raw.fieldRewritePrompt, DEFAULT_FIELD_REWRITE_PROMPT),

@@ -1,6 +1,8 @@
 import { type BatchAiInput } from "@/lib/ai"
 import { aiRouteError, runBatchAi } from "@/lib/ai-run"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let body: BatchAiInput
   try {

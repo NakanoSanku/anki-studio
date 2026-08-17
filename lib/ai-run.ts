@@ -1,4 +1,3 @@
-import { generateText, Output } from "ai"
 import { z } from "zod"
 
 import {
@@ -12,7 +11,7 @@ import {
   type TemplateAiInput,
   type TemplateAiResult,
 } from "./ai"
-import { resolveLanguageModel } from "./ai-model"
+import { completeChat, completeJson, pickCardList, pickFieldValues } from "./ai-compat"
 import { parseAiSettings, renderPrompt } from "./ai-settings"
 
 export class AiRequestError extends Error {
@@ -24,12 +23,6 @@ function requireFields(fields: unknown): string[] {
     throw new AiRequestError("字段列表无效")
   }
   return [...new Set(fields.map((field) => field.trim()))]
-}
-
-function valuesSchema(fields: string[]) {
-  const shape: Record<string, z.ZodString> = {}
-  for (const field of fields) shape[field] = z.string()
-  return z.object(shape)
 }
 
 const paneLabels = {
@@ -45,8 +38,8 @@ function unwrapCode(value: string): string {
 }
 
 export async function runTestAi(settingsRaw: unknown): Promise<void> {
-  const { text } = await generateText({
-    model: resolveLanguageModel(settingsRaw),
+  const text = await completeChat({
+    settings: settingsRaw,
     prompt: "Reply with the single word OK.",
   })
   if (!text.trim()) throw new Error("模型没有返回内容")
@@ -76,12 +69,13 @@ export async function runFieldAi(body: FieldAiInput): Promise<string> {
       ? renderPrompt(settings.fieldRewritePrompt, vars)
       : renderPrompt(settings.fieldCompletePrompt, vars)
 
-  const { text } = await generateText({
-    model: resolveLanguageModel(settings),
-    system: settings.systemPrompt,
-    prompt,
-  })
-  const next = text.trim()
+  const next = (
+    await completeChat({
+      settings,
+      system: settings.systemPrompt,
+      prompt,
+    })
+  ).trim()
   if (!next) throw new Error("AI 没有返回内容")
   return next
 }
@@ -108,18 +102,17 @@ export async function runCardAi(body: CardAiInput): Promise<Record<string, strin
       ? renderPrompt(settings.cardRewritePrompt, vars)
       : renderPrompt(settings.cardCompletePrompt, vars)
 
-  const result = await generateText({
-    model: resolveLanguageModel(settings),
+  const parsed = await completeJson({
+    settings,
     system: `${settings.systemPrompt}\n按给定字段返回 JSON 对象，值必须是字符串。`,
     prompt,
-    output: Output.object({ schema: valuesSchema(uniqueFields) }),
   })
-  const output = result.output
-  if (!output) throw new Error("AI 没有返回有效结果")
+  const output = pickFieldValues(parsed, uniqueFields)
+  if (!uniqueFields.some((field) => output[field])) throw new Error("AI 没有返回有效结果")
 
   const next: Record<string, string> = { ...current }
   for (const field of uniqueFields) {
-    const generated = output[field]?.trim() ?? ""
+    const generated = output[field] ?? ""
     if (action === "complete" && current[field]?.trim()) continue
     if (generated) next[field] = generated
   }
@@ -154,22 +147,14 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
     notes: formatFieldNotes(fields, notes),
   })
 
-  const result = await generateText({
-    model: resolveLanguageModel(settings),
+  const parsed = await completeJson({
+    settings,
     system: `${settings.systemPrompt}\n返回 JSON，cards 是对象数组，每个对象的键必须是这些字段：${fields.join("、")}。`,
     prompt,
-    output: Output.object({
-      schema: z.object({ cards: z.array(valuesSchema(fields)) }),
-    }),
   })
-
-  const cards = result.output?.cards ?? []
+  const cards = pickCardList(parsed, fields)
   if (cards.length === 0) throw new Error("AI 没有返回卡片")
-  return cards.map((card) => {
-    const values: Record<string, string> = {}
-    for (const field of fields) values[field] = card[field]?.trim() ?? ""
-    return values
-  })
+  return cards
 }
 
 export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiResult> {
@@ -212,25 +197,23 @@ export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiRe
     existing: "",
   })
 
-  const result = await generateText({
-    model: resolveLanguageModel(settings),
+  const parsed = await completeJson({
+    settings,
     system: `${settings.systemPrompt}\n返回 JSON，键必须是 front、back、css，值是完整模板字符串。`,
     prompt,
-    output: Output.object({
-      schema: z.object({
-        front: z.string(),
-        back: z.string(),
-        css: z.string(),
-      }),
-    }),
   })
+  const output = z
+    .object({
+      front: z.string().optional(),
+      back: z.string().optional(),
+      css: z.string().optional(),
+    })
+    .safeParse(parsed)
+  if (!output.success) throw new Error("AI 没有返回有效结果")
 
-  const output = result.output
-  if (!output) throw new Error("AI 没有返回有效结果")
-
-  const nextFront = unwrapCode(output.front)
-  const nextBack = unwrapCode(output.back)
-  const nextCss = unwrapCode(output.css)
+  const nextFront = unwrapCode(output.data.front ?? "")
+  const nextBack = unwrapCode(output.data.back ?? "")
+  const nextCss = unwrapCode(output.data.css ?? "")
   return {
     front: body.target === "current" && body.pane !== "front" ? front : nextFront || front,
     back: body.target === "current" && body.pane !== "back" ? back : nextBack || back,

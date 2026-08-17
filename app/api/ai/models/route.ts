@@ -1,6 +1,8 @@
 import { parseAiSettings, validateProviderEndpoint } from "@/lib/ai-settings"
 import { listProviderModels } from "@/lib/ai-upstream"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let settingsRaw: unknown
   try {

@@ -1,6 +1,8 @@
 import { type TemplateAiInput } from "@/lib/ai"
 import { aiRouteError, runTemplateAi } from "@/lib/ai-run"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let body: TemplateAiInput
   try {

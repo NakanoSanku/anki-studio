@@ -674,6 +674,81 @@ export function appendUniqueCards(
   return [...current, ...added]
 }
 
+export function setCardField(
+  deck: Deck,
+  cardId: string,
+  field: string,
+  value: string
+): FieldChangeResult {
+  if (isTtsField(deck, field)) {
+    return { ok: false, error: `字段「${field}」由朗读生成，不能写入` }
+  }
+  if (!deck.fields.includes(field)) {
+    return { ok: false, error: `字段「${field}」不存在` }
+  }
+  const card = deck.cards.find((item) => item.id === cardId)
+  if (!card) return { ok: false, error: "卡片已删除" }
+
+  if (field === deck.fields[0]) {
+    const duplicate = findDuplicateCard(deck.cards, deck.fields, value, cardId)
+    if (duplicate) {
+      return { ok: false, error: `已存在卡片「${value.trim()}」` }
+    }
+  }
+
+  return {
+    ok: true,
+    deck: {
+      ...deck,
+      cards: deck.cards.map((item) =>
+        item.id === cardId ? { ...item, values: { ...item.values, [field]: value } } : item
+      ),
+    },
+  }
+}
+
+export function mergeCardAiValues(
+  deck: Deck,
+  cardId: string,
+  incoming: Record<string, string>,
+  action: "complete" | "rewrite"
+): FieldChangeResult {
+  const card = deck.cards.find((item) => item.id === cardId)
+  if (!card) return { ok: false, error: "卡片已删除" }
+
+  const nextValues = { ...card.values }
+  for (const field of textFields(deck)) {
+    const generated = incoming[field]
+    if (typeof generated !== "string") continue
+    if (action === "complete" && nextValues[field]?.trim()) continue
+    nextValues[field] = generated
+  }
+
+  const key = deck.fields[0]
+  if (key && nextValues[key] !== card.values[key]) {
+    const duplicate = findDuplicateCard(deck.cards, deck.fields, nextValues[key] ?? "", cardId)
+    if (duplicate) {
+      return { ok: false, error: `已存在卡片「${(nextValues[key] ?? "").trim()}」` }
+    }
+  }
+
+  return {
+    ok: true,
+    deck: {
+      ...deck,
+      cards: deck.cards.map((item) => (item.id === cardId ? { ...item, values: nextValues } : item)),
+    },
+  }
+}
+
+export function mergeGeneratedCards(deck: Deck, incoming: Card[]): FieldChangeResult {
+  const cards = appendUniqueCards(deck.cards, deck.fields, incoming, deck.fields)
+  if (cards.length === deck.cards.length) {
+    return { ok: false, error: "生成的卡片都与现有首字段重复，没有写入" }
+  }
+  return { ok: true, deck: { ...deck, cards } }
+}
+
 export function cardLabel(card: Card, fields: string[]): string {
   const first = fields[0]
   const value = first ? card.values[first]?.trim() : ""

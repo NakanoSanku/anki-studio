@@ -1,6 +1,8 @@
 import { type CardAiInput } from "@/lib/ai"
 import { aiRouteError, runCardAi } from "@/lib/ai-run"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let body: CardAiInput
   try {

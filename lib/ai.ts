@@ -1,5 +1,5 @@
 import { readAiSettings, type AiSettings } from "./ai-settings"
-import { withBrowserFallback } from "./ai-upstream"
+import { describeUpstreamError, runWithTransport } from "./ai-upstream"
 import type { TtsField } from "./deck"
 
 async function postAi<T>(
@@ -13,11 +13,37 @@ async function postAi<T>(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-  const data = ((await response.json().catch(() => null)) ?? {}) as Record<string, unknown>
+  const raw = await response.text()
+  let data: Record<string, unknown> = {}
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        data = parsed as Record<string, unknown>
+      }
+    } catch {
+      throw new Error(
+        describeUpstreamError({
+          status: response.status,
+          body: raw,
+          cfRay: response.headers.get("cf-ray"),
+        })
+      )
+    }
+  }
   const value = pick(data)
   if (!response.ok || value === undefined) {
     throw new Error(typeof data.error === "string" && data.error ? data.error : fallback)
   }
+  return value
+}
+
+async function viaTransport<T>(
+  settings: AiSettings,
+  serverCall: () => Promise<T>,
+  browserCall: () => Promise<T>
+): Promise<T> {
+  const { value } = await runWithTransport(settings, serverCall, browserCall)
   return value
 }
 
@@ -85,7 +111,8 @@ export function formatTemplateFields(fields: string[], fieldTts: Record<string, 
 
 export async function requestFieldAi(input: FieldAiInput): Promise<string> {
   const payload = withSettings(input)
-  return withBrowserFallback(
+  return viaTransport(
+    payload.settings,
     () =>
       postAi(
         "/api/ai/field",
@@ -108,7 +135,8 @@ export type BatchAiInput = {
 
 export async function requestBatchAi(input: BatchAiInput): Promise<Record<string, string>[]> {
   const payload = withSettings(input)
-  return withBrowserFallback(
+  return viaTransport(
+    payload.settings,
     () =>
       postAi(
         "/api/ai/batch",
@@ -122,7 +150,8 @@ export async function requestBatchAi(input: BatchAiInput): Promise<Record<string
 
 export async function requestCardAi(input: CardAiInput): Promise<Record<string, string>> {
   const payload = withSettings(input)
-  return withBrowserFallback(
+  return viaTransport(
+    payload.settings,
     () =>
       postAi(
         "/api/ai/card",
@@ -161,7 +190,8 @@ export type TemplateAiResult = {
 
 export async function requestTemplateAi(input: TemplateAiInput): Promise<TemplateAiResult> {
   const payload = withSettings(input)
-  return withBrowserFallback(
+  return viaTransport(
+    payload.settings,
     () =>
       postAi(
         "/api/ai/template",

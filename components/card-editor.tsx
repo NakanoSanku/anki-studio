@@ -1,20 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { requestBatchAi, requestCardAi, requestFieldAi, type AiAction } from "@/lib/ai"
 import {
-  appendUniqueCards,
   cardLabel,
   cardMatchesQuery,
   createCard,
-  findDuplicateCard,
   isCardEmpty,
+  mergeCardAiValues,
+  mergeGeneratedCards,
   notesOf,
+  setCardField,
   textFields,
   ttsLangLabel,
   ttsOf,
   type Deck,
+  type FieldChangeResult,
 } from "@/lib/deck"
 import { TtsPlayButton } from "@/components/tts-play-button"
 import {
@@ -60,11 +62,13 @@ function readMode(): EditMode {
   return window.localStorage.getItem(MODE_KEY) === "table" ? "table" : "form"
 }
 
+type DeckUpdater = Deck | ((current: Deck) => Deck)
+
 type CardEditorProps = {
   deck: Deck
   selectedId: string | null
   previewSide: "front" | "back"
-  onChange: (deck: Deck) => void
+  onChange: (deck: DeckUpdater) => void
   onSelect: (id: string) => void
   onPreviewSideChange: (side: "front" | "back") => void
 }
@@ -78,7 +82,10 @@ export function CardEditor({
   onPreviewSideChange,
 }: CardEditorProps) {
   const [mode, setMode] = useState<EditMode>(readMode)
-  const [busyKey, setBusyKey] = useState("")
+  const [busyKeys, setBusyKeys] = useState<string[]>([])
+  const busyRef = useRef(new Set<string>())
+  const deckRef = useRef(deck)
+  const pendingDecks = useRef(new Set<Deck>())
   const [alert, setAlert] = useState("")
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
@@ -90,10 +97,30 @@ export function CardEditor({
   const visibleCards = deck.cards.filter((card) => cardMatchesQuery(card, editableFields, query))
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
+  const isBusy = (task: string) => busyKeys.includes(task)
+
+  useEffect(() => {
+    pendingDecks.current.delete(deck)
+    if (pendingDecks.current.size > 0 && !pendingDecks.current.has(deck)) return
+    deckRef.current = deck
+  }, [deck])
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode)
   }, [mode])
+
+  const pushDeck = (next: Deck) => {
+    deckRef.current = next
+    pendingDecks.current.add(next)
+    onChange(next)
+  }
+
+  const commitChange = (recipe: (current: Deck) => FieldChangeResult): FieldChangeResult => {
+    const result = recipe(deckRef.current)
+    if (!result.ok) return result
+    pushDeck(result.deck)
+    return result
+  }
 
   useEffect(() => {
     if (!activeId) return
@@ -102,64 +129,62 @@ export function CardEditor({
   }, [activeId, mode])
 
   const addCard = () => {
-    const existing = deck.cards.find((card) => isCardEmpty(card, deck.fields))
+    const current = deckRef.current
+    const existing = current.cards.find((card) => isCardEmpty(card, current.fields))
     if (existing) {
-      onChange({
-        ...deck,
-        cards: [...deck.cards.filter((card) => card.id !== existing.id), existing],
-      })
+      const next = {
+        ...current,
+        cards: [...current.cards.filter((card) => card.id !== existing.id), existing],
+      }
+      pushDeck(next)
       onSelect(existing.id)
       return
     }
-    const card = createCard(deck.fields)
-    onChange({ ...deck, cards: [...deck.cards, card] })
+    const card = createCard(current.fields)
+    const next = { ...current, cards: [...current.cards, card] }
+    pushDeck(next)
     onSelect(card.id)
     setQuery("")
   }
 
   const updateCard = (id: string, field: string, value: string) => {
     if (fieldTts[field]) return false
-    if (field === deck.fields[0]) {
-      const duplicate = findDuplicateCard(deck.cards, deck.fields, value, id)
-      if (duplicate) {
-        setAlert(`已存在卡片「${value.trim()}」`)
-        return false
-      }
+    const result = commitChange((current) => setCardField(current, id, field, value))
+    if (!result.ok) {
+      setAlert(result.error)
+      return false
     }
-    onChange({
-      ...deck,
-      cards: deck.cards.map((card) =>
-        card.id === id ? { ...card, values: { ...card.values, [field]: value } } : card
-      ),
-    })
     return true
   }
 
   const runAi = async (task: string, work: () => Promise<void>) => {
-    if (busyKey) return
-    setBusyKey(task)
+    if (busyRef.current.has(task)) return
+    busyRef.current.add(task)
+    setBusyKeys([...busyRef.current])
     try {
       await work()
     } catch (error) {
       setAlert(error instanceof Error ? error.message : "AI 调用失败")
     } finally {
-      setBusyKey("")
+      busyRef.current.delete(task)
+      setBusyKeys([...busyRef.current])
     }
   }
 
   const applyFieldAi = (field: string, action: AiAction) => {
     if (!selected) return
+    const cardId = selected.id
+    const values = selected.values
     void runAi(`field:${field}:${action}`, async () => {
       const text = await requestFieldAi({
         action,
         field,
         fields: editableFields,
-        values: selected.values,
+        values,
         notes: notesOf(deck),
       })
-      if (!updateCard(selected.id, field, text)) {
-        throw new Error(`已存在卡片「${text.trim()}」`)
-      }
+      const result = commitChange((current) => setCardField(current, cardId, field, text))
+      if (!result.ok) throw new Error(result.error)
     })
   }
 
@@ -173,27 +198,26 @@ export function CardEditor({
       setAlert("生成数量需要在 1 到 50 之间")
       return
     }
+    const topic = batchTopic.trim()
+    const fields = editableFields
+    const notes = notesOf(deck)
+    const keyField = deck.fields[0]
+    const existingKeys = deck.cards
+      .map((card) => (keyField ? card.values[keyField] ?? "" : ""))
+      .map((value) => value.trim())
+      .filter(Boolean)
     void runAi("batch", async () => {
-      const keyField = deck.fields[0]
-      const existingKeys = deck.cards
-        .map((card) => (keyField ? card.values[keyField] ?? "" : ""))
-        .map((value) => value.trim())
-        .filter(Boolean)
       const generated = await requestBatchAi({
-        topic: batchTopic.trim(),
+        topic,
         count: Math.floor(count),
-        fields: editableFields,
+        fields,
         existingKeys,
-        notes: notesOf(deck),
+        notes,
       })
-      const incoming = generated.map((values) => createCard(deck.fields, values))
-      const nextCards = appendUniqueCards(deck.cards, deck.fields, incoming, deck.fields)
-      const added = nextCards.length - deck.cards.length
-      if (added === 0) {
-        throw new Error("生成的卡片都与现有首字段重复，没有写入")
-      }
-      onChange({ ...deck, cards: nextCards })
-      const last = nextCards[nextCards.length - 1]
+      const incoming = generated.map((values) => createCard(fields, values))
+      const result = commitChange((current) => mergeGeneratedCards(current, incoming))
+      if (!result.ok) throw new Error(result.error)
+      const last = result.deck.cards[result.deck.cards.length - 1]
       if (last) onSelect(last.id)
       setBatchOpen(false)
       setBatchTopic("")
@@ -203,40 +227,24 @@ export function CardEditor({
 
   const applyCardAi = (action: AiAction) => {
     if (!selected) return
+    const cardId = selected.id
+    const values = selected.values
     void runAi(`card:${action}`, async () => {
-      const values = await requestCardAi({
+      const generated = await requestCardAi({
         action,
         fields: editableFields,
-        values: selected.values,
+        values,
         notes: notesOf(deck),
       })
-      const key = deck.fields[0]
-      if (key) {
-        const duplicate = findDuplicateCard(deck.cards, deck.fields, values[key] ?? "", selected.id)
-        if (duplicate) {
-          throw new Error(`已存在卡片「${(values[key] ?? "").trim()}」`)
-        }
-      }
-      onChange({
-        ...deck,
-        cards: deck.cards.map((card) => {
-          if (card.id !== selected.id) return card
-          const next = { ...card.values }
-          for (const field of editableFields) {
-            if (typeof values[field] === "string") next[field] = values[field]
-          }
-          return { ...card, values: next }
-        }),
-      })
+      const result = commitChange((current) => mergeCardAiValues(current, cardId, generated, action))
+      if (!result.ok) throw new Error(result.error)
     })
   }
 
   const removeCard = (id: string) => {
-    const next = deck.cards.filter((card) => card.id !== id)
-    onChange({ ...deck, cards: next })
-    if (selectedId === id) {
-      onSelect(next[0]?.id ?? "")
-    }
+    const next = { ...deckRef.current, cards: deckRef.current.cards.filter((card) => card.id !== id) }
+    pushDeck(next)
+    if (selectedId === id) onSelect(next.cards[0]?.id ?? "")
   }
 
   const toolbar = (
@@ -253,7 +261,7 @@ export function CardEditor({
           新建
         </Button>
         {mode === "form" ? (
-          <Button type="button" size="sm" variant="outline" disabled={Boolean(busyKey)} onClick={() => setBatchOpen(true)}>
+          <Button type="button" size="sm" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
             批量生成
           </Button>
         ) : null}
@@ -335,8 +343,8 @@ export function CardEditor({
           <Button type="button" variant="outline" onClick={() => setBatchOpen(false)}>
             取消
           </Button>
-          <Button type="button" disabled={Boolean(busyKey)} onClick={applyBatchAi}>
-            {busyKey === "batch" ? "生成中" : "生成"}
+          <Button type="button" disabled={isBusy("batch")} onClick={applyBatchAi}>
+            {isBusy("batch") ? "生成中" : "生成"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -487,19 +495,19 @@ export function CardEditor({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={Boolean(busyKey)}
+                  disabled={isBusy("card:complete")}
                   onClick={() => applyCardAi("complete")}
                 >
-                  {busyKey === "card:complete" ? "补全中" : "补全"}
+                  {isBusy("card:complete") ? "补全中" : "补全"}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={Boolean(busyKey) || !selected.values[deck.fields[0]]?.trim()}
+                  disabled={isBusy("card:rewrite") || !selected.values[deck.fields[0]]?.trim()}
                   onClick={() => applyCardAi("rewrite")}
                 >
-                  {busyKey === "card:rewrite" ? "重写中" : "重写"}
+                  {isBusy("card:rewrite") ? "重写中" : "重写"}
                 </Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => removeCard(selected.id)}>
                   删除
@@ -543,19 +551,19 @@ export function CardEditor({
                         type="button"
                         size="xs"
                         variant="ghost"
-                        disabled={Boolean(busyKey)}
+                        disabled={isBusy(`field:${field}:complete`)}
                         onClick={() => applyFieldAi(field, "complete")}
                       >
-                        {busyKey === `field:${field}:complete` ? "补全中" : "补全"}
+                        {isBusy(`field:${field}:complete`) ? "补全中" : "补全"}
                       </Button>
                       <Button
                         type="button"
                         size="xs"
                         variant="ghost"
-                        disabled={Boolean(busyKey) || !selected.values[field]?.trim()}
+                        disabled={isBusy(`field:${field}:rewrite`) || !selected.values[field]?.trim()}
                         onClick={() => applyFieldAi(field, "rewrite")}
                       >
-                        {busyKey === `field:${field}:rewrite` ? "重写中" : "重写"}
+                        {isBusy(`field:${field}:rewrite`) ? "重写中" : "重写"}
                       </Button>
                     </div>
                   </div>

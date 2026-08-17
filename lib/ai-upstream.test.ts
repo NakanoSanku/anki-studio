@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { describeUpstreamError, isCloudflareBlocked } from "./ai-upstream"
+import {
+  combineTransportErrors,
+  describeUpstreamError,
+  isCloudflareBlocked,
+  isOfficialProvider,
+  resolveAiPlan,
+  shouldFallbackToBrowser,
+} from "./ai-upstream"
 
 describe("describeUpstreamError", () => {
   it("reads OpenAI-style JSON errors", () => {
@@ -38,5 +45,58 @@ describe("isCloudflareBlocked", () => {
       )
     ).toBe(true)
     expect(isCloudflareBlocked("HTTP 403：Insufficient quota")).toBe(false)
+  })
+})
+
+describe("shouldFallbackToBrowser", () => {
+  it("retries generic Vercel 502/403 but not validation or auth errors", () => {
+    expect(shouldFallbackToBrowser("HTTP 502：字段生成失败")).toBe(true)
+    expect(shouldFallbackToBrowser("Forbidden")).toBe(true)
+    expect(shouldFallbackToBrowser("请填写接口地址")).toBe(false)
+    expect(shouldFallbackToBrowser("HTTP 401：Incorrect API key")).toBe(false)
+  })
+})
+
+describe("resolveAiPlan", () => {
+  it("uses the server on the server runtime", () => {
+    expect(resolveAiPlan({ baseURL: "https://relay.example/v1" }, false)).toBe("server")
+  })
+
+  it("prefers the browser for custom relays in auto mode", () => {
+    expect(resolveAiPlan({ baseURL: "https://relay.example/v1", transport: "auto" }, true)).toBe(
+      "browser-then-server"
+    )
+  })
+
+  it("prefers the server for official OpenAI, then falls back", () => {
+    expect(resolveAiPlan({ baseURL: "https://api.openai.com/v1" }, true)).toBe("server-then-browser")
+  })
+
+  it("honors an explicit transport", () => {
+    expect(resolveAiPlan({ baseURL: "https://api.openai.com/v1", transport: "browser" }, true)).toBe(
+      "browser"
+    )
+    expect(resolveAiPlan({ baseURL: "https://relay.example/v1", transport: "server" }, true)).toBe(
+      "server"
+    )
+  })
+})
+
+describe("isOfficialProvider", () => {
+  it("recognizes OpenAI and Azure hosts", () => {
+    expect(isOfficialProvider("https://api.openai.com/v1")).toBe(true)
+    expect(isOfficialProvider("https://my-resource.openai.azure.com/openai")).toBe(true)
+    expect(isOfficialProvider("https://api.deepseek.com/v1")).toBe(false)
+  })
+})
+
+describe("combineTransportErrors", () => {
+  it("explains the CF + CORS deadlock", () => {
+    expect(
+      combineTransportErrors(
+        new Error("Failed to fetch"),
+        new Error("HTTP 403：中转站前的 Cloudflare 拦截了请求，Ray abc-IAD")
+      ).message
+    ).toContain("未开启跨域")
   })
 })

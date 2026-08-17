@@ -6,8 +6,12 @@ import {
   createDefaultDeck,
   dedupeCardsByFirstField,
   findDuplicateCard,
+  mergeCardAiValues,
+  mergeGeneratedCards,
   parseDeckJson,
   serializeDeck,
+  setCardField,
+  type Card,
 } from "./deck"
 
 const fields = ["Word", "Translation"]
@@ -83,5 +87,89 @@ describe("appendUniqueCards", () => {
     const incoming = [card(""), card("beta"), card("alpha")]
     const next = appendUniqueCards(current, fields, incoming, fields)
     expect(next.map((item) => item.values.Word)).toEqual(["alpha", "beta"])
+  })
+})
+
+function testDeck(cards: Card[]) {
+  return {
+    ...createDefaultDeck(),
+    fields,
+    fieldNotes: { Word: "", Translation: "" },
+    fieldTts: {},
+    cards,
+  }
+}
+
+describe("setCardField", () => {
+  it("merges one field without wiping siblings written earlier", () => {
+    const item = card("alpha")
+    const first = setCardField(testDeck([item]), item.id, "Translation", "一")
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = setCardField(first.deck, item.id, "Word", "beta")
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.deck.cards[0]?.values).toEqual({ Word: "beta", Translation: "一" })
+  })
+
+  it("rejects a first-field clash against the latest cards", () => {
+    const alpha = card("alpha", "一")
+    const beta = card("beta")
+    const result = setCardField(testDeck([alpha, beta]), beta.id, "Word", "alpha")
+    expect(result).toEqual({ ok: false, error: "已存在卡片「alpha」" })
+  })
+})
+
+describe("mergeCardAiValues", () => {
+  it("complete only fills empty fields on the latest card", () => {
+    const item = card("alpha")
+    const typed = setCardField(testDeck([item]), item.id, "Translation", "用户已填")
+    expect(typed.ok).toBe(true)
+    if (!typed.ok) return
+    const result = mergeCardAiValues(
+      typed.deck,
+      item.id,
+      { Word: "alpha", Translation: "AI 想覆盖" },
+      "complete"
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.deck.cards[0]?.values.Translation).toBe("用户已填")
+  })
+
+  it("rewrite updates returned fields without dropping later sibling edits", () => {
+    const item = card("alpha", "旧译")
+    const extra = { ...item, values: { ...item.values, Extra: "keep" } }
+    const deck = {
+      ...testDeck([extra]),
+      fields: [...fields, "Extra"],
+      fieldNotes: { Word: "", Translation: "", Extra: "" },
+    }
+    const result = mergeCardAiValues(
+      deck,
+      extra.id,
+      { Word: "beta", Translation: "新译" },
+      "rewrite"
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.deck.cards[0]?.values).toEqual({
+      Word: "beta",
+      Translation: "新译",
+      Extra: "keep",
+    })
+  })
+})
+
+describe("mergeGeneratedCards", () => {
+  it("keeps earlier generated cards when a later batch is merged", () => {
+    const existing = card("alpha")
+    const first = mergeGeneratedCards(testDeck([existing]), [card("beta")])
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = mergeGeneratedCards(first.deck, [card("beta"), card("gamma")])
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.deck.cards.map((item) => item.values.Word)).toEqual(["alpha", "beta", "gamma"])
   })
 })

@@ -1,5 +1,7 @@
 import { aiRouteError, runTestAi } from "@/lib/ai-run"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let settings: unknown
   try {

@@ -8,7 +8,7 @@
 - 卡片：单卡 / 表格、搜索、首字段去重、CSV / JSON / `.apkg`
 - 推送到 Anki：只打包有变更的笔记和模板，Android 可分享给 AnkiDroid；按 `guid` 更新已有卡片，复习进度保留
 - TTS 字段：绑定已有字段，Google Translate TTS；编辑器可试听，导出 APKG 时再按限速生成
-- 设置：OpenAI 兼容接口和提示词
+- 设置：OpenAI 兼容接口和提示词。Vercel 上自定义中转站默认浏览器直连，避免服务器 IP 被 Cloudflare 拦截
 
 默认字段：`Word` `Phonetic` `Translation` `Example` `ExampleTranslation` `Notes`
 

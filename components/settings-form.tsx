@@ -9,8 +9,9 @@ import {
   validateProviderEndpoint,
   writeAiSettings,
   type AiSettings,
+  type AiTransport,
 } from "@/lib/ai-settings"
-import { listProviderModels, withBrowserFallback } from "@/lib/ai-upstream"
+import { listProviderModels, runWithTransport } from "@/lib/ai-upstream"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,6 +32,7 @@ export function SettingsForm() {
     model: settings.model.trim(),
     apiKey: settings.apiKey.trim(),
     baseURL: settings.baseURL.trim(),
+    transport: settings.transport,
     systemPrompt: settings.systemPrompt.trim(),
     fieldCompletePrompt: settings.fieldCompletePrompt.trim(),
     fieldRewritePrompt: settings.fieldRewritePrompt.trim(),
@@ -62,32 +64,35 @@ export function SettingsForm() {
     setBusy(true)
     setStatus("正在拉取模型…")
     try {
-      let usedBrowser = false
-      const models = await withBrowserFallback(
+      const { value: models, via } = await runWithTransport(
+        next,
         async () => {
           const response = await fetch("/api/ai/models", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ settings: next }),
           })
-          const data = (await response.json()) as { models?: string[]; error?: string }
+          const raw = await response.text()
+          let data: { models?: string[]; error?: string } = {}
+          try {
+            data = raw ? (JSON.parse(raw) as { models?: string[]; error?: string }) : {}
+          } catch {
+            throw new Error(raw.slice(0, 180) || "拉取模型失败")
+          }
           if (!response.ok || !data.models?.length) {
             throw new Error(data.error || "拉取模型失败")
           }
           return data.models
         },
-        async () => {
-          usedBrowser = true
-          return listProviderModels(next)
-        }
+        () => listProviderModels(next)
       )
       setModels(models)
       if (!next.model || !models.includes(next.model)) {
         patch({ model: models[0] ?? next.model })
       }
       setStatus(
-        usedBrowser
-          ? `已拉取 ${models.length} 个模型（浏览器直连，Vercel 被 Cloudflare 拦截）`
+        via === "browser"
+          ? `已拉取 ${models.length} 个模型（浏览器直连）`
           : `已拉取 ${models.length} 个模型`
       )
     } catch (error) {
@@ -107,25 +112,30 @@ export function SettingsForm() {
     setBusy(true)
     setStatus("正在测试…")
     try {
-      let usedBrowser = false
-      await withBrowserFallback(
+      const { via } = await runWithTransport(
+        next,
         async () => {
           const response = await fetch("/api/ai/test", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ settings: next }),
           })
-          const data = (await response.json()) as { ok?: boolean; error?: string }
+          const raw = await response.text()
+          let data: { ok?: boolean; error?: string } = {}
+          try {
+            data = raw ? (JSON.parse(raw) as { ok?: boolean; error?: string }) : {}
+          } catch {
+            throw new Error(raw.slice(0, 180) || "测试失败")
+          }
           if (!response.ok || !data.ok) {
             throw new Error(data.error || "测试失败")
           }
         },
         async () => {
-          usedBrowser = true
           await (await import("@/lib/ai-run")).runTestAi(next)
         }
       )
-      setStatus(usedBrowser ? "连接成功（浏览器直连）" : "连接成功")
+      setStatus(via === "browser" ? "连接成功（浏览器直连）" : "连接成功")
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "测试失败")
     } finally {
@@ -137,7 +147,7 @@ export function SettingsForm() {
     <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)]">
       <div className="space-y-5">
         <p className="text-xs leading-5 text-foreground/50">
-          填写 OpenAI 兼容接口，例如 OpenAI、DeepSeek、Groq、Ollama、LM Studio。
+          填写 OpenAI 兼容接口。部署在 Vercel 时，自定义中转站默认从浏览器直连，避免服务器 IP 被 Cloudflare 拦截。
         </p>
 
         <section className="space-y-2">
@@ -183,6 +193,24 @@ export function SettingsForm() {
               拉取
             </Button>
           </div>
+        </section>
+
+        <section className="space-y-2">
+          <Label htmlFor="transport">请求通道</Label>
+          <select
+            id="transport"
+            value={settings.transport}
+            aria-label="请求通道"
+            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            onChange={(event) => patch({ transport: event.target.value as AiTransport })}
+          >
+            <option value="auto">自动（推荐）</option>
+            <option value="browser">浏览器直连</option>
+            <option value="server">经服务器</option>
+          </select>
+          <p className="text-xs leading-5 text-foreground/50">
+            自动：官方 API 走服务器；中转站优先浏览器直连。若直连失败，请在中转站打开 CORS。
+          </p>
         </section>
 
         <section className="space-y-2">

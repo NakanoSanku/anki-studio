@@ -1,6 +1,8 @@
 import { type FieldAiInput } from "@/lib/ai"
 import { aiRouteError, runFieldAi } from "@/lib/ai-run"
 
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   let body: FieldAiInput
   try {
