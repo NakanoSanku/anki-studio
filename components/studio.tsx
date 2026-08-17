@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react"
 
+import { hasAnkiPush, markNotesPushed, planAnkiPush, withAnkiIdentity, type AnkiPushPlan } from "@/lib/anki-sync"
 import { exportApkg, importDeckFile } from "@/lib/apkg"
 import { deckToCsv } from "@/lib/csv"
-import {
-  listTtsJobs,
-} from "@/lib/tts"
+import { listTtsJobs } from "@/lib/tts"
 import {
   readStoredDeck,
   safeFilename,
@@ -15,6 +14,7 @@ import {
   ttsOf,
   type Deck,
 } from "@/lib/deck"
+import { expireStatus, replaceTimer } from "@/lib/transient-status"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -46,6 +46,26 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function pushButtonLabel(plan: AnkiPushPlan): string {
+  if (plan.cards.length > 0) return `推送到 Anki（${plan.cards.length}）`
+  if (plan.templateChanged) return "推送到 Anki（模板）"
+  return "推送到 Anki"
+}
+
+async function shareOrDownload(blob: Blob, filename: string): Promise<"shared" | "downloaded"> {
+  const file = new File([blob], filename, { type: "application/apkg" })
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename })
+      return "shared"
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error
+  }
+  downloadBlob(blob, filename)
+  return "downloaded"
+}
+
 export function Studio() {
   const [deck, setDeck] = useState<Deck>(readStoredDeck)
   const [tab, setTab] = useState<StudioTab>(readTab)
@@ -57,6 +77,7 @@ export function Studio() {
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const exportAbort = useRef<AbortController | null>(null)
+  const statusTimer = useRef(0)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, serializeDeck(deck))
@@ -73,11 +94,17 @@ export function Studio() {
 
   const previewCard = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
 
+  useEffect(() => () => window.clearTimeout(statusTimer.current), [])
+
   const showStatus = (message: string) => {
     setStatus(message)
-    window.setTimeout(() => {
-      setStatus((current) => (current === message ? "" : current))
-    }, 3200)
+    statusTimer.current = replaceTimer(
+      statusTimer.current,
+      window.setTimeout.bind(window),
+      window.clearTimeout.bind(window),
+      3200,
+      () => setStatus((current) => expireStatus(current, message))
+    )
   }
 
   const replaceDeck = (next: Deck) => {
@@ -90,8 +117,13 @@ export function Studio() {
     if (!file) return
     setBusy(true)
     try {
-      replaceDeck(await importDeckFile(file, deck))
-      showStatus(`已导入 ${file.name}`)
+      const imported = await importDeckFile(file, deck)
+      replaceDeck(imported.deck)
+      showStatus(
+        imported.warnings.length > 0
+          ? `已导入 ${file.name}。${imported.warnings.join("；")}`
+          : `已导入 ${file.name}`
+      )
     } catch (error) {
       showStatus(error instanceof Error ? error.message : "导入失败")
     } finally {
@@ -116,13 +148,21 @@ export function Studio() {
     exportAbort.current?.abort()
   }
 
+  const persistIdentity = (identified: Deck) => {
+    setDeck((current) => {
+      if (current.anki?.modelId && current.anki.deckId) return current
+      return { ...current, anki: identified.anki }
+    })
+  }
+
   const onExportApkg = () => {
     if (exportAbort.current) {
       showStatus("正在导出，请稍候或取消后重试")
       return
     }
 
-    const snapshot = JSON.parse(serializeDeck(deck)) as Deck
+    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(deck)) as Deck)
+    persistIdentity(snapshot)
     const controller = new AbortController()
     exportAbort.current = controller
     setExporting(true)
@@ -155,6 +195,72 @@ export function Studio() {
       }
     })()
   }
+
+  const onPushAnki = () => {
+    if (exportAbort.current) {
+      showStatus("正在导出，请稍候或取消后重试")
+      return
+    }
+
+    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(deck)) as Deck)
+    const plan = planAnkiPush(snapshot)
+    if (!hasAnkiPush(plan)) {
+      showStatus("没有需要推送的变更")
+      return
+    }
+
+    persistIdentity(snapshot)
+    const controller = new AbortController()
+    exportAbort.current = controller
+    setExporting(true)
+    setExportProgress(null)
+
+    void (async () => {
+      try {
+        const jobs = await listTtsJobs(snapshot, plan.cards)
+        if (jobs.length > 0) {
+          const minutes = Math.max(1, Math.ceil((jobs.length * 1.5) / 60))
+          showStatus(`将生成 ${jobs.length} 条语音，大约 ${minutes} 分钟，可继续编辑，不要关闭标签页`)
+        } else if (plan.cards.length > 0) {
+          showStatus(`将推送 ${plan.cards.length} 张卡片到 Anki`)
+        } else {
+          showStatus("将更新 Anki 模板")
+        }
+        const blob = await exportApkg(snapshot, {
+          cards: plan.cards,
+          signal: controller.signal,
+          onProgress: (done, total) => setExportProgress({ done, total }),
+        })
+        if (controller.signal.aborted) return
+        const filename = safeFilename(`${snapshot.name}-增量`, "apkg")
+        const result = await shareOrDownload(blob, filename)
+        setDeck((current) =>
+          markNotesPushed(current, {
+            noteHashes: plan.noteHashes,
+            templateHash: plan.templateHash,
+            anki: snapshot.anki!,
+          })
+        )
+        showStatus(
+          result === "shared"
+            ? "已分享增量卡包，用 Anki 打开即可更新"
+            : "已下载增量卡包，发给 Anki 导入即可"
+        )
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+          showStatus("已取消推送")
+        } else {
+          showStatus(error instanceof Error ? error.message : "推送失败")
+        }
+      } finally {
+        if (exportAbort.current === controller) exportAbort.current = null
+        setExporting(false)
+        setExportProgress(null)
+      }
+    })()
+  }
+
+  const pushPlan = planAnkiPush(deck)
 
   return (
     <div className="flex min-h-[100dvh] min-w-0 flex-col overflow-x-clip bg-[#f4f1ea] text-foreground">
@@ -200,9 +306,14 @@ export function Studio() {
                   : "取消导出"}
               </Button>
             ) : (
-              <Button type="button" disabled={busy} onClick={onExportApkg}>
-                {Object.keys(ttsOf(deck)).length > 0 ? "导出 APKG（含语音）" : "导出 APKG"}
-              </Button>
+              <>
+                <Button type="button" variant="outline" disabled={busy} onClick={onExportApkg}>
+                  {Object.keys(ttsOf(deck)).length > 0 ? "导出 APKG（含语音）" : "导出 APKG"}
+                </Button>
+                <Button type="button" disabled={busy} onClick={onPushAnki}>
+                  {pushButtonLabel(pushPlan)}
+                </Button>
+              </>
             )}
           </div>
         </div>

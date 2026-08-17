@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
 
 import { formatCardContext, requestTemplateAi, type TemplateAiTarget } from "@/lib/ai"
 import {
@@ -42,8 +42,20 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CardPreview } from "@/components/card-preview"
 import { CodeEditor, type CodeEditorHandle } from "@/components/code-editor"
+import { takeCommittedDraft } from "@/lib/committed-draft"
 
 type Pane = "front" | "back" | "css"
+
+function useCommittedDraft(value: string): [string, Dispatch<SetStateAction<string>>] {
+  const [draft, setDraft] = useState(value)
+  const [prev, setPrev] = useState(value)
+  const synced = takeCommittedDraft(value, prev, draft)
+  if (synced.previous !== prev || synced.value !== draft) {
+    setPrev(synced.previous)
+    setDraft(synced.value)
+  }
+  return [draft, setDraft]
+}
 
 function FieldChip({
   name,
@@ -64,7 +76,7 @@ function FieldChip({
   onInsert: () => void
   onWrap: () => void
 }) {
-  const [draft, setDraft] = useState(name)
+  const [draft, setDraft] = useCommittedDraft(name)
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-1 rounded-xl bg-white/80 py-1.5 pr-1 pl-2 ring-1 ring-black/6">
@@ -140,7 +152,7 @@ function TtsFieldChip({
   onInsert: () => void
   onWrap: () => void
 }) {
-  const [draft, setDraft] = useState(name)
+  const [draft, setDraft] = useCommittedDraft(name)
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-1 rounded-xl bg-white/80 py-1.5 pr-1 pl-2 ring-1 ring-black/6">

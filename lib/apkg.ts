@@ -2,6 +2,7 @@ import JSZip from "jszip"
 import type { Database, SqlJsStatic } from "sql.js"
 
 import { csvToDeck } from "./csv"
+import { noteHash, templateHash } from "./anki-sync"
 import {
   createCard,
   decodeTtsMeta,
@@ -9,6 +10,7 @@ import {
   encodeTtsMeta,
   parseDeckJson,
   ttsOf,
+  type Card,
   type Deck,
 } from "./deck"
 import { cacheSet, getTtsClip, listTtsJobs, parseTtsFilename, resolveTtsFieldValue } from "./tts"
@@ -89,12 +91,19 @@ CREATE INDEX ix_notes_csum on notes (csum);
 `
 
 let sqlPromise: Promise<SqlJsStatic> | null = null
+let sqlWasmPath = "/sql-wasm.wasm"
+
+export function setSqlWasmPath(path: string) {
+  sqlWasmPath = path
+  sqlPromise = null
+}
 
 async function loadSql(): Promise<SqlJsStatic> {
   if (!sqlPromise) {
+    const wasmPath = sqlWasmPath
     sqlPromise = import("sql.js").then((mod) => {
       const initSqlJs = mod.default
-      return initSqlJs({ locateFile: () => "/sql-wasm.wasm" })
+      return initSqlJs({ locateFile: () => wasmPath })
     })
   }
   return sqlPromise
@@ -155,11 +164,13 @@ function asDecks(raw: string): Record<string, AnkiDeck> {
 export async function exportApkg(
   deck: Deck,
   options?: {
+    cards?: Card[]
     onProgress?: (done: number, total: number) => void
     signal?: AbortSignal
   }
 ): Promise<Blob> {
-  const jobs = await listTtsJobs(deck)
+  const cards = options?.cards ?? deck.cards
+  const jobs = await listTtsJobs(deck, cards)
   const mediaFiles = new Map<string, Uint8Array>()
   const media: Record<string, string> = {}
   for (let i = 0; i < jobs.length; i += 1) {
@@ -181,8 +192,8 @@ export async function exportApkg(
 
   const now = Date.now()
   const nowSec = Math.floor(now / 1000)
-  const modelId = now
-  const deckId = now + 1
+  const modelId = deck.anki?.modelId && deck.anki.modelId > 0 ? deck.anki.modelId : now
+  const deckId = deck.anki?.deckId && deck.anki.deckId > 0 ? deck.anki.deckId : now + 1
   const modelName = `${deck.name} 模板`
   const fieldTts = ttsOf(deck)
 
@@ -352,8 +363,8 @@ export async function exportApkg(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
-  for (let i = 0; i < deck.cards.length; i += 1) {
-    const card = deck.cards[i]
+  for (let i = 0; i < cards.length; i += 1) {
+    const card = cards[i]
     const noteId = now + 10 + i * 2
     const cardId = noteId + 1
     const fieldValues = await Promise.all(
@@ -369,7 +380,7 @@ export async function exportApkg(
 
     insertNote.run([
       noteId,
-      guid(),
+      card.guid || guid(),
       modelId,
       nowSec,
       -1,
@@ -431,14 +442,45 @@ function pickModel(
   return withNotes[0] ?? entries.find((model) => model.type !== 1) ?? entries[0]
 }
 
-function pickDeckName(decks: Record<string, AnkiDeck>): string {
-  const named = Object.values(decks).filter(
+function pickNamedDeck(decks: Record<string, AnkiDeck>): AnkiDeck | undefined {
+  return Object.values(decks).find(
     (deck) => deck && deck.dyn !== 1 && deck.name && deck.name !== "Default"
   )
-  return named[0]?.name ?? "导入卡包"
 }
 
-export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
+export type ImportResult = {
+  deck: Deck
+  warnings: string[]
+}
+
+export function apkgImportWarnings(input: {
+  modelCount: number
+  chosenModelName: string
+  templateCount: number
+  chosenTemplateName: string
+  otherNotes: number
+  namedDeckCount: number
+  chosenDeckName: string
+}): string[] {
+  const warnings: string[] = []
+  if (input.modelCount > 1) {
+    warnings.push(`卡包有 ${input.modelCount} 个笔记模板，只导入了「${input.chosenModelName}」`)
+  }
+  if (input.templateCount > 1) {
+    warnings.push(
+      `「${input.chosenModelName}」有 ${input.templateCount} 张卡模板，只用了「${input.chosenTemplateName}」`
+    )
+  }
+  if (input.otherNotes > 0) {
+    warnings.push(`另有 ${input.otherNotes} 张卡片属于其他模板，未导入`)
+  }
+  if (input.namedDeckCount > 1) {
+    warnings.push(`卡包有 ${input.namedDeckCount} 个牌组，名称使用了「${input.chosenDeckName}」`)
+  }
+  return warnings
+}
+
+export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
   const zip = await JSZip.loadAsync(buffer)
   const colFile = zip.file("collection.anki2") ?? zip.file("collection.anki21")
   if (!colFile) {
@@ -458,7 +500,7 @@ export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
   const models = asModels(String(col[0].values[0][0]))
   const decks = asDecks(String(col[0].values[0][1]))
 
-  const notes = db.exec("SELECT mid, flds FROM notes")
+  const notes = db.exec("SELECT mid, flds, guid FROM notes")
   const noteRows = notes[0]?.values ?? []
   const noteCounts = new Map<string, number>()
   for (const row of noteRows) {
@@ -483,18 +525,34 @@ export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
   )
   const fieldTts = ttsOf({ fields, fieldTts: importedTts })
 
-  const tmpl = [...(model.tmpls ?? [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))[0]
+  const sortedTmpls = [...(model.tmpls ?? [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+  const tmpl = sortedTmpls[0]
   const mid = String(model.id)
-  const cards = noteRows
-    .filter((row) => String(row[0]) === mid)
-    .map((row) => {
-      const parts = String(row[1] ?? "").split(FIELD_SEP)
-      const values: Record<string, string> = {}
-      fields.forEach((field, index) => {
-        values[field] = fieldTts[field] ? "" : (parts[index] ?? "")
-      })
-      return createCard(fields, values)
+  const modelEntries = Object.values(models).filter((item) => item && Array.isArray(item.flds))
+  const namedDecks = Object.values(decks).filter(
+    (item) => item && item.dyn !== 1 && item.name && item.name !== "Default"
+  )
+  const importedRows = noteRows.filter((row) => String(row[0]) === mid)
+  const cards = importedRows.map((row) => {
+    const parts = String(row[1] ?? "").split(FIELD_SEP)
+    const values: Record<string, string> = {}
+    fields.forEach((field, index) => {
+      values[field] = fieldTts[field] ? "" : (parts[index] ?? "")
     })
+    const guid = typeof row[2] === "string" && row[2].trim() ? row[2].trim() : undefined
+    return { ...createCard(fields, values), ...(guid ? { guid } : {}) }
+  })
+  const namedDeck = pickNamedDeck(decks)
+  const deckName = namedDeck?.name ?? "导入卡包"
+  const warnings = apkgImportWarnings({
+    modelCount: modelEntries.length,
+    chosenModelName: model.name?.trim() || "未命名模板",
+    templateCount: sortedTmpls.length,
+    chosenTemplateName: tmpl?.name?.trim() || "Card 1",
+    otherNotes: noteRows.length - importedRows.length,
+    namedDeckCount: namedDecks.length,
+    chosenDeckName: deckName,
+  })
 
   db.close()
 
@@ -516,9 +574,9 @@ export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
     }
   }
 
-  return {
+  const importedDeck: Deck = {
     version: 1,
-    name: pickDeckName(decks),
+    name: deckName,
     fields,
     fieldNotes: Object.fromEntries(fields.map((field) => [field, ""])),
     fieldTts,
@@ -527,18 +585,36 @@ export async function importApkg(buffer: ArrayBuffer): Promise<Deck> {
     css: model.css ?? "",
     cards: dedupeCardsByFirstField(cards, fields),
   }
+  const modelId = typeof model.id === "number" && model.id > 0 ? model.id : Date.now()
+  const deckId = typeof namedDeck?.id === "number" && namedDeck.id > 0 ? namedDeck.id : Date.now() + 1
+
+  return {
+    deck: {
+      ...importedDeck,
+      anki: {
+        modelId,
+        deckId,
+        pushedTemplateHash: templateHash(importedDeck),
+      },
+      cards: importedDeck.cards.map((card) => ({
+        ...card,
+        pushedHash: noteHash(importedDeck, card),
+      })),
+    },
+    warnings,
+  }
 }
 
-export async function importDeckFile(file: File, current: Deck): Promise<Deck> {
+export async function importDeckFile(file: File, current: Deck): Promise<ImportResult> {
   const name = file.name.toLowerCase()
   if (name.endsWith(".json")) {
-    return parseDeckJson(await file.text())
+    return { deck: parseDeckJson(await file.text()), warnings: [] }
   }
   if (name.endsWith(".csv")) {
-    return csvToDeck(await file.text(), current)
+    return { deck: csvToDeck(await file.text(), current), warnings: [] }
   }
   if (name.endsWith(".apkg") || name.endsWith(".colpkg")) {
     return importApkg(await file.arrayBuffer())
   }
-  throw new Error("只支持 .json、.csv 或 .apkg")
+  throw new Error("只支持 .json、.csv、.apkg 或 .colpkg")
 }

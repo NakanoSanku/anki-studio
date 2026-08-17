@@ -1,4 +1,5 @@
 import { templateUsesField, ttsOf, type Deck, type TtsField, type TtsLang } from "./deck"
+import { RateGate } from "./rate-gate"
 
 export const TTS_GAP_MS = 1500
 const MAX_CHUNK = 180
@@ -113,33 +114,7 @@ export async function cacheSet(id: string, data: ArrayBuffer | Blob): Promise<Bl
   return blob
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
-}
-
-class TtsGate {
-  private nextAt = 0
-  private tail = Promise.resolve()
-
-  enqueue<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.tail.then(async () => {
-      const wait = this.nextAt - Date.now()
-      if (wait > 0) await sleep(wait)
-      try {
-        return await work()
-      } finally {
-        this.nextAt = Date.now() + TTS_GAP_MS
-      }
-    })
-    this.tail = run.then(
-      () => undefined,
-      () => undefined
-    )
-    return run
-  }
-}
-
-const gate = new TtsGate()
+const gate = new RateGate(TTS_GAP_MS)
 
 async function fetchTtsChunk(text: string, lang: TtsLang, slow: boolean, signal?: AbortSignal): Promise<ArrayBuffer> {
   const response = await fetch("/api/tts", {
@@ -223,10 +198,10 @@ export type TtsJob = {
   slow: boolean
 }
 
-export async function listTtsJobs(deck: Deck): Promise<TtsJob[]> {
+export async function listTtsJobs(deck: Deck, cards: Deck["cards"] = deck.cards): Promise<TtsJob[]> {
   const seen = new Set<string>()
   const jobs: TtsJob[] = []
-  for (const card of deck.cards) {
+  for (const card of cards) {
     for (const tts of Object.values(ttsOf(deck))) {
       const text = normalizeTtsText(card.values[tts.source] ?? "")
       if (!text) continue

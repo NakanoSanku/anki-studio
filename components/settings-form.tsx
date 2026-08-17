@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import {
   DEFAULT_AI_SETTINGS,
@@ -16,14 +16,10 @@ import { Label } from "@/components/ui/label"
 import { PromptEditor } from "@/components/prompt-editor"
 
 export function SettingsForm() {
-  const [settings, setSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS)
+  const [settings, setSettings] = useState<AiSettings>(readAiSettings)
   const [models, setModels] = useState<string[]>([])
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    setSettings(readAiSettings())
-  }, [])
 
   const patch = (partial: Partial<AiSettings>) => {
     setSettings((current) => ({ ...current, ...partial }))

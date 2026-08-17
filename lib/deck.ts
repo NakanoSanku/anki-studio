@@ -1,6 +1,14 @@
 export type Card = {
   id: string
+  guid: string
   values: Record<string, string>
+  pushedHash?: string
+}
+
+export type AnkiIdentity = {
+  modelId: number
+  deckId: number
+  pushedTemplateHash?: string
 }
 
 export type TtsLang = "en" | "th"
@@ -21,6 +29,7 @@ export type Deck = {
   back: string
   css: string
   cards: Card[]
+  anki?: AnkiIdentity
 }
 
 export const TTS_LANGS: { id: TtsLang; label: string }[] = [
@@ -211,6 +220,13 @@ export function createCardId(): string {
   return `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+export function createNoteGuid(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID().replaceAll("-", "").slice(0, 10)
+  }
+  return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 10)
+}
+
 export function emptyValues(fields: string[]): Record<string, string> {
   return Object.fromEntries(fields.map((field) => [field, ""]))
 }
@@ -218,6 +234,7 @@ export function emptyValues(fields: string[]): Record<string, string> {
 export function createCard(fields: string[], values: Record<string, string> = {}): Card {
   return {
     id: createCardId(),
+    guid: createNoteGuid(),
     values: { ...emptyValues(fields), ...values },
   }
 }
@@ -316,6 +333,8 @@ export function parseDeckJson(raw: string): Deck {
     }
     return {
       id: typeof item.id === "string" && item.id ? item.id : createCardId(),
+      guid: typeof item.guid === "string" && item.guid.trim() ? item.guid.trim() : createNoteGuid(),
+      pushedHash: typeof item.pushedHash === "string" && item.pushedHash ? item.pushedHash : undefined,
       values,
     }
   })
@@ -348,6 +367,24 @@ export function parseDeckJson(raw: string): Deck {
     back: data.back,
     css: data.css,
     cards: dedupeCardsByFirstField(cards, fields),
+    anki: parseAnkiIdentity(data.anki),
+  }
+}
+
+function parseAnkiIdentity(raw: unknown): AnkiIdentity | undefined {
+  if (!isRecord(raw)) return undefined
+  const modelId = Number(raw.modelId)
+  const deckId = Number(raw.deckId)
+  if (!Number.isFinite(modelId) || !Number.isFinite(deckId) || modelId <= 0 || deckId <= 0) {
+    return undefined
+  }
+  return {
+    modelId,
+    deckId,
+    pushedTemplateHash:
+      typeof raw.pushedTemplateHash === "string" && raw.pushedTemplateHash
+        ? raw.pushedTemplateHash
+        : undefined,
   }
 }
 
@@ -379,10 +416,6 @@ export type FieldChangeResult =
 
 export function templateUsesField(template: string, name: string): boolean {
   return new RegExp(`\\{\\{[#/^]?${escapeRegExp(name)}\\}\\}`).test(template)
-}
-
-export function fieldUsedInTemplates(deck: Deck, name: string): boolean {
-  return templateUsesField(deck.front, name) || templateUsesField(deck.back, name)
 }
 
 export function tryRenameField(deck: Deck, from: string, to: string): FieldChangeResult {
@@ -612,8 +645,10 @@ export function dedupeCardsByFirstField(cards: Card[], fields: string[]): Card[]
   const result: Card[] = []
   for (const card of cards) {
     const key = cardKeyValue(card, fields)
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (key) {
+      if (seen.has(key)) continue
+      seen.add(key)
+    }
     result.push(card)
   }
   return result

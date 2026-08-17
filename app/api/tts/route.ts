@@ -1,4 +1,5 @@
 import type { TtsLang } from "@/lib/deck"
+import { RateGate } from "@/lib/rate-gate"
 
 export const dynamic = "force-dynamic"
 
@@ -7,26 +8,10 @@ const MIN_GAP_MS = 400
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
-const lastAt = new Map<string, number>()
-let lastGlobal = 0
-
-function clientKey(request: Request): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local"
-}
+const gate = new RateGate(MIN_GAP_MS)
 
 function isLang(value: unknown): value is TtsLang {
   return value === "en" || value === "th"
-}
-
-async function waitTurn(key: string) {
-  const now = Date.now()
-  const wait = Math.max(0, lastGlobal + MIN_GAP_MS - now, (lastAt.get(key) ?? 0) + MIN_GAP_MS - now)
-  if (wait > 0) {
-    await new Promise<void>((resolve) => setTimeout(resolve, wait))
-  }
-  const stamp = Date.now()
-  lastGlobal = stamp
-  lastAt.set(key, stamp)
 }
 
 async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<ArrayBuffer> {
@@ -67,13 +52,13 @@ export async function POST(request: Request) {
   }
 
   const text = typeof body.text === "string" ? body.text.trim() : ""
+  const lang = body.lang
   if (!text) return Response.json({ error: "没有可朗读的文本" }, { status: 400 })
   if (text.length > MAX_TEXT) return Response.json({ error: "单段文本过长" }, { status: 400 })
-  if (!isLang(body.lang)) return Response.json({ error: "只支持英语和泰语" }, { status: 400 })
+  if (!isLang(lang)) return Response.json({ error: "只支持英语和泰语" }, { status: 400 })
 
   try {
-    await waitTurn(clientKey(request))
-    const audio = await fetchGoogle(text, body.lang, Boolean(body.slow))
+    const audio = await gate.enqueue(() => fetchGoogle(text, lang, Boolean(body.slow)))
     return new Response(audio, {
       headers: {
         "Content-Type": "audio/mpeg",
