@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 
 import { parseJsonPayload, pickCardList, pickFieldValues, readChatText } from "./ai-compat"
-import { parseAiSettings } from "./ai-settings"
 
 describe("parseJsonPayload", () => {
   it("reads fenced and embedded JSON", () => {
@@ -46,10 +45,3 @@ describe("readChatText", () => {
   })
 })
 
-describe("parseAiSettings transport", () => {
-  it("defaults missing transport to auto", () => {
-    expect(parseAiSettings({ baseURL: "https://relay.example/v1" }).transport).toBe("auto")
-    expect(parseAiSettings({ transport: "browser" }).transport).toBe("browser")
-    expect(parseAiSettings({ transport: "nope" }).transport).toBe("auto")
-  })
-})

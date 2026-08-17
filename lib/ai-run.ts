@@ -224,8 +224,4 @@ export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiRe
   }
 }
 
-export function aiRouteError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback
-  const status = error instanceof AiRequestError ? 400 : 502
-  return Response.json({ error: message }, { status })
-}
+

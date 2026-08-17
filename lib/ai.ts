@@ -1,51 +1,6 @@
 import { readAiSettings, type AiSettings } from "./ai-settings"
-import { describeUpstreamError, runWithTransport } from "./ai-upstream"
+import { withBrowserCorsHint } from "./ai-upstream"
 import type { TtsField } from "./deck"
-
-async function postAi<T>(
-  url: string,
-  body: unknown,
-  pick: (data: Record<string, unknown>) => T | undefined,
-  fallback: string
-): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  })
-  const raw = await response.text()
-  let data: Record<string, unknown> = {}
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        data = parsed as Record<string, unknown>
-      }
-    } catch {
-      throw new Error(
-        describeUpstreamError({
-          status: response.status,
-          body: raw,
-          cfRay: response.headers.get("cf-ray"),
-        })
-      )
-    }
-  }
-  const value = pick(data)
-  if (!response.ok || value === undefined) {
-    throw new Error(typeof data.error === "string" && data.error ? data.error : fallback)
-  }
-  return value
-}
-
-async function viaTransport<T>(
-  settings: AiSettings,
-  serverCall: () => Promise<T>,
-  browserCall: () => Promise<T>
-): Promise<T> {
-  const { value } = await runWithTransport(settings, serverCall, browserCall)
-  return value
-}
 
 export type AiAction = "complete" | "rewrite"
 
@@ -111,17 +66,7 @@ export function formatTemplateFields(fields: string[], fieldTts: Record<string, 
 
 export async function requestFieldAi(input: FieldAiInput): Promise<string> {
   const payload = withSettings(input)
-  return viaTransport(
-    payload.settings,
-    () =>
-      postAi(
-        "/api/ai/field",
-        payload,
-        (data) => (typeof data.text === "string" ? data.text : undefined),
-        "字段生成失败"
-      ),
-    async () => (await import("./ai-run")).runFieldAi(payload)
-  )
+  return withBrowserCorsHint(async () => (await import("./ai-run")).runFieldAi(payload))
 }
 
 export type BatchAiInput = {
@@ -135,35 +80,12 @@ export type BatchAiInput = {
 
 export async function requestBatchAi(input: BatchAiInput): Promise<Record<string, string>[]> {
   const payload = withSettings(input)
-  return viaTransport(
-    payload.settings,
-    () =>
-      postAi(
-        "/api/ai/batch",
-        payload,
-        (data) => (Array.isArray(data.cards) ? (data.cards as Record<string, string>[]) : undefined),
-        "批量生成失败"
-      ),
-    async () => (await import("./ai-run")).runBatchAi(payload)
-  )
+  return withBrowserCorsHint(async () => (await import("./ai-run")).runBatchAi(payload))
 }
 
 export async function requestCardAi(input: CardAiInput): Promise<Record<string, string>> {
   const payload = withSettings(input)
-  return viaTransport(
-    payload.settings,
-    () =>
-      postAi(
-        "/api/ai/card",
-        payload,
-        (data) =>
-          data.values && typeof data.values === "object"
-            ? (data.values as Record<string, string>)
-            : undefined,
-        "卡片生成失败"
-      ),
-    async () => (await import("./ai-run")).runCardAi(payload)
-  )
+  return withBrowserCorsHint(async () => (await import("./ai-run")).runCardAi(payload))
 }
 
 export type TemplateAiTarget = "current" | "html" | "all"
@@ -190,18 +112,5 @@ export type TemplateAiResult = {
 
 export async function requestTemplateAi(input: TemplateAiInput): Promise<TemplateAiResult> {
   const payload = withSettings(input)
-  return viaTransport(
-    payload.settings,
-    () =>
-      postAi(
-        "/api/ai/template",
-        payload,
-        (data) =>
-          typeof data.front === "string" && typeof data.back === "string" && typeof data.css === "string"
-            ? { front: data.front, back: data.back, css: data.css }
-            : undefined,
-        "模板生成失败"
-      ),
-    async () => (await import("./ai-run")).runTemplateAi(payload)
-  )
+  return withBrowserCorsHint(async () => (await import("./ai-run")).runTemplateAi(payload))
 }
