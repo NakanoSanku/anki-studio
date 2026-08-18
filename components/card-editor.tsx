@@ -2,8 +2,19 @@
 
 import { useEffect, useRef, useState } from "react"
 
-import { requestBatchAi, requestCardAi, requestFieldAi, type AiAction } from "@/lib/ai"
+import { requestAuditAi, requestBatchAi, requestCardAi, requestFieldAi, type AiAction } from "@/lib/ai"
+import {
+  applyAuditResults,
+  AUDIT_CHUNK_SIZE,
+  AUDIT_MAX_COUNT,
+  chunkItems,
+  readAuditInstruction,
+  selectAuditTargets,
+  writeAuditInstruction,
+  type AuditScope,
+} from "@/lib/audit"
 import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
+import { isAbortError } from "@/lib/ai-upstream"
 import {
   cardLabel,
   cardMatchesQuery,
@@ -78,6 +89,22 @@ const FILTERS: { id: ReviewFilter; label: string }[] = [
   { id: "flagged", label: "标记" },
 ]
 
+const AUDIT_SCOPES: { id: AuditScope; label: string }[] = [
+  { id: "unreviewed", label: "未审" },
+  { id: "flagged", label: "标记" },
+  { id: "visible", label: "当前筛选" },
+  { id: "all", label: "全部" },
+]
+
+type AuditProgress = {
+  done: number
+  total: number
+  written: number
+  skipped: number
+  status: "running" | "done" | "stopped" | "error"
+  message: string
+}
+
 function readMode(): EditMode {
   if (typeof window === "undefined") return "form"
   return window.localStorage.getItem(MODE_KEY) === "table" ? "table" : "form"
@@ -113,6 +140,12 @@ export function CardEditor({
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
   const [batchCount, setBatchCount] = useState("10")
+  const [auditOpen, setAuditOpen] = useState(false)
+  const [auditInstruction, setAuditInstruction] = useState(readAuditInstruction)
+  const [auditScope, setAuditScope] = useState<AuditScope>("unreviewed")
+  const [auditCount, setAuditCount] = useState("20")
+  const [auditProgress, setAuditProgress] = useState<AuditProgress | null>(null)
+  const auditAbort = useRef<AbortController | null>(null)
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<ReviewFilter>("all")
   const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
@@ -247,7 +280,7 @@ export function CardEditor({
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.altKey || event.metaKey || event.ctrlKey) return
       if (event.isComposing) return
-      if (batchOpen || alert) return
+      if (batchOpen || auditOpen || alert) return
       const repeating = event.repeat && (event.key === "n" || event.key === "N" || event.key === "m" || event.key === "M")
       if (repeating) return
       switch (event.key) {
@@ -283,7 +316,7 @@ export function CardEditor({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [alert, batchOpen])
+  }, [alert, auditOpen, batchOpen])
 
   const updateCard = (id: string, field: string, value: string) => {
     if (fieldTts[field]) return false
@@ -385,6 +418,120 @@ export function CardEditor({
     })
   }
 
+  const openAudit = () => {
+    setAuditInstruction(readAuditInstruction())
+    setAuditProgress(null)
+    setAuditOpen(true)
+  }
+
+  const stopAudit = () => {
+    auditAbort.current?.abort()
+  }
+
+  const applyAuditAi = () => {
+    const instruction = auditInstruction.trim()
+    if (!instruction) {
+      setAlert("请填写审核说明")
+      return
+    }
+    if (instruction.length > 4000) {
+      setAlert("审核说明过长")
+      return
+    }
+    const count = Number(auditCount)
+    if (!Number.isFinite(count) || count < 1 || count > AUDIT_MAX_COUNT) {
+      setAlert(`本次数需要在 1 到 ${AUDIT_MAX_COUNT} 之间`)
+      return
+    }
+    const current = deckRef.current
+    const fields = textFields(current)
+    const notes = notesOf(current)
+    const targets = selectAuditTargets(current.cards, current.fields, {
+      scope: auditScope,
+      visibleIds: visibleRef.current.map((card) => card.id),
+      review,
+      limit: Math.floor(count),
+    })
+    if (targets.length === 0) {
+      setAlert("这个范围内没有可审核的卡片")
+      return
+    }
+    writeAuditInstruction(instruction)
+    if (busyRef.current.has("audit")) return
+    busyRef.current.add("audit")
+    setBusyKeys([...busyRef.current])
+    const controller = new AbortController()
+    auditAbort.current = controller
+    let written = 0
+    let skipped = 0
+    let done = 0
+    const total = targets.length
+    setAuditProgress({ done, total, written, skipped, status: "running", message: "审核中" })
+
+    void (async () => {
+      try {
+        for (const chunk of chunkItems(targets, AUDIT_CHUNK_SIZE)) {
+          if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError")
+          const snapshot = deckRef.current
+          const latest = chunk.map((card) => snapshot.cards.find((item) => item.id === card.id) ?? card)
+          const results = await requestAuditAi({
+            instruction,
+            cards: latest,
+            fields,
+            notes,
+            signal: controller.signal,
+          })
+          const applied = applyAuditResults(snapshot, latest, results)
+          if (applied.deck !== snapshot) pushDeck(applied.deck)
+          const reviewedIds = [...applied.applied, ...applied.unchanged]
+          if (reviewedIds.length > 0) {
+            setReview((state) => reviewedIds.reduce((next, id) => markReviewed(next, id), state))
+            const last = reviewedIds[reviewedIds.length - 1]
+            if (last) onSelect(last)
+          }
+          written += applied.applied.length
+          skipped += applied.skipped.length
+          done += chunk.length
+          setAuditProgress({ done, total, written, skipped, status: "running", message: "审核中" })
+        }
+        setAuditProgress({
+          done: total,
+          total,
+          written,
+          skipped,
+          status: "done",
+          message: `完成，写入 ${written} 张${skipped > 0 ? `，跳过 ${skipped}` : ""}`,
+        })
+      } catch (error) {
+        if (isAbortError(error)) {
+          setAuditProgress({
+            done,
+            total,
+            written,
+            skipped,
+            status: "stopped",
+            message: `已停止，写入 ${written} 张`,
+          })
+          return
+        }
+        const message = error instanceof Error ? error.message : "审核失败"
+        setAuditProgress({
+          done,
+          total,
+          written,
+          skipped,
+          status: "error",
+          message: `已写入 ${written} 张。${message}`,
+        })
+        setAlert(message)
+      } finally {
+        busyRef.current.delete("audit")
+        setBusyKeys([...busyRef.current])
+        if (auditAbort.current === controller) auditAbort.current = null
+      }
+    })()
+  }
+
   const removeCard = (id: string) => {
     const current = deckRef.current
     const nextId = idAfterDelete(current.cards, id)
@@ -460,6 +607,16 @@ export function CardEditor({
           </Button>
           <Button type="button" size="sm" data-testid="insert-after-card" title="在当前卡片后插入（Alt+N）" onClick={addCard}>
             在后面插入
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="audit-cards"
+            disabled={isBusy("audit")}
+            onClick={openAudit}
+          >
+            {isBusy("audit") ? "审核中" : "批量审核"}
           </Button>
           {mode === "form" ? (
             <Button type="button" size="sm" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
@@ -571,6 +728,91 @@ export function CardEditor({
           </Button>
           <Button type="button" disabled={isBusy("batch")} onClick={applyBatchAi}>
             {isBusy("batch") ? "生成中" : "生成"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const auditRunning = isBusy("audit")
+  const auditDialog = (
+    <Dialog
+      open={auditOpen}
+      onOpenChange={(open) => {
+        if (!open && auditRunning) stopAudit()
+        setAuditOpen(open)
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>批量审核卡片</DialogTitle>
+          <DialogDescription>
+            按你的审核说明让 AI 重写卡片。已写入的不会回滚，可随时停止。包装提示词在设置里改。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="audit-instruction">审核说明</Label>
+            <Textarea
+              id="audit-instruction"
+              value={auditInstruction}
+              placeholder="例如：例句必须包含该单词；中文释义要简洁"
+              className="min-h-32"
+              disabled={auditRunning}
+              onChange={(event) => setAuditInstruction(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>范围</Label>
+            <div className="flex flex-wrap gap-1">
+              {AUDIT_SCOPES.map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  size="sm"
+                  variant={auditScope === item.id ? "default" : "outline"}
+                  disabled={auditRunning}
+                  onClick={() => setAuditScope(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="audit-count">本次数量</Label>
+            <Input
+              id="audit-count"
+              type="number"
+              min={1}
+              max={AUDIT_MAX_COUNT}
+              value={auditCount}
+              disabled={auditRunning}
+              onChange={(event) => setAuditCount(event.target.value)}
+            />
+            <p className="text-xs text-foreground/45">一次最多 {AUDIT_MAX_COUNT} 张，每 {AUDIT_CHUNK_SIZE} 张请求一次模型。</p>
+          </div>
+          {auditProgress ? (
+            <p className="text-sm text-foreground/70" data-testid="audit-progress">
+              {auditProgress.message}
+              {auditProgress.status === "running"
+                ? ` ${auditProgress.done}/${auditProgress.total}，写入 ${auditProgress.written}`
+                : ""}
+            </p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          {auditRunning ? (
+            <Button type="button" variant="outline" onClick={stopAudit}>
+              停止
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => setAuditOpen(false)}>
+              关闭
+            </Button>
+          )}
+          <Button type="button" disabled={auditRunning} onClick={applyAuditAi}>
+            {auditRunning ? "审核中" : "开始审核"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -723,6 +965,7 @@ export function CardEditor({
         </div>
         {aiDialog}
         {batchDialog}
+        {auditDialog}
       </div>
     )
   }
@@ -875,6 +1118,7 @@ export function CardEditor({
       </div>
       {aiDialog}
       {batchDialog}
+      {auditDialog}
     </div>
   )
 }

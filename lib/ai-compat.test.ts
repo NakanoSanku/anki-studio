@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { parseJsonPayload, pickCardList, pickFieldValues, readChatText } from "./ai-compat"
+import { parseJsonPayload, pickAuditedCards, pickCardList, pickFieldValues, readChatText } from "./ai-compat"
 
 describe("parseJsonPayload", () => {
   it("reads fenced and embedded JSON", () => {
@@ -27,6 +27,25 @@ describe("pickCardList", () => {
   it("accepts a bare array or a cards wrapper", () => {
     expect(pickCardList([{ Word: "a" }, { Word: "b" }], ["Word"])).toEqual([{ Word: "a" }, { Word: "b" }])
     expect(pickCardList({ cards: [{ Word: "c" }] }, ["Word"])).toEqual([{ Word: "c" }])
+  })
+})
+
+describe("pickAuditedCards", () => {
+  it("keeps card ids alongside field values", () => {
+    expect(
+      pickAuditedCards(
+        {
+          cards: [
+            { id: "c1", Word: "alpha", Translation: "一" },
+            { id: 2, values: { Word: "beta" } },
+          ],
+        },
+        ["Word", "Translation"]
+      )
+    ).toEqual([
+      { id: "c1", values: { Word: "alpha", Translation: "一" } },
+      { id: "2", values: { Word: "beta", Translation: "" } },
+    ])
   })
 })
 

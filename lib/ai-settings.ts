@@ -8,6 +8,7 @@ export type AiSettings = {
   cardCompletePrompt: string
   cardRewritePrompt: string
   batchPrompt: string
+  cardAuditPrompt: string
   templateEditPrompt: string
 }
 
@@ -49,6 +50,21 @@ export const DEFAULT_BATCH_PROMPT = `请生成 {{count}} 张互不重复的单�
 不要使用这些已有单词：{{existing}}
 每张卡片的「{{key}}」必须不同。`
 
+export const DEFAULT_CARD_AUDIT_PROMPT = `请按审核说明检查并重写这些卡片。
+审核说明：
+{{instruction}}
+
+字段：{{fields}}
+字段备注：
+{{notes}}
+首字段「{{key}}」不要改，除非有明显拼写错误。
+
+卡片（必须原样返回每张的 id）：
+{{cards}}
+
+返回 JSON 对象，格式为 {"cards":[{"id":"...","字段名":"..."}]}。
+只改需要改的字段；合格的字段保持原样。不要编造 id。`
+
 export const DEFAULT_TEMPLATE_EDIT_PROMPT = `按用户说明修改 Anki 卡片模板。
 用户说明：
 {{instruction}}
@@ -88,6 +104,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   cardCompletePrompt: DEFAULT_CARD_COMPLETE_PROMPT,
   cardRewritePrompt: DEFAULT_CARD_REWRITE_PROMPT,
   batchPrompt: DEFAULT_BATCH_PROMPT,
+  cardAuditPrompt: DEFAULT_CARD_AUDIT_PROMPT,
   templateEditPrompt: DEFAULT_TEMPLATE_EDIT_PROMPT,
 }
 
@@ -111,6 +128,7 @@ export function parseAiSettings(raw: unknown): AiSettings {
     cardCompletePrompt: text(raw.cardCompletePrompt, DEFAULT_CARD_COMPLETE_PROMPT),
     cardRewritePrompt: text(raw.cardRewritePrompt, DEFAULT_CARD_REWRITE_PROMPT),
     batchPrompt: text(raw.batchPrompt, DEFAULT_BATCH_PROMPT),
+    cardAuditPrompt: text(raw.cardAuditPrompt, DEFAULT_CARD_AUDIT_PROMPT),
     templateEditPrompt: text(raw.templateEditPrompt, DEFAULT_TEMPLATE_EDIT_PROMPT),
   }
 }
@@ -180,6 +198,7 @@ export type PromptKey =
   | "cardCompletePrompt"
   | "cardRewritePrompt"
   | "batchPrompt"
+  | "cardAuditPrompt"
   | "templateEditPrompt"
 
 export type PromptVariable = {
@@ -253,6 +272,19 @@ export const PROMPT_SPECS: PromptSpec[] = [
       { id: "fields", label: "字段列表" },
       { id: "notes", label: "全部备注" },
       { id: "existing", label: "已有单词" },
+    ],
+  },
+  {
+    key: "cardAuditPrompt",
+    label: "批量审核",
+    hint: "卡片页按审核说明批量重写。说明填在弹窗里。",
+    vars: [
+      { id: "instruction", label: "审核说明" },
+      { id: "cards", label: "待审卡片" },
+      { id: "count", label: "本批数量" },
+      { id: "key", label: "关键字段" },
+      { id: "fields", label: "字段列表" },
+      { id: "notes", label: "全部备注" },
     ],
   },
   {

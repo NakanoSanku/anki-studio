@@ -1,6 +1,7 @@
 import { readAiSettings, type AiSettings } from "./ai-settings"
+import type { AuditCardResult } from "./audit"
 import { withBrowserCorsHint } from "./ai-upstream"
-import type { TtsField } from "./deck"
+import type { Card, TtsField } from "./deck"
 
 export type AiAction = "complete" | "rewrite"
 
@@ -81,6 +82,20 @@ export type BatchAiInput = {
 export async function requestBatchAi(input: BatchAiInput): Promise<Record<string, string>[]> {
   const payload = withSettings(input)
   return withBrowserCorsHint(async () => (await import("./ai-run")).runBatchAi(payload))
+}
+
+export type AuditAiInput = {
+  instruction: string
+  cards: Card[]
+  fields: string[]
+  notes?: Record<string, string>
+  settings?: AiSettings
+  signal?: AbortSignal
+}
+
+export async function requestAuditAi(input: AuditAiInput): Promise<AuditCardResult[]> {
+  const payload = withSettings(input)
+  return withBrowserCorsHint(async () => (await import("./ai-run")).runAuditAi(payload))
 }
 
 export async function requestCardAi(input: CardAiInput): Promise<Record<string, string>> {

@@ -22,10 +22,18 @@ export function isBrowserNetworkError(error: string): boolean {
   )
 }
 
+export function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const name = "name" in error ? String(error.name) : ""
+  const message = "message" in error ? String(error.message) : ""
+  return name === "AbortError" || /the user aborted|operation was aborted|signal is aborted/i.test(message)
+}
+
 export async function withBrowserCorsHint<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work()
   } catch (error) {
+    if (isAbortError(error)) throw error
     const message = error instanceof Error ? error.message : String(error)
     if (isBrowserNetworkError(message)) {
       throw new Error("浏览器直连失败（中转站未开启跨域）。在中转站打开 CORS / 允许跨域后重试。")

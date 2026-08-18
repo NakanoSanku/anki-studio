@@ -37,6 +37,7 @@ export function SettingsForm() {
     cardCompletePrompt: settings.cardCompletePrompt.trim(),
     cardRewritePrompt: settings.cardRewritePrompt.trim(),
     batchPrompt: settings.batchPrompt.trim(),
+    cardAuditPrompt: settings.cardAuditPrompt.trim(),
     templateEditPrompt: settings.templateEditPrompt.trim(),
   })
 

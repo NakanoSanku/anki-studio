@@ -5,6 +5,7 @@ export async function completeChat(input: {
   settings: unknown
   system?: string
   prompt: string
+  signal?: AbortSignal
 }): Promise<string> {
   const settings = parseAiSettings(input.settings)
   const invalid = validateAiSettings(settings)
@@ -31,6 +32,7 @@ export async function completeChat(input: {
       temperature: 0.7,
       messages,
     }),
+    signal: input.signal,
   })
   const body = await response.text()
   if (!response.ok) {
@@ -59,11 +61,17 @@ export async function completeJson(input: {
   settings: unknown
   system?: string
   prompt: string
+  signal?: AbortSignal
 }): Promise<unknown> {
   const system = [input.system?.trim(), "只返回 JSON 对象，不要 markdown，不要解释。"]
     .filter(Boolean)
     .join("\n")
-  const text = await completeChat({ settings: input.settings, system, prompt: input.prompt })
+  const text = await completeChat({
+    settings: input.settings,
+    system,
+    prompt: input.prompt,
+    signal: input.signal,
+  })
   const parsed = parseJsonPayload(text)
   if (parsed === undefined) throw new Error("AI 没有返回有效 JSON")
   return parsed
@@ -94,14 +102,31 @@ export function pickFieldValues(parsed: unknown, fields: string[]): Record<strin
 }
 
 export function pickCardList(parsed: unknown, fields: string[]): Record<string, string>[] {
-  const items = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(asRecord(parsed).cards)
-      ? (asRecord(parsed).cards as unknown[])
-      : []
-  return items
-    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
-    .map((item) => pickFieldValues(item, fields))
+  return jsonCardItems(parsed).map((item) => pickFieldValues(item, fields))
+}
+
+export function pickAuditedCards(
+  parsed: unknown,
+  fields: string[]
+): { id: string; values: Record<string, string> }[] {
+  return jsonCardItems(parsed).map((item) => {
+    const record = asRecord(item)
+    const nested = asRecord(record.values)
+    const id = readId(record.id) || readId(nested.id)
+    return { id, values: pickFieldValues(item, fields) }
+  })
+}
+
+function jsonCardItems(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed)) return parsed
+  const cards = asRecord(parsed).cards
+  return Array.isArray(cards) ? cards : []
+}
+
+function readId(value: unknown): string {
+  if (typeof value === "string" && value.trim()) return value.trim()
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  return ""
 }
 
 export function readChatText(payload: unknown): string {

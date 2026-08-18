@@ -5,13 +5,15 @@ import {
   formatFieldNotes,
   formatTemplateFields,
   formatTtsFields,
+  type AuditAiInput,
   type BatchAiInput,
   type CardAiInput,
   type FieldAiInput,
   type TemplateAiInput,
   type TemplateAiResult,
 } from "./ai"
-import { completeChat, completeJson, pickCardList, pickFieldValues } from "./ai-compat"
+import { completeChat, completeJson, pickAuditedCards, pickCardList, pickFieldValues } from "./ai-compat"
+import { AUDIT_CHUNK_SIZE, formatAuditCards, type AuditCardResult } from "./audit"
 import { parseAiSettings, renderPrompt } from "./ai-settings"
 
 export class AiRequestError extends Error {
@@ -155,6 +157,41 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
   const cards = pickCardList(parsed, fields)
   if (cards.length === 0) throw new Error("AI 没有返回卡片")
   return cards
+}
+
+export async function runAuditAi(body: AuditAiInput): Promise<AuditCardResult[]> {
+  const instruction = typeof body.instruction === "string" ? body.instruction.trim() : ""
+  if (!instruction) throw new AiRequestError("请填写审核说明")
+  if (instruction.length > 4000) throw new AiRequestError("审核说明过长")
+  const fields = requireFields(body.fields)
+  const cards = Array.isArray(body.cards) ? body.cards : []
+  if (cards.length === 0) throw new AiRequestError("没有可审核的卡片")
+  if (cards.length > AUDIT_CHUNK_SIZE) throw new AiRequestError("单次审核数量过多")
+
+  const settings = parseAiSettings(body.settings)
+  const notes = body.notes ?? {}
+  const prompt = renderPrompt(settings.cardAuditPrompt, {
+    instruction,
+    cards: formatAuditCards(cards, fields),
+    count: String(cards.length),
+    fields: fields.join("、"),
+    key: fields[0] ?? "",
+    field: fields[0] ?? "",
+    current: "",
+    context: formatFieldNotes(fields, notes),
+    note: notes[fields[0] ?? ""]?.trim() || "（无）",
+    notes: formatFieldNotes(fields, notes),
+  })
+
+  const parsed = await completeJson({
+    settings,
+    system: `${settings.systemPrompt}\n返回 JSON，cards 是对象数组，每项必须带 id，键还包括：${fields.join("、")}。`,
+    prompt,
+    signal: body.signal,
+  })
+  const output = pickAuditedCards(parsed, fields)
+  if (output.length === 0) throw new Error("AI 没有返回审核结果")
+  return output
 }
 
 export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiResult> {
