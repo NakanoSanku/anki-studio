@@ -1,6 +1,11 @@
 import { appendUniqueCards, createCard, textFields, type Deck } from "./deck"
 
-export function parseCsv(text: string): string[][] {
+export type CsvParseResult = {
+  rows: string[][]
+  unclosedQuote: boolean
+}
+
+export function parseCsvDetailed(text: string): CsvParseResult {
   const src = text.replace(/^\uFEFF/, "")
   const rows: string[][] = []
   let row: string[] = []
@@ -64,7 +69,11 @@ export function parseCsv(text: string): string[][] {
     pushRow()
   }
 
-  return rows
+  return { rows, unclosedQuote: inQuotes }
+}
+
+export function parseCsv(text: string): string[][] {
+  return parseCsvDetailed(text).rows
 }
 
 function escapeCsvField(value: string): string {

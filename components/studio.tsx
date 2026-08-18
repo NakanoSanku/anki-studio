@@ -5,12 +5,28 @@ import { useEffect, useRef, useState } from "react"
 import { hasAnkiPush, markNotesPushed, planAnkiPush, withAnkiIdentity, type AnkiPushPlan } from "@/lib/anki-sync"
 import { exportApkg, importDeckFile } from "@/lib/apkg"
 import { deckToCsv } from "@/lib/csv"
+import {
+  addLibraryDeck,
+  createLibraryDeck,
+  deleteLibraryDeck,
+  duplicateLibraryDeck,
+  loadLibrarySession,
+  persistActiveDeck,
+  switchLibraryDeck,
+  type Library,
+} from "@/lib/library"
+import {
+  applyTextImport,
+  defaultImportMode,
+  inspectImportFile,
+  isTextImportName,
+  type ImportMode,
+  type ImportPreview,
+} from "@/lib/import-preview"
 import { listTtsJobs } from "@/lib/tts"
 import {
-  readStoredDeck,
   safeFilename,
   serializeDeck,
-  STORAGE_KEY,
   ttsOf,
   type Deck,
 } from "@/lib/deck"
@@ -19,6 +35,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CardEditor } from "@/components/card-editor"
+import { DeckLibraryDialog } from "@/components/deck-library-dialog"
+import { ImportPreviewDialog } from "@/components/import-preview-dialog"
 import { SettingsForm } from "@/components/settings-form"
 import { TemplateEditor } from "@/components/template-editor"
 
@@ -67,21 +85,26 @@ async function shareOrDownload(blob: Blob, filename: string): Promise<"shared" |
 }
 
 export function Studio() {
-  const [deck, setDeck] = useState<Deck>(readStoredDeck)
+  const session = useState(loadLibrarySession)[0]
+  const [library, setLibrary] = useState<Library>(session.library)
+  const [deck, setDeck] = useState<Deck>(session.deck)
   const [tab, setTab] = useState<StudioTab>(readTab)
-  const [selectedId, setSelectedId] = useState<string>("")
+  const [selectedId, setSelectedId] = useState<string>(session.deck.cards[0]?.id ?? "")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
   const [status, setStatus] = useState<string>("")
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
+  const [importMode, setImportMode] = useState<ImportMode>("merge")
   const fileRef = useRef<HTMLInputElement>(null)
   const exportAbort = useRef<AbortController | null>(null)
   const statusTimer = useRef(0)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, serializeDeck(deck))
-  }, [deck])
+    persistActiveDeck(library, deck)
+  }, [deck, library])
 
   useEffect(() => {
     localStorage.setItem(TAB_KEY, tab)
@@ -107,6 +130,14 @@ export function Studio() {
     )
   }
 
+  const applySession = (next: { library: Library; deck: Deck }, message: string) => {
+    setLibrary(next.library)
+    setDeck(next.deck)
+    setSelectedId(next.deck.cards[0]?.id ?? "")
+    setPreviewSide("front")
+    showStatus(message)
+  }
+
   const replaceDeck = (next: Deck) => {
     setDeck(next)
     setSelectedId(next.cards[0]?.id ?? "")
@@ -117,12 +148,18 @@ export function Studio() {
     if (!file) return
     setBusy(true)
     try {
+      if (isTextImportName(file.name)) {
+        const preview = await inspectImportFile(file, deck)
+        setImportPreview(preview)
+        setImportMode(defaultImportMode(preview.kind))
+        return
+      }
       const imported = await importDeckFile(file, deck)
-      replaceDeck(imported.deck)
-      showStatus(
+      applySession(
+        addLibraryDeck(library, deck, imported.deck),
         imported.warnings.length > 0
-          ? `已导入 ${file.name}。${imported.warnings.join("；")}`
-          : `已导入 ${file.name}`
+          ? `已新建卡包「${imported.deck.name}」。${imported.warnings.join("；")}`
+          : `已新建卡包「${imported.deck.name}」`
       )
     } catch (error) {
       showStatus(error instanceof Error ? error.message : "导入失败")
@@ -130,6 +167,23 @@ export function Studio() {
       setBusy(false)
       if (fileRef.current) fileRef.current.value = ""
     }
+  }
+
+  const handleImportConfirm = (result: ReturnType<typeof applyTextImport>) => {
+    setImportPreview(null)
+    if (result.mode === "new") {
+      applySession(
+        addLibraryDeck(library, deck, result.deck),
+        `已新建卡包「${result.deck.name}」，${result.added} 张卡片`
+      )
+      return
+    }
+    replaceDeck(result.deck)
+    showStatus(
+      result.mode === "replace"
+        ? `已替换当前卡包，${result.added} 张卡片`
+        : `已合并 ${result.added} 张新卡片`
+    )
   }
 
   const onExportJson = () => {
@@ -261,15 +315,44 @@ export function Studio() {
   }
 
   const pushPlan = planAnkiPush(deck)
+  const libraryView: Library = {
+    ...library,
+    decks: library.decks.map((entry) =>
+      entry.id === library.activeId
+        ? { ...entry, name: deck.name.trim() || entry.name, cardCount: deck.cards.length }
+        : entry
+    ),
+  }
 
   return (
     <div className="flex min-h-[100dvh] min-w-0 flex-col overflow-x-clip bg-[#f4f1ea] text-foreground">
       <header className="border-b border-black/6 px-4 py-4 md:px-6">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <p className="shrink-0 text-sm tracking-[0.18em] text-foreground/55 uppercase">
               Anki Studio
             </p>
+            <select
+              aria-label="当前卡包"
+              className="h-9 max-w-[11rem] rounded-lg border border-black/8 bg-white/70 px-2 text-sm"
+              value={libraryView.activeId}
+              onChange={(event) => {
+                try {
+                  applySession(switchLibraryDeck(library, deck, event.target.value), "已切换卡包")
+                } catch (error) {
+                  showStatus(error instanceof Error ? error.message : "切换失败")
+                }
+              }}
+            >
+              {libraryView.decks.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" onClick={() => setLibraryOpen(true)}>
+              管理
+            </Button>
             <Input
               value={deck.name}
               aria-label="卡包名称"
@@ -353,6 +436,51 @@ export function Studio() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <DeckLibraryDialog
+        open={libraryOpen}
+        library={libraryView}
+        activeName={deck.name}
+        onOpenChange={setLibraryOpen}
+        onSwitch={(id) => {
+          try {
+            applySession(switchLibraryDeck(library, deck, id), "已切换卡包")
+            setLibraryOpen(false)
+          } catch (error) {
+            showStatus(error instanceof Error ? error.message : "切换失败")
+          }
+        }}
+        onCreate={() => {
+          try {
+            applySession(createLibraryDeck(library, deck), "已新建卡包")
+          } catch (error) {
+            showStatus(error instanceof Error ? error.message : "新建失败")
+          }
+        }}
+        onDuplicate={() => {
+          try {
+            applySession(duplicateLibraryDeck(library, deck), "已复制当前卡包")
+          } catch (error) {
+            showStatus(error instanceof Error ? error.message : "复制失败")
+          }
+        }}
+        onDelete={(id) => {
+          try {
+            applySession(deleteLibraryDeck(library, deck, id), "已删除卡包")
+          } catch (error) {
+            showStatus(error instanceof Error ? error.message : "删除失败")
+          }
+        }}
+      />
+      <ImportPreviewDialog
+        preview={importPreview}
+        current={deck}
+        mode={importMode}
+        busy={busy}
+        onModeChange={setImportMode}
+        onCancel={() => setImportPreview(null)}
+        onConfirm={handleImportConfirm}
+      />
     </div>
   )
 }

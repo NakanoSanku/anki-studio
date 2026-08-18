@@ -250,16 +250,24 @@ export function readStoredDeck(): Deck {
   return createDefaultDeck()
 }
 
-export function createDefaultDeck(): Deck {
+export function createBlankDeck(name = "新卡包"): Deck {
+  const fields = [...DEFAULT_FIELDS]
   return {
     version: 1,
-    name: "单词本",
-    fields: [...DEFAULT_FIELDS],
+    name,
+    fields,
     fieldNotes: { ...DEFAULT_FIELD_NOTES },
     fieldTts: {},
     front: DEFAULT_FRONT,
     back: DEFAULT_BACK,
     css: DEFAULT_CSS,
+    cards: [createCard(fields)],
+  }
+}
+
+export function createDefaultDeck(): Deck {
+  return {
+    ...createBlankDeck("单词本"),
     cards: [
       createCard([...DEFAULT_FIELDS], {
         Word: "ephemeral",
