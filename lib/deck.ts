@@ -1,3 +1,5 @@
+import { insertItemsAfter } from "./card-nav"
+
 export type Card = {
   id: string
   guid: string
@@ -662,7 +664,7 @@ export function dedupeCardsByFirstField(cards: Card[], fields: string[]): Card[]
   return result
 }
 
-export function appendUniqueCards(
+export function collectUniqueCards(
   current: Card[],
   currentFields: string[],
   incoming: Card[],
@@ -679,7 +681,16 @@ export function appendUniqueCards(
     seen.add(key)
     added.push(createCard(currentFields, values))
   }
-  return [...current, ...added]
+  return added
+}
+
+export function appendUniqueCards(
+  current: Card[],
+  currentFields: string[],
+  incoming: Card[],
+  incomingFields: string[]
+): Card[] {
+  return [...current, ...collectUniqueCards(current, currentFields, incoming, incomingFields)]
 }
 
 export function setCardField(
@@ -749,18 +760,37 @@ export function mergeCardAiValues(
   }
 }
 
-export function mergeGeneratedCards(deck: Deck, incoming: Card[]): FieldChangeResult {
-  const cards = appendUniqueCards(deck.cards, deck.fields, incoming, deck.fields)
-  if (cards.length === deck.cards.length) {
+export function mergeGeneratedCards(
+  deck: Deck,
+  incoming: Card[],
+  afterId?: string | null
+): FieldChangeResult {
+  const added = collectUniqueCards(deck.cards, deck.fields, incoming, deck.fields)
+  if (added.length === 0) {
     return { ok: false, error: "生成的卡片都与现有首字段重复，没有写入" }
   }
-  return { ok: true, deck: { ...deck, cards } }
+  return {
+    ok: true,
+    deck: {
+      ...deck,
+      cards: insertItemsAfter(deck.cards, afterId, added),
+    },
+  }
 }
 
 export function cardLabel(card: Card, fields: string[]): string {
   const first = fields[0]
   const value = first ? card.values[first]?.trim() : ""
   return value || "空卡片"
+}
+
+export function cardSubtitle(card: Card, fields: string[]): string {
+  return fields
+    .slice(1)
+    .map((field) => card.values[field]?.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ")
 }
 
 export function safeFilename(name: string, ext: string): string {

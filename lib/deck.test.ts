@@ -172,4 +172,13 @@ describe("mergeGeneratedCards", () => {
     if (!second.ok) return
     expect(second.deck.cards.map((item) => item.values.Word)).toEqual(["alpha", "beta", "gamma"])
   })
+
+  it("inserts a batch after the current card", () => {
+    const alpha = card("alpha")
+    const gamma = card("gamma")
+    const result = mergeGeneratedCards(testDeck([alpha, gamma]), [card("beta")], alpha.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.deck.cards.map((item) => item.values.Word)).toEqual(["alpha", "beta", "gamma"])
+  })
 })

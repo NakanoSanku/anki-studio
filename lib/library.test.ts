@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createDefaultDeck, serializeDeck, STORAGE_KEY } from "./deck"
+import { editorStateKey, writeEditorState } from "./editor-state"
 import {
   addLibraryDeck,
   createLibraryDeck,
@@ -79,9 +80,16 @@ describe("library operations", () => {
       "至少保留一个卡包"
     )
 
+    writeEditorState(copied.library.activeId, {
+      selectedId: copied.deck.cards[0]?.id ?? "",
+      reviewed: [copied.deck.cards[0]?.id ?? ""],
+      flagged: [],
+    })
+    expect(memory.get(editorStateKey(copied.library.activeId))).toBeTruthy()
     const deleted = deleteLibraryDeck(copied.library, copied.deck, copied.library.activeId)
     expect(deleted.library.decks).toHaveLength(2)
     expect(deleted.library.activeId).not.toBe(copied.library.activeId)
+    expect(memory.get(editorStateKey(copied.library.activeId))).toBeUndefined()
   })
 
   it("imports a deck as a new library item", () => {

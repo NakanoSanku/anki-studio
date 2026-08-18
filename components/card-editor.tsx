@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react"
 
 import { requestBatchAi, requestCardAi, requestFieldAi, type AiAction } from "@/lib/ai"
+import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
 import {
   cardLabel,
   cardMatchesQuery,
+  cardSubtitle,
   createCard,
   isCardEmpty,
   mergeCardAiValues,
@@ -15,9 +17,20 @@ import {
   textFields,
   ttsLangLabel,
   ttsOf,
+  type Card,
   type Deck,
   type FieldChangeResult,
 } from "@/lib/deck"
+import {
+  markReviewed,
+  matchesReviewFilter,
+  pruneEditorState,
+  readEditorState,
+  toggleFlagged,
+  writeEditorState,
+  type EditorState,
+  type ReviewFilter,
+} from "@/lib/editor-state"
 import { TtsPlayButton } from "@/components/tts-play-button"
 import {
   AlertDialog,
@@ -39,7 +52,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Table,
   TableBody,
@@ -51,11 +63,20 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { CardPreview } from "@/components/card-preview"
+import { useVirtualWindow } from "@/components/use-virtual-window"
 import { cn } from "@/lib/utils"
 
 type EditMode = "form" | "table"
 
 const MODE_KEY = "anki-studio.card-edit-mode"
+const LIST_ROW = 56
+const TABLE_ROW = 44
+const TABLE_HEADER = 36
+const FILTERS: { id: ReviewFilter; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "unreviewed", label: "未审" },
+  { id: "flagged", label: "标记" },
+]
 
 function readMode(): EditMode {
   if (typeof window === "undefined") return "form"
@@ -66,6 +87,7 @@ type DeckUpdater = Deck | ((current: Deck) => Deck)
 
 type CardEditorProps = {
   deck: Deck
+  deckId: string
   selectedId: string | null
   previewSide: "front" | "back"
   onChange: (deck: DeckUpdater) => void
@@ -75,6 +97,7 @@ type CardEditorProps = {
 
 export function CardEditor({
   deck,
+  deckId,
   selectedId,
   previewSide,
   onChange,
@@ -91,13 +114,30 @@ export function CardEditor({
   const [batchTopic, setBatchTopic] = useState("")
   const [batchCount, setBatchCount] = useState("10")
   const [query, setQuery] = useState("")
+  const [filter, setFilter] = useState<ReviewFilter>("all")
+  const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
+  const [jumpText, setJumpText] = useState("")
+  const [jumpFocused, setJumpFocused] = useState(false)
   const selected = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
   const editableFields = textFields(deck)
   const fieldTts = ttsOf(deck)
-  const visibleCards = deck.cards.filter((card) => cardMatchesQuery(card, editableFields, query))
+  const visibleCards = deck.cards.filter(
+    (card) => cardMatchesQuery(card, editableFields, query) && matchesReviewFilter(card, review, filter)
+  )
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
+  const reviewedCount = review.reviewed.filter((id) => deck.cards.some((card) => card.id === id)).length
   const isBusy = (task: string) => busyKeys.includes(task)
+  const listVirt = useVirtualWindow(visibleCards.length, LIST_ROW, 0, mode === "form")
+  const tableVirt = useVirtualWindow(visibleCards.length, TABLE_ROW, TABLE_HEADER, mode === "table")
+  const visibleRef = useRef(visibleCards)
+  const activeRef = useRef(activeId)
+  const addCardRef = useRef<() => void>(() => {})
+  const goRef = useRef<(delta: number) => void>(() => {})
+  const flagRef = useRef<() => void>(() => {})
+  const jumpRef = useRef<(index: number) => void>(() => {})
+  visibleRef.current = visibleCards
+  activeRef.current = activeId
 
   useEffect(() => {
     pendingDecks.current.delete(deck)
@@ -108,6 +148,33 @@ export function CardEditor({
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode)
   }, [mode])
+
+  const persistReady = useRef(false)
+  const deckIdRef = useRef(deckId)
+
+  useEffect(() => {
+    if (deckIdRef.current === deckId) return
+    deckIdRef.current = deckId
+    persistReady.current = false
+    setReview(readEditorState(deckId, deckRef.current))
+    setFilter("all")
+    setQuery("")
+  }, [deckId])
+
+  useEffect(() => {
+    if (!persistReady.current) {
+      persistReady.current = true
+      return
+    }
+    writeEditorState(deckId, { ...review, selectedId: activeId }, deckRef.current.cards)
+  }, [deckId, activeId, review])
+
+  useEffect(() => {
+    const index = visibleRef.current.findIndex((card) => card.id === activeId)
+    if (index < 0) return
+    if (mode === "table") tableVirt.scrollToIndex(index)
+    else listVirt.scrollToIndex(index)
+  }, [activeId, mode, filter, query, listVirt.scrollToIndex, tableVirt.scrollToIndex])
 
   const pushDeck = (next: Deck) => {
     deckRef.current = next
@@ -122,30 +189,101 @@ export function CardEditor({
     return result
   }
 
-  useEffect(() => {
-    if (!activeId) return
-    const id = mode === "table" ? `card-row-${activeId}` : `card-item-${activeId}`
-    document.getElementById(id)?.scrollIntoView({ block: "nearest" })
-  }, [activeId, mode])
-
   const addCard = () => {
     const current = deckRef.current
-    const existing = current.cards.find((card) => isCardEmpty(card, current.fields))
-    if (existing) {
-      const next = {
-        ...current,
-        cards: [...current.cards.filter((card) => card.id !== existing.id), existing],
-      }
-      pushDeck(next)
-      onSelect(existing.id)
+    const currentSelected = current.cards.find((card) => card.id === activeRef.current) ?? current.cards[0]
+    if (currentSelected && isCardEmpty(currentSelected, current.fields)) {
+      onSelect(currentSelected.id)
+      setQuery("")
+      if (filter === "flagged") setFilter("all")
+      return
+    }
+    const empty = current.cards.find((card) => isCardEmpty(card, current.fields))
+    if (empty) {
+      pushDeck({ ...current, cards: moveItemAfter(current.cards, empty.id, currentSelected?.id) })
+      onSelect(empty.id)
+      setQuery("")
+      if (filter === "flagged") setFilter("all")
       return
     }
     const card = createCard(current.fields)
-    const next = { ...current, cards: [...current.cards, card] }
-    pushDeck(next)
+    pushDeck({ ...current, cards: insertItemsAfter(current.cards, currentSelected?.id, [card]) })
     onSelect(card.id)
     setQuery("")
+    if (filter === "flagged") setFilter("all")
   }
+
+  const goVisible = (delta: number) => {
+    const list = visibleRef.current
+    if (list.length === 0) return
+    const currentId = activeRef.current
+    if (delta > 0 && currentId) {
+      setReview((state) => markReviewed(state, currentId))
+    }
+    const nextId = neighborId(list, currentId, delta)
+    if (nextId) onSelect(nextId)
+  }
+
+  const jumpTo = (index1: number) => {
+    const id = idAtIndex(deckRef.current.cards, index1)
+    if (!id) return
+    setFilter("all")
+    setQuery("")
+    onSelect(id)
+  }
+
+  const flagCurrent = () => {
+    const id = activeRef.current
+    if (!id) return
+    setReview((state) => toggleFlagged(state, id))
+  }
+
+  addCardRef.current = addCard
+  goRef.current = goVisible
+  flagRef.current = flagCurrent
+  jumpRef.current = jumpTo
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.metaKey || event.ctrlKey) return
+      if (event.isComposing) return
+      if (batchOpen || alert) return
+      const repeating = event.repeat && (event.key === "n" || event.key === "N" || event.key === "m" || event.key === "M")
+      if (repeating) return
+      switch (event.key) {
+        case "ArrowUp":
+          event.preventDefault()
+          goRef.current(-1)
+          break
+        case "ArrowDown":
+          event.preventDefault()
+          goRef.current(1)
+          break
+        case "Home":
+          event.preventDefault()
+          jumpRef.current(1)
+          break
+        case "End":
+          event.preventDefault()
+          jumpRef.current(deckRef.current.cards.length)
+          break
+        case "n":
+        case "N":
+          event.preventDefault()
+          addCardRef.current()
+          break
+        case "m":
+        case "M":
+          event.preventDefault()
+          flagRef.current()
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [alert, batchOpen])
 
   const updateCard = (id: string, field: string, value: string) => {
     if (fieldTts[field]) return false
@@ -206,6 +344,7 @@ export function CardEditor({
       .map((card) => (keyField ? card.values[keyField] ?? "" : ""))
       .map((value) => value.trim())
       .filter(Boolean)
+    const anchorId = selected?.id ?? ""
     void runAi("batch", async () => {
       const generated = await requestBatchAi({
         topic,
@@ -215,13 +354,18 @@ export function CardEditor({
         notes,
       })
       const incoming = generated.map((values) => createCard(fields, values))
-      const result = commitChange((current) => mergeGeneratedCards(current, incoming))
+      const beforeLen = deckRef.current.cards.length
+      const result = commitChange((current) => mergeGeneratedCards(current, incoming, anchorId))
       if (!result.ok) throw new Error(result.error)
-      const last = result.deck.cards[result.deck.cards.length - 1]
+      const afterIndex = result.deck.cards.findIndex((card) => card.id === anchorId)
+      const added = result.deck.cards.length - beforeLen
+      const last =
+        afterIndex >= 0 ? result.deck.cards[afterIndex + added] : result.deck.cards[result.deck.cards.length - 1]
       if (last) onSelect(last.id)
       setBatchOpen(false)
       setBatchTopic("")
       setQuery("")
+      if (filter === "flagged") setFilter("all")
     })
   }
 
@@ -242,44 +386,126 @@ export function CardEditor({
   }
 
   const removeCard = (id: string) => {
-    const next = { ...deckRef.current, cards: deckRef.current.cards.filter((card) => card.id !== id) }
+    const current = deckRef.current
+    const nextId = idAfterDelete(current.cards, id)
+    const next = { ...current, cards: current.cards.filter((card) => card.id !== id) }
     pushDeck(next)
-    if (selectedId === id) onSelect(next.cards[0]?.id ?? "")
+    setReview((state) => pruneEditorState({ ...state, selectedId: nextId }, next.cards))
+    if (selectedId === id) onSelect(nextId)
   }
 
+  const jumpValue = jumpFocused ? jumpText : selectedIndex > 0 ? String(selectedIndex) : ""
+
+  const submitJump = () => {
+    const raw = jumpFocused ? jumpText : jumpValue
+    if (!raw.trim()) return
+    const index = Number(raw)
+    if (!Number.isFinite(index)) return
+    jumpTo(index)
+  }
+
+  const flagged = Boolean(selected && review.flagged.includes(selected.id))
+
   const toolbar = (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3">
-        <p className="text-sm font-medium">
-          {deck.cards.length === 0
-            ? "卡片 0"
-            : query.trim()
-              ? `匹配 ${visibleCards.length} / ${deck.cards.length}`
-              : `卡片 ${selectedIndex} / ${deck.cards.length}`}
-        </p>
-        <Button type="button" size="sm" onClick={addCard}>
-          新建
-        </Button>
-        {mode === "form" ? (
-          <Button type="button" size="sm" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
-            批量生成
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="prev-card"
+            title="上一张（Alt+↑）"
+            disabled={visibleCards.length === 0}
+            onClick={() => goVisible(-1)}
+          >
+            上一张
           </Button>
-        ) : null}
+          <form
+            className="flex items-center gap-1 text-sm"
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitJump()
+            }}
+          >
+            <span className="text-muted-foreground">卡片</span>
+            <Input
+              value={jumpValue}
+              inputMode="numeric"
+              aria-label="跳转到卡片序号"
+              data-testid="jump-card-index"
+              className="h-7 w-14 border-black/8 bg-white/70 px-2 text-center"
+              onChange={(event) => setJumpText(event.target.value.replace(/[^\d]/g, ""))}
+              onFocus={() => {
+                setJumpText(selectedIndex > 0 ? String(selectedIndex) : "")
+                setJumpFocused(true)
+              }}
+              onBlur={() => {
+                submitJump()
+                setJumpFocused(false)
+              }}
+            />
+            <span className="text-muted-foreground">/ {deck.cards.length}</span>
+          </form>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="next-card"
+            title="下一张（Alt+↓），当前记为已审"
+            disabled={visibleCards.length === 0}
+            onClick={() => goVisible(1)}
+          >
+            下一张
+          </Button>
+          <Button type="button" size="sm" data-testid="insert-after-card" title="在当前卡片后插入（Alt+N）" onClick={addCard}>
+            在后面插入
+          </Button>
+          {mode === "form" ? (
+            <Button type="button" size="sm" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
+              批量生成
+            </Button>
+          ) : null}
+          <p className="text-xs text-foreground/50">已审 {reviewedCount}</p>
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <Input
+            value={query}
+            aria-label="搜索卡片"
+            placeholder="搜索卡片"
+            className="h-8 w-44 border-black/8 bg-white/70 sm:w-56"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Tabs value={mode} onValueChange={(value) => setMode(value as EditMode)}>
+            <TabsList>
+              <TabsTrigger value="form">单卡</TabsTrigger>
+              <TabsTrigger value="table">表格</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
-      <div className="flex min-w-0 items-center gap-2">
-        <Input
-          value={query}
-          aria-label="搜索卡片"
-          placeholder="搜索卡片"
-          className="h-8 w-44 border-black/8 bg-white/70 sm:w-56"
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Tabs value={mode} onValueChange={(value) => setMode(value as EditMode)}>
-          <TabsList>
-            <TabsTrigger value="form">单卡</TabsTrigger>
-            <TabsTrigger value="table">表格</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-lg bg-black/4 p-0.5">
+          {FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              data-testid={`review-filter-${item.id}`}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs transition-colors",
+                filter === item.id ? "bg-white text-foreground shadow-sm" : "text-foreground/60 hover:text-foreground"
+              )}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-foreground/45">
+          {query.trim() || filter !== "all"
+            ? `显示 ${visibleCards.length} / ${deck.cards.length}`
+            : "Alt+↑/↓ 换卡 · Alt+N 插入 · Alt+M 标记"}
+        </p>
       </div>
     </div>
   )
@@ -313,7 +539,7 @@ export function CardEditor({
         <DialogHeader>
           <DialogTitle>批量生成卡片</DialogTitle>
           <DialogDescription>
-            按主题或粘贴词表一次生成多张卡片。与现有首字段相同的不会写入。
+            按主题或粘贴词表一次生成多张卡片。与现有首字段相同的不会写入。新卡片插在当前卡片后面。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -351,7 +577,42 @@ export function CardEditor({
     </Dialog>
   )
 
+  const renderListItem = (card: Card, index: number) => {
+    const absolute = deck.cards.findIndex((item) => item.id === card.id) + 1
+    const active = card.id === selected?.id
+    const isReviewed = review.reviewed.includes(card.id)
+    const isFlagged = review.flagged.includes(card.id)
+    return (
+      <button
+        id={`card-item-${card.id}`}
+        key={card.id}
+        type="button"
+        onClick={() => onSelect(card.id)}
+        style={{ height: LIST_ROW }}
+        className={cn(
+          "flex w-full flex-col justify-center rounded-xl px-3 text-left transition-colors duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          active ? "bg-foreground text-background" : "text-foreground/80 hover:bg-black/4",
+          !active && isReviewed && "opacity-55"
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <span className={cn("w-8 shrink-0 text-[11px] tabular-nums", active ? "text-background/70" : "text-foreground/40")}>
+            {absolute || index + 1}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm">{cardLabel(card, deck.fields)}</span>
+          {isFlagged ? (
+            <span className={cn("text-[10px]", active ? "text-background/80" : "text-foreground/45")}>标</span>
+          ) : null}
+        </span>
+        <span className={cn("line-clamp-1 pl-10 text-[11px]", active ? "text-background/65" : "text-foreground/45")}>
+          {cardSubtitle(card, deck.fields) || " "}
+        </span>
+      </button>
+    )
+  }
+
   if (mode === "table") {
+    const slice = visibleCards.slice(tableVirt.start, tableVirt.end)
     return (
       <div className="flex min-w-0 flex-col gap-4">
         {toolbar}
@@ -363,7 +624,7 @@ export function CardEditor({
             ) : visibleCards.length === 0 ? (
               <p className="px-3 py-10 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
             ) : (
-              <div className="max-h-[min(64vh,620px)] overflow-auto">
+              <div ref={tableVirt.ref} className="max-h-[min(64vh,620px)] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -377,7 +638,14 @@ export function CardEditor({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleCards.map((card) => {
+                    {tableVirt.padTop > 0 ? (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={deck.fields.length + 2} className="border-0 p-0">
+                          <div style={{ height: tableVirt.padTop }} />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {slice.map((card) => {
                       const index = deck.cards.findIndex((item) => item.id === card.id)
                       const active = card.id === selected?.id
                       return (
@@ -438,6 +706,13 @@ export function CardEditor({
                         </TableRow>
                       )
                     })}
+                    {tableVirt.padBottom > 0 ? (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={deck.fields.length + 2} className="border-0 p-0">
+                          <div style={{ height: tableVirt.padBottom }} />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                   </TableBody>
                 </Table>
               </div>
@@ -452,37 +727,31 @@ export function CardEditor({
     )
   }
 
+  const listSlice = visibleCards.slice(listVirt.start, listVirt.end)
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {toolbar}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[220px_minmax(0,1fr)_minmax(280px,0.9fr)]">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)_minmax(280px,0.9fr)]">
       <section className="flex flex-col gap-3">
-        <ScrollArea className="h-44 lg:h-[360px] rounded-2xl bg-white/70 ring-1 ring-black/6">
+        <div
+          ref={listVirt.ref}
+          className="h-56 overflow-auto rounded-2xl bg-white/70 ring-1 ring-black/6 lg:h-[min(calc(100vh-16rem),720px)]"
+        >
           <div className="flex flex-col p-1.5">
             {deck.cards.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">还没有卡片</p>
             ) : visibleCards.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
             ) : (
-              visibleCards.map((card) => (
-                <button
-                  id={`card-item-${card.id}`}
-                  key={card.id}
-                  type="button"
-                  onClick={() => onSelect(card.id)}
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-left text-sm transition-colors duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-                    card.id === selected?.id
-                      ? "bg-foreground text-background"
-                      : "text-foreground/80 hover:bg-black/4"
-                  )}
-                >
-                  <span className="line-clamp-1">{cardLabel(card, deck.fields)}</span>
-                </button>
-              ))
+              <>
+                {listVirt.padTop > 0 ? <div style={{ height: listVirt.padTop }} /> : null}
+                {listSlice.map((card, offset) => renderListItem(card, listVirt.start + offset))}
+                {listVirt.padBottom > 0 ? <div style={{ height: listVirt.padBottom }} /> : null}
+              </>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </section>
 
       <section className="flex min-h-0 flex-col gap-4">
@@ -491,6 +760,15 @@ export function CardEditor({
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium">编辑卡片</p>
               <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={flagged ? "secondary" : "outline"}
+                  title="标记后可在「标记」里回头看（Alt+M）"
+                  onClick={flagCurrent}
+                >
+                  {flagged ? "已标记" : "标记"}
+                </Button>
                 <Button
                   type="button"
                   size="sm"

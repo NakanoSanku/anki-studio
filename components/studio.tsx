@@ -30,6 +30,7 @@ import {
   ttsOf,
   type Deck,
 } from "@/lib/deck"
+import { readEditorState } from "@/lib/editor-state"
 import { expireStatus, replaceTimer } from "@/lib/transient-status"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -89,7 +90,9 @@ export function Studio() {
   const [library, setLibrary] = useState<Library>(session.library)
   const [deck, setDeck] = useState<Deck>(session.deck)
   const [tab, setTab] = useState<StudioTab>(readTab)
-  const [selectedId, setSelectedId] = useState<string>(session.deck.cards[0]?.id ?? "")
+  const [selectedId, setSelectedId] = useState<string>(
+    () => readEditorState(session.library.activeId, session.deck).selectedId
+  )
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
   const [status, setStatus] = useState<string>("")
   const [busy, setBusy] = useState(false)
@@ -133,14 +136,16 @@ export function Studio() {
   const applySession = (next: { library: Library; deck: Deck }, message: string) => {
     setLibrary(next.library)
     setDeck(next.deck)
-    setSelectedId(next.deck.cards[0]?.id ?? "")
+    setSelectedId(readEditorState(next.library.activeId, next.deck).selectedId)
     setPreviewSide("front")
     showStatus(message)
   }
 
-  const replaceDeck = (next: Deck) => {
+  const replaceDeck = (next: Deck, keepSelection = true) => {
     setDeck(next)
-    setSelectedId(next.cards[0]?.id ?? "")
+    setSelectedId((id) =>
+      keepSelection && next.cards.some((card) => card.id === id) ? id : next.cards[0]?.id ?? ""
+    )
     setPreviewSide("front")
   }
 
@@ -178,7 +183,7 @@ export function Studio() {
       )
       return
     }
-    replaceDeck(result.deck)
+    replaceDeck(result.deck, result.mode !== "replace")
     showStatus(
       result.mode === "replace"
         ? `已替换当前卡包，${result.added} 张卡片`
@@ -424,6 +429,7 @@ export function Studio() {
           <TabsContent value="cards" className="flex min-h-0 min-w-0 flex-col">
             <CardEditor
               deck={deck}
+              deckId={library.activeId}
               selectedId={selectedId}
               previewSide={previewSide}
               onChange={setDeck}

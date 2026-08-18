@@ -8,6 +8,7 @@ import {
   STORAGE_KEY,
   type Deck,
 } from "./deck"
+import { deleteEditorState } from "./editor-state"
 
 export const LIBRARY_KEY = "anki-studio.library.v1"
 
@@ -305,6 +306,7 @@ export function deleteLibraryDeck(library: Library, current: Deck, id: string): 
   }
   const storage = getStorage()
   storage?.removeItem(deckStorageKey(id))
+  deleteEditorState(id)
   const activeId = id === library.activeId ? remaining[0]!.id : library.activeId
   const next: Library = { version: 1, activeId, decks: remaining }
   if (storage) writeLibrary(storage, next)
