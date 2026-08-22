@@ -1,4 +1,4 @@
-const CACHE_NAME = "anki-studio-shell-v1"
+const CACHE_NAME = "anki-studio-shell-v2"
 const STATIC_PATHS = ["/manifest.webmanifest", "/icon.svg"]
 
 function isCacheableAsset(url, request) {
@@ -76,6 +76,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then(async (response) => {
+          if (url.pathname !== "/") return response
           const cache = await caches.open(CACHE_NAME)
           return cacheResponse(cache, "/", response)
         })

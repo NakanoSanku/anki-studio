@@ -29,7 +29,7 @@ export function createHttpTransport(fetchImpl: typeof fetch = fetch): SyncTransp
     async status() {
       const res = await fetchImpl("/api/sync/status")
       const data = await readJson(res)
-      if (res.status === 401) return { available: false, reason: errorMessage(data, "未登录") }
+      if (res.status === 401) return { available: false, reason: errorMessage(data, "请先连接 Google 帐号") }
       if (!res.ok) {
         return {
           available: false,
@@ -48,7 +48,7 @@ export function createHttpTransport(fetchImpl: typeof fetch = fetch): SyncTransp
     async index() {
       const res = await fetchImpl("/api/sync")
       const data = await readJson(res)
-      if (res.status === 401) throw new Error("未登录")
+      if (res.status === 401) throw new Error(errorMessage(data, "请先连接 Google 帐号"))
       if (res.status === 503) throw new Error(errorMessage(data, "Google Sheets 同步未配置"))
       if (!res.ok) throw new Error(errorMessage(data, `读取云端目录失败 ${res.status}`))
       if (!data || typeof data !== "object" || !Array.isArray((data as { decks?: unknown }).decks)) {

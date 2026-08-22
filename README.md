@@ -28,7 +28,7 @@ pnpm dev
 
 ## 云同步（Google Sheets）
 
-单人用，电脑 + 手机。卡包以分块数据保存在你自己的 Google Sheet；绑定表格的 Apps Script 使用脚本锁完成版本检查和写入，继续支持本机 / 云端 / 另存为冲突处理。
+单人用，电脑 + 手机。卡包以分块数据保存在你自己的 Google Sheet；绑定表格的 Apps Script 使用脚本锁完成版本检查和写入，继续支持本机 / 云端 / 另存为冲突处理。Google OAuth 负责确认访问者身份，未登录时仍可离线编辑和学习，但不能访问云端同步数据。
 
 ### 1. 创建同步表和 Apps Script
 
@@ -39,31 +39,61 @@ pnpm dev
 
 同步数据写入隐藏工作表 `_anki_studio_sync`。单个卡包会被拆成多个单元格，避免 Google Sheets 的单元格字符限制；语音缓存和 OpenAI API Key 不会上传。不要手动编辑或删除隐藏工作表；脚本检测到表头、分块或既有数据被清空时会停止同步，不会把损坏误判成远端删除。
 
-### 2. 本地开发
+### 2. 配置 Google OAuth
 
-```powershell
-Copy-Item .dev.vars.example .dev.vars
-# 将 .dev.vars 中的地址和密钥替换为上一步得到的值
-pnpm preview   # OpenNext 构建 + wrangler dev
+1. 在 [Google Cloud Console](https://console.cloud.google.com/apis/credentials) 配置 OAuth 同意屏幕并创建“Web 应用”类型的 OAuth 客户端。
+2. 添加已获授权的重定向 URI：
+   - 本地：`http://localhost:3000/api/auth/callback/google`
+   - 生产：`https://你的域名/api/auth/callback/google`
+3. 保存客户端 ID、客户端密钥，并生成会话密钥：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-### 3. Cloudflare 部署
+4. 配置 `GOOGLE_ALLOWED_EMAILS`。这是可登录帐号白名单，多个邮箱用逗号分隔；Google 返回的邮箱必须已经验证并出现在列表中。
 
-将 Web App 地址与密钥保存为 Worker secret，再部署应用：
+OAuth 只申请 `openid`、`email`、`profile` 基本身份范围。Google Sheet 仍由服务器通过 Apps Script 网关访问，OAuth token 不会保存到 IndexedDB 或同步表。
+
+### 3. 本地开发
+
+```powershell
+Copy-Item .dev.vars.example .env.local
+# 编辑 .env.local 后运行 Next.js 开发服务
+pnpm dev
+
+Copy-Item .dev.vars.example .dev.vars
+# 如需验证 Cloudflare 运行时，编辑 .dev.vars 后运行：
+pnpm preview
+```
+
+### 4. Cloudflare 部署
+
+将同步配置、OAuth 客户端密钥和会话密钥保存为 Worker secret，再部署应用；`NEXTAUTH_URL` 应设为正式域名：
 
 ```bash
 pnpm wrangler secret put GOOGLE_SHEETS_SYNC_URL
 pnpm wrangler secret put GOOGLE_SHEETS_SYNC_SECRET
+pnpm wrangler secret put GOOGLE_CLIENT_ID
+pnpm wrangler secret put GOOGLE_CLIENT_SECRET
+pnpm wrangler secret put AUTH_SECRET
+pnpm wrangler secret put GOOGLE_ALLOWED_EMAILS
+pnpm wrangler secret put NEXTAUTH_URL
 pnpm deploy
 ```
 
-建议给 Worker 打开 Cloudflare Access，只允许你的邮箱。生产环境默认 `REQUIRE_ACCESS=1`，未带 Access 令牌的同步请求会被拒绝。
+Google OAuth 配置完整时，它会取代 `REQUIRE_ACCESS` 成为同步 API 的身份校验。未配置 OAuth 时，生产环境仍会回退到 `REQUIRE_ACCESS=1` 的 Cloudflare Access 校验。
 
-### 4. Vercel 部署
+### 5. Vercel 部署
 
 项目也支持 Vercel。请在 Vercel 项目的 `Settings → Environment Variables` 中为 Production（以及需要的 Preview 环境）配置：
 
 - `GOOGLE_SHEETS_SYNC_URL`
 - `GOOGLE_SHEETS_SYNC_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `AUTH_SECRET`
+- `GOOGLE_ALLOWED_EMAILS`
+- `NEXTAUTH_URL`（例如 `https://anki-studio.example.com`）
 
-Vercel 运行时直接读取服务器环境变量，不需要配置 `REQUIRE_ACCESS`；访问控制可继续使用 Vercel Deployment Protection。
+Vercel 运行时直接读取服务器环境变量，不需要配置 `REQUIRE_ACCESS`。Google Cloud Console 中的生产回调地址必须与 `NEXTAUTH_URL` 使用同一个域名；Vercel Deployment Protection 可按需保留。

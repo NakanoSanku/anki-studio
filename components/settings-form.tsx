@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PromptEditor } from "@/components/prompt-editor"
+import { GoogleAccountPanel } from "@/components/google-account-panel"
 
 export type SyncPanelState = {
   syncing: boolean
@@ -70,6 +71,7 @@ export function SettingsForm({
   const [models, setModels] = useState<string[]>([])
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
+  const [googleAuthenticated, setGoogleAuthenticated] = useState<boolean | undefined>()
   const desktopLayout = useDesktopSettingsLayout()
   const fsrsSettings = deck ? fsrsOf(deck) : null
 
@@ -343,6 +345,7 @@ export function SettingsForm({
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <GoogleAccountPanel onAuthenticatedChange={setGoogleAuthenticated} />
                 <div className="rounded-xl border border-border/70 bg-muted/35 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium">{sync.message}</span>
@@ -355,9 +358,15 @@ export function SettingsForm({
                     <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{sync.unavailable}。离线改动会保留，恢复连接后自动同步。</p>
                   ) : null}
                 </div>
-                <Button type="button" className="sm:w-fit" variant="outline" disabled={sync.syncing} onClick={onSyncNow}>
+                <Button
+                  type="button"
+                  className="sm:w-fit"
+                  variant="outline"
+                  disabled={sync.syncing || googleAuthenticated === false}
+                  onClick={onSyncNow}
+                >
                   <RefreshCw className={sync.syncing ? "size-4 animate-spin" : "size-4"} />
-                  {sync.syncing ? "同步中…" : "立即同步"}
+                  {sync.syncing ? "同步中…" : googleAuthenticated === false ? "连接帐号后同步" : "立即同步"}
                 </Button>
               </CardContent>
             </Card>
