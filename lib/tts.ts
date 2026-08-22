@@ -1,4 +1,4 @@
-import { templateUsesField, ttsOf, type Deck, type TtsField, type TtsLang } from "./deck"
+import { getCardTemplate, templateUsesField, ttsOf, type Deck, type TtsField, type TtsLang } from "./deck"
 import { RateGate } from "./rate-gate"
 
 export const TTS_GAP_MS = 1500
@@ -227,15 +227,16 @@ export async function resolveTtsFieldValue(tts: TtsField, values: Record<string,
   return `[sound:${ttsFilename(tts.lang, tts.slow, id)}]`
 }
 
-export function ttsFieldsOnSide(deck: Deck, side: "front" | "back"): string[] {
-  const template = side === "front" ? deck.front : deck.back
+export function ttsFieldsOnSide(deck: Deck, side: "front" | "back", templateId?: string): string[] {
+  const cardTemplate = getCardTemplate(deck, templateId)
+  const template = side === "front" ? cardTemplate.front : cardTemplate.back
   const names: string[] = []
   for (const name of Object.keys(ttsOf(deck))) {
     if (templateUsesField(template, name)) names.push(name)
   }
-  if (side === "back" && /\{\{\s*FrontSide\s*\}\}/.test(deck.back)) {
+  if (side === "back" && /\{\{\s*FrontSide\s*\}\}/.test(cardTemplate.back)) {
     for (const name of Object.keys(ttsOf(deck))) {
-      if (templateUsesField(deck.front, name) && !names.includes(name)) names.push(name)
+      if (templateUsesField(cardTemplate.front, name) && !names.includes(name)) names.push(name)
     }
   }
   return names

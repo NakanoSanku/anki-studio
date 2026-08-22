@@ -12,6 +12,7 @@ import {
   duplicateLibraryDeck,
   loadLibrarySession,
   persistActiveDeck,
+  readLibrary,
   switchLibraryDeck,
   type Library,
 } from "@/lib/library"
@@ -25,6 +26,7 @@ import {
 } from "@/lib/import-preview"
 import { listTtsJobs } from "@/lib/tts"
 import {
+  createDefaultDeck,
   safeFilename,
   serializeDeck,
   ttsOf,
@@ -32,26 +34,47 @@ import {
 } from "@/lib/deck"
 import { readEditorState } from "@/lib/editor-state"
 import { expireStatus, replaceTimer } from "@/lib/transient-status"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { dirtyCount, runSyncCycle } from "@/lib/sync-client"
+import { getStudyQueue } from "@/lib/fsrs"
+import { createHttpTransport } from "@/lib/sync-transport"
+import { createIdbStore } from "@/lib/studio-store-idb"
+import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
+import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CardEditor } from "@/components/card-editor"
 import { DeckLibraryDialog } from "@/components/deck-library-dialog"
+import { DeckToolsPanel } from "@/components/deck-tools-panel"
 import { ImportPreviewDialog } from "@/components/import-preview-dialog"
 import { SettingsForm } from "@/components/settings-form"
+import { SyncConflictDialog } from "@/components/sync-conflict-dialog"
+import { StudioShell, type StudioView } from "@/components/studio-shell"
+import { StudyOverview } from "@/components/study-overview"
+import { StudySession } from "@/components/study-session"
 import { TemplateEditor } from "@/components/template-editor"
 
-type StudioTab = "template" | "cards" | "settings"
+type EditTab = "template" | "cards"
 
-const TAB_KEY = "anki-studio.studio-tab"
+const VIEW_KEY = "anki-studio.view"
+const EDIT_KEY = "anki-studio.edit-tab"
 
-function readTab(): StudioTab {
-  if (typeof window === "undefined") return "template"
+function readView(): StudioView {
+  if (typeof window === "undefined") return "study"
   const query = new URLSearchParams(window.location.search).get("tab")
-  if (query === "template" || query === "cards" || query === "settings") return query
-  const stored = window.localStorage.getItem(TAB_KEY)
-  if (stored === "template" || stored === "cards" || stored === "settings") return stored
-  return "template"
+  if (query === "template" || query === "cards") return "edit"
+  if (query === "settings") return "settings"
+  if (query === "study" || query === "edit") return query
+  if (query === "decks") return "study"
+  const stored = window.localStorage.getItem(VIEW_KEY)
+  if (stored === "study" || stored === "edit" || stored === "settings") return stored
+  return "study"
+}
+
+function readEditTab(): EditTab {
+  if (typeof window === "undefined") return "cards"
+  const query = new URLSearchParams(window.location.search).get("tab")
+  if (query === "template" || query === "cards") return query
+  const stored = window.localStorage.getItem(EDIT_KEY)
+  return stored === "template" ? "template" : "cards"
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -86,13 +109,18 @@ async function shareOrDownload(blob: Blob, filename: string): Promise<"shared" |
 }
 
 export function Studio() {
-  const session = useState(loadLibrarySession)[0]
-  const [library, setLibrary] = useState<Library>(session.library)
-  const [deck, setDeck] = useState<Deck>(session.deck)
-  const [tab, setTab] = useState<StudioTab>(readTab)
-  const [selectedId, setSelectedId] = useState<string>(
-    () => readEditorState(session.library.activeId, session.deck).selectedId
-  )
+  const [ready, setReady] = useState(false)
+  const [library, setLibrary] = useState<Library>({
+    version: 1,
+    activeId: "pending",
+    decks: [],
+  })
+  const [deck, setDeck] = useState<Deck>(createDefaultDeck)
+  const [view, setView] = useState<StudioView>(readView)
+  const [studyActive, setStudyActive] = useState(false)
+  const [studyImmersive, setStudyImmersive] = useState(false)
+  const [editTab, setEditTab] = useState<EditTab>(readEditTab)
+  const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
   const [status, setStatus] = useState<string>("")
   const [busy, setBusy] = useState(false)
@@ -101,22 +129,34 @@ export function Studio() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
   const [importMode, setImportMode] = useState<ImportMode>("merge")
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState("尚未同步")
+  const [lastSyncAt, setLastSyncAt] = useState<number | undefined>()
+  const [dirty, setDirty] = useState(0)
+  const [syncUnavailable, setSyncUnavailable] = useState<string | undefined>()
+  const [conflict, setConflict] = useState<SyncConflict | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const exportAbort = useRef<AbortController | null>(null)
   const statusTimer = useRef(0)
+  const libraryRef = useRef(library)
+  const deckRef = useRef(deck)
+  const conflictWaiter = useRef<((choice: ConflictChoice) => void) | null>(null)
+  const syncingRef = useRef(false)
 
   useEffect(() => {
-    persistActiveDeck(library, deck)
-  }, [deck, library])
+    libraryRef.current = library
+    deckRef.current = deck
+  }, [library, deck])
 
   useEffect(() => {
-    localStorage.setItem(TAB_KEY, tab)
+    localStorage.setItem(VIEW_KEY, view)
+    localStorage.setItem(EDIT_KEY, editTab)
     const url = new URL(window.location.href)
     if (!url.searchParams.has("tab")) return
     url.searchParams.delete("tab")
     const next = `${url.pathname}${url.search}${url.hash}`
     window.history.replaceState(null, "", next)
-  }, [tab])
+  }, [view, editTab])
 
   const previewCard = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
 
@@ -141,6 +181,132 @@ export function Studio() {
     showStatus(message)
   }
 
+  const reloadFromStore = async () => {
+    const nextLibrary = await readLibrary()
+    const record = await getStudioStore().getRecord(nextLibrary.activeId)
+    setLibrary(nextLibrary)
+    setDirty(await dirtyCount(getStudioStore()))
+    if (!record || record.deletedAt) return
+    setDeck(record.deck)
+    setSelectedId(readEditorState(nextLibrary.activeId, record.deck).selectedId)
+  }
+
+  const runSync = async (reason: "auto" | "manual") => {
+    if (syncingRef.current || conflictWaiter.current) return
+    syncingRef.current = true
+    setSyncing(true)
+    try {
+      await persistActiveDeck(libraryRef.current, deckRef.current)
+      const store = getStudioStore()
+      const summary = await runSyncCycle({
+        store,
+        transport: createHttpTransport(),
+        resolveConflict: (item) =>
+          new Promise((resolve) => {
+            setConflict(item)
+            conflictWaiter.current = resolve
+          }),
+      })
+      await reloadFromStore()
+      const meta = await store.getSyncMeta()
+      setLastSyncAt(meta?.lastSyncAt)
+      if (summary.unavailable) {
+        setSyncUnavailable(summary.unavailable)
+        setSyncMessage(summary.unavailable)
+        if (reason === "manual") showStatus(summary.unavailable)
+      } else if (summary.error) {
+        setSyncUnavailable(undefined)
+        setSyncMessage(summary.error)
+        showStatus(summary.error)
+      } else if (summary.deferred) {
+        setSyncUnavailable(undefined)
+        setSyncMessage("有冲突未处理")
+      } else {
+        setSyncUnavailable(undefined)
+        setSyncMessage("已同步")
+        if (reason === "manual") {
+          showStatus(
+            summary.pulled + summary.pushed === 0
+              ? "已是最新"
+              : `已同步，上传 ${summary.pushed}，下载 ${summary.pulled}`
+          )
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "同步失败"
+      setSyncMessage(message)
+      showStatus(message)
+    } finally {
+      syncingRef.current = false
+      setSyncing(false)
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      setStudioStore(typeof indexedDB === "undefined" ? createMemoryStore() : createIdbStore())
+      const session = await loadLibrarySession()
+      if (cancelled) return
+      setLibrary(session.library)
+      setDeck(session.deck)
+      setSelectedId(readEditorState(session.library.activeId, session.deck).selectedId)
+      setReady(true)
+      void runSync("auto")
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Initial load only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    const timer = window.setTimeout(() => {
+      void persistActiveDeck(library, deck).then(async () => {
+        setDirty(await dirtyCount(getStudioStore()))
+      }).catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "本机保存失败")
+      })
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [deck, library, ready])
+
+  useEffect(() => {
+    if (!ready) return
+    const flush = () => {
+      void persistActiveDeck(library, deck)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush()
+    }
+    window.addEventListener("pagehide", flush)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [library, deck, ready])
+
+  useEffect(() => {
+    if (!ready || conflict || dirty === 0) return
+    const timer = window.setTimeout(() => {
+      void runSync("auto")
+    }, 2500)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, ready, conflict])
+
+  useEffect(() => {
+    const onOnline = () => {
+      if (dirty > 0) void runSync("auto")
+    }
+    window.addEventListener("online", onOnline)
+    return () => window.removeEventListener("online", onOnline)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty])
+
   const replaceDeck = (next: Deck, keepSelection = true) => {
     setDeck(next)
     setSelectedId((id) =>
@@ -161,7 +327,7 @@ export function Studio() {
       }
       const imported = await importDeckFile(file, deck)
       applySession(
-        addLibraryDeck(library, deck, imported.deck),
+        await addLibraryDeck(library, deck, imported.deck),
         imported.warnings.length > 0
           ? `已新建卡包「${imported.deck.name}」。${imported.warnings.join("；")}`
           : `已新建卡包「${imported.deck.name}」`
@@ -177,10 +343,13 @@ export function Studio() {
   const handleImportConfirm = (result: ReturnType<typeof applyTextImport>) => {
     setImportPreview(null)
     if (result.mode === "new") {
-      applySession(
-        addLibraryDeck(library, deck, result.deck),
-        `已新建卡包「${result.deck.name}」，${result.added} 张卡片`
-      )
+      void addLibraryDeck(library, deck, result.deck)
+        .then((session) => {
+          applySession(session, `已新建卡包「${result.deck.name}」，${result.added} 张卡片`)
+        })
+        .catch((error: unknown) => {
+          showStatus(error instanceof Error ? error.message : "导入失败")
+        })
       return
     }
     replaceDeck(result.deck, result.mode !== "replace")
@@ -329,154 +498,197 @@ export function Studio() {
     ),
   }
 
-  return (
-    <div className="flex min-h-[100dvh] min-w-0 flex-col overflow-x-clip bg-[#f4f1ea] text-foreground">
-      <header className="border-b border-black/6 px-4 py-4 md:px-6">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <p className="shrink-0 text-sm tracking-[0.18em] text-foreground/55 uppercase">
-              Anki Studio
-            </p>
-            <select
-              aria-label="当前卡包"
-              className="h-9 max-w-[11rem] rounded-lg border border-black/8 bg-white/70 px-2 text-sm"
-              value={libraryView.activeId}
-              onChange={(event) => {
-                try {
-                  applySession(switchLibraryDeck(library, deck, event.target.value), "已切换卡包")
-                } catch (error) {
-                  showStatus(error instanceof Error ? error.message : "切换失败")
-                }
-              }}
-            >
-              {libraryView.decks.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.name}
-                </option>
-              ))}
-            </select>
-            <Button type="button" variant="outline" onClick={() => setLibraryOpen(true)}>
-              管理
-            </Button>
-            <Input
-              value={deck.name}
-              aria-label="卡包名称"
-              className="h-9 max-w-xs border-black/8 bg-white/70"
-              onChange={(event) => setDeck({ ...deck, name: event.target.value })}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,.csv,.apkg,.colpkg"
-              className="hidden"
-              onChange={(event) => void onImport(event.target.files?.[0])}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              导入
-            </Button>
-            <Button type="button" variant="outline" disabled={busy} onClick={onExportJson}>
-              导出 JSON
-            </Button>
-            <Button type="button" variant="outline" disabled={busy} onClick={onExportCsv}>
-              导出 CSV
-            </Button>
-            {exporting ? (
-              <Button type="button" variant="outline" onClick={cancelExport}>
-                {exportProgress && exportProgress.total > 0
-                  ? `语音 ${exportProgress.done}/${exportProgress.total} · 取消`
-                  : "取消导出"}
-              </Button>
-            ) : (
-              <>
-                <Button type="button" variant="outline" disabled={busy} onClick={onExportApkg}>
-                  {Object.keys(ttsOf(deck)).length > 0 ? "导出 APKG（含语音）" : "导出 APKG"}
-                </Button>
-                <Button type="button" disabled={busy} onClick={onPushAnki}>
-                  {pushButtonLabel(pushPlan)}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-        {status ? (
-          <p className="mx-auto mt-2 w-full max-w-7xl text-sm text-foreground/60">{status}</p>
-        ) : null}
-      </header>
+  const studyQueueCount = getStudyQueue(deck).length
+  const pageTitle: Record<StudioView, string> = {
+    study: "学习",
+    edit: editTab === "cards" ? "编辑卡片" : "设计模板",
+    settings: "设置",
+  }
 
-      <main className="mx-auto flex w-full min-w-0 max-w-7xl flex-1 flex-col px-4 py-5 md:px-6">
-        <Tabs value={tab} onValueChange={(value) => setTab(value as StudioTab)} className="flex min-h-0 min-w-0 flex-1 gap-4">
-          <TabsList>
-            <TabsTrigger value="template">模板</TabsTrigger>
-            <TabsTrigger value="cards">卡片</TabsTrigger>
-            <TabsTrigger value="settings">设置</TabsTrigger>
-          </TabsList>
-          <TabsContent value="template" className="flex min-h-0 min-w-0 flex-col">
-            <TemplateEditor
+  const switchDeck = (id: string, close = false) => {
+    void switchLibraryDeck(library, deck, id)
+      .then((session) => {
+        applySession(session, "已切换卡包")
+        if (close) setLibraryOpen(false)
+      })
+      .catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "切换失败")
+      })
+  }
+
+  const createDeck = () => {
+    void createLibraryDeck(library, deck)
+      .then((session) => applySession(session, "已新建卡包"))
+      .catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "新建失败")
+      })
+  }
+
+  const duplicateDeck = () => {
+    void duplicateLibraryDeck(library, deck)
+      .then((session) => applySession(session, "已复制当前卡包"))
+      .catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "复制失败")
+      })
+  }
+
+  const removeDeck = (id: string) => {
+    void deleteLibraryDeck(library, deck, id)
+      .then((session) => applySession(session, "已删除卡包"))
+      .catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "删除失败")
+      })
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-[100dvh] bg-background p-5 lg:pl-64">
+        <div className="mx-auto mt-20 h-48 max-w-5xl animate-pulse rounded-3xl bg-muted" />
+      </div>
+    )
+  }
+
+  const leaveStudy = () => {
+    setStudyImmersive(false)
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined)
+    }
+  }
+
+  const changeView = (next: StudioView) => {
+    leaveStudy()
+    setStudyActive(false)
+    setView(next)
+  }
+
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,.csv,.apkg,.colpkg"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ""
+          void onImport(file)
+        }}
+      />
+      <StudioShell
+        view={view}
+        dueCount={studyQueueCount}
+        dirtyCount={dirty}
+        syncing={syncing}
+        syncUnavailable={syncUnavailable}
+        studySessionActive={studyActive}
+        studyImmersive={studyImmersive}
+        title={pageTitle[view]}
+        status={status}
+        onViewChange={changeView}
+        onSync={() => void runSync("manual")}
+      >
+        {view === "study" && !studyActive ? (
+          <StudyOverview
+            deck={deck}
+            onStart={() => setStudyActive(true)}
+          />
+        ) : null}
+
+        {view === "study" && studyActive ? (
+          <StudySession
+            key={library.activeId}
+            deck={deck}
+            onChange={setDeck}
+            immersive={studyImmersive}
+            onImmersiveChange={setStudyImmersive}
+            onExit={() => {
+              leaveStudy()
+              setStudyActive(false)
+            }}
+          />
+        ) : null}
+
+        {view === "edit" ? (
+          <div className="mx-auto w-full max-w-7xl">
+            <Tabs value={editTab} onValueChange={(value) => setEditTab(value as EditTab)} className="gap-5">
+              <div className="flex items-center justify-between gap-3">
+                <TabsList>
+                  <TabsTrigger value="cards">卡片内容</TabsTrigger>
+                  <TabsTrigger value="template">卡片模板</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="cards" className="min-w-0">
+                <CardEditor
+                  deck={deck}
+                  deckId={library.activeId}
+                  selectedId={selectedId}
+                  previewSide={previewSide}
+                  onChange={setDeck}
+                  onSelect={setSelectedId}
+                  onPreviewSideChange={setPreviewSide}
+                />
+              </TabsContent>
+              <TabsContent value="template" className="min-w-0">
+                <TemplateEditor
+                  key={library.activeId}
+                  deck={deck}
+                  previewCard={previewCard}
+                  previewSide={previewSide}
+                  onChange={setDeck}
+                  onPreviewSideChange={setPreviewSide}
+                />
+              </TabsContent>
+            </Tabs>
+          </div>
+        ) : null}
+
+        {view === "settings" ? (
+          <div className="mx-auto w-full max-w-7xl pb-8">
+            <SettingsForm
+              deckTools={(
+                <DeckToolsPanel
+                  deckName={deck.name.trim() || "未命名卡包"}
+                  cardCount={deck.cards.length}
+                  deckCount={libraryView.decks.length}
+                  busy={busy}
+                  exporting={exporting}
+                  exportProgress={exportProgress}
+                  pushLabel={pushButtonLabel(pushPlan)}
+                  hasTts={Object.keys(ttsOf(deck)).length > 0}
+                  onOpenLibrary={() => setLibraryOpen(true)}
+                  onImport={() => fileRef.current?.click()}
+                  onExportJson={onExportJson}
+                  onExportCsv={onExportCsv}
+                  onExportApkg={onExportApkg}
+                  onPushAnki={onPushAnki}
+                  onCancelExport={cancelExport}
+                />
+              )}
               deck={deck}
-              previewCard={previewCard}
-              previewSide={previewSide}
-              onChange={setDeck}
-              onPreviewSideChange={setPreviewSide}
+              onDeckChange={setDeck}
+              sync={{
+                syncing,
+                message: syncMessage,
+                lastSyncAt,
+                dirtyCount: dirty,
+                unavailable: syncUnavailable,
+              }}
+              onSyncNow={() => void runSync("manual")}
             />
-          </TabsContent>
-          <TabsContent value="cards" className="flex min-h-0 min-w-0 flex-col">
-            <CardEditor
-              deck={deck}
-              deckId={library.activeId}
-              selectedId={selectedId}
-              previewSide={previewSide}
-              onChange={setDeck}
-              onSelect={setSelectedId}
-              onPreviewSideChange={setPreviewSide}
-            />
-          </TabsContent>
-          <TabsContent value="settings" className="flex min-h-0 min-w-0 flex-col pb-8">
-            <SettingsForm />
-          </TabsContent>
-        </Tabs>
-      </main>
+          </div>
+        ) : null}
+      </StudioShell>
 
       <DeckLibraryDialog
         open={libraryOpen}
         library={libraryView}
         activeName={deck.name}
         onOpenChange={setLibraryOpen}
-        onSwitch={(id) => {
-          try {
-            applySession(switchLibraryDeck(library, deck, id), "已切换卡包")
-            setLibraryOpen(false)
-          } catch (error) {
-            showStatus(error instanceof Error ? error.message : "切换失败")
-          }
-        }}
-        onCreate={() => {
-          try {
-            applySession(createLibraryDeck(library, deck), "已新建卡包")
-          } catch (error) {
-            showStatus(error instanceof Error ? error.message : "新建失败")
-          }
-        }}
-        onDuplicate={() => {
-          try {
-            applySession(duplicateLibraryDeck(library, deck), "已复制当前卡包")
-          } catch (error) {
-            showStatus(error instanceof Error ? error.message : "复制失败")
-          }
-        }}
-        onDelete={(id) => {
-          try {
-            applySession(deleteLibraryDeck(library, deck, id), "已删除卡包")
-          } catch (error) {
-            showStatus(error instanceof Error ? error.message : "删除失败")
-          }
-        }}
+        onSwitch={(id) => switchDeck(id, true)}
+        onCreate={createDeck}
+        onDuplicate={duplicateDeck}
+        onDelete={removeDeck}
+        onRename={(name) => setDeck({ ...deck, name })}
       />
       <ImportPreviewDialog
         preview={importPreview}
@@ -487,6 +699,14 @@ export function Studio() {
         onCancel={() => setImportPreview(null)}
         onConfirm={handleImportConfirm}
       />
-    </div>
+      <SyncConflictDialog
+        conflict={conflict}
+        onChoose={(choice) => {
+          setConflict(null)
+          conflictWaiter.current?.(choice)
+          conflictWaiter.current = null
+        }}
+      />
+    </>
   )
 }

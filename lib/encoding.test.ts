@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { decodeImportBytes, looksLikeBinary, looksLikeMojibake } from "./encoding"
 
-function bytesOf(text: string, encoding: "utf-8" | "utf-16le" = "utf-8"): Uint8Array {
+function bytesOf(text: string): Uint8Array {
   return new TextEncoder().encode(text)
 }
 

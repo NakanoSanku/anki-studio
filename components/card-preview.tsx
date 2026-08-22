@@ -1,7 +1,7 @@
 "use client"
 
 import { previewDocument, renderCard } from "@/lib/template"
-import { previewValues, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
+import { getCardTemplate, previewValues, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
 import { ttsFieldsOnSide } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,9 @@ type CardPreviewProps = {
   values: Record<string, string>
   side: "front" | "back"
   onSideChange: (side: "front" | "back") => void
+  templateId?: string
   className?: string
+  fillViewport?: boolean
 }
 
 export function CardPreview({
@@ -20,18 +22,31 @@ export function CardPreview({
   values,
   side,
   onSideChange,
+  templateId,
   className,
+  fillViewport = false,
 }: CardPreviewProps) {
   const preview = previewValues(deck, values)
-  const rendered = renderCard(deck.front, deck.back, preview)
+  const template = getCardTemplate(deck, templateId)
+  const rendered = renderCard(template.front, template.back, preview)
   const html = side === "front" ? rendered.front : rendered.back
-  const playable = ttsFieldsOnSide(deck, side)
+  const playable = ttsFieldsOnSide(deck, side, template.id)
   const configs = ttsOf(deck)
 
   return (
-    <div className={cn("flex min-h-0 min-w-0 flex-col gap-3", className)}>
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col gap-3",
+        fillViewport &&
+          "h-[max(20rem,calc(100dvh-19.5rem))] lg:h-[max(28rem,calc(100dvh-16.5rem))]",
+        className
+      )}
+    >
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">预览</p>
+        <div className="min-w-0">
+          <p className="text-sm font-medium">预览</p>
+          <p className="truncate text-xs text-muted-foreground">{template.name}</p>
+        </div>
         <div className="flex shrink-0 gap-1">
           <Button
             type="button"
@@ -51,7 +66,12 @@ export function CardPreview({
           </Button>
         </div>
       </div>
-      <div className="h-[280px] overflow-hidden rounded-2xl bg-white ring-1 ring-black/8 lg:h-[420px]">
+      <div
+        className={cn(
+          "overflow-hidden rounded-2xl bg-white ring-1 ring-black/8",
+          fillViewport ? "min-h-0 flex-1" : "h-[280px] lg:h-[420px]"
+        )}
+      >
         <iframe
           title="卡片预览"
           sandbox=""

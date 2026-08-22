@@ -1,7 +1,8 @@
 import { css } from "@codemirror/lang-css"
 import { html } from "@codemirror/lang-html"
-import { indentUnit, syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language"
+import { indentUnit, syntaxHighlighting } from "@codemirror/language"
 import { EditorState, RangeSetBuilder } from "@codemirror/state"
+import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark"
 import { Decoration, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view"
 
 const fieldMark = Decoration.mark({ class: "cm-anki-field" })
@@ -42,8 +43,8 @@ function highlightFields(view: EditorView) {
 export const paperEditorTheme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "#fbfaf6",
-      color: "#2a261f",
+      backgroundColor: "#17181d",
+      color: "#e8e8ef",
       fontSize: "12.5px",
       maxWidth: "100%",
     },
@@ -55,7 +56,7 @@ export const paperEditorTheme = EditorView.theme(
     },
     ".cm-content": {
       fontFamily: "var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace",
-      caretColor: "#2a261f",
+      caretColor: "#c7d2fe",
       padding: "12px 0",
       lineHeight: "20px",
     },
@@ -63,42 +64,54 @@ export const paperEditorTheme = EditorView.theme(
       padding: "0 12px",
     },
     ".cm-gutters": {
-      backgroundColor: "#f3f0e8",
-      color: "rgb(42 38 31 / 38%)",
+      backgroundColor: "#111217",
+      color: "rgb(199 210 254 / 38%)",
       border: "none",
-      borderRight: "1px solid rgb(0 0 0 / 6%)",
+      borderRight: "1px solid rgb(255 255 255 / 7%)",
     },
     ".cm-lineNumbers .cm-gutterElement": {
       minWidth: "2.4rem",
       padding: "0 8px",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgb(0 0 0 / 3.5%)",
+      backgroundColor: "rgb(255 255 255 / 4%)",
     },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
-      color: "rgb(42 38 31 / 62%)",
+      color: "rgb(224 231 255 / 72%)",
     },
     ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-      backgroundColor: "rgb(251 191 36 / 35%)",
+      backgroundColor: "rgb(79 70 229 / 42%)",
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#2a261f",
+      borderLeftColor: "#c7d2fe",
     },
     ".cm-anki-field": {
-      color: "#1d4e89",
-      backgroundColor: "rgb(29 78 137 / 8%)",
+      color: "#c7d2fe",
+      backgroundColor: "rgb(99 102 241 / 18%)",
       borderRadius: "3px",
     },
+    ".cm-tooltip": {
+      backgroundColor: "#202127",
+      color: "#e8e8ef",
+      border: "1px solid rgb(255 255 255 / 10%)",
+    },
+    ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+      backgroundColor: "rgb(79 70 229 / 45%)",
+      color: "#ffffff",
+    },
+    ".cm-placeholder": {
+      color: "rgb(232 232 239 / 35%)",
+    },
   },
-  { dark: false }
+  { dark: true }
 )
 
 const sharedExtensions = [
   EditorView.lineWrapping,
   EditorState.tabSize.of(2),
   indentUnit.of("  "),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  syntaxHighlighting(oneDarkHighlightStyle, { fallback: true }),
 ]
 
 export const templateExtensions = [

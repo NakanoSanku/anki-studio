@@ -13,6 +13,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogContent,
@@ -34,6 +36,7 @@ type DeckLibraryDialogProps = {
   onCreate: () => void
   onDuplicate: () => void
   onDelete: (id: string) => void
+  onRename: (name: string) => void
 }
 
 export function DeckLibraryDialog({
@@ -45,6 +48,7 @@ export function DeckLibraryDialog({
   onCreate,
   onDuplicate,
   onDelete,
+  onRename,
 }: DeckLibraryDialogProps) {
   const [pendingDelete, setPendingDelete] = useState<LibraryEntry | null>(null)
   const canDelete = library.decks.length > 1
@@ -59,6 +63,15 @@ export function DeckLibraryDialog({
               当前：{activeName} · 共 {library.decks.length} 个卡包
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="active-deck-name">当前卡包名称</Label>
+            <Input
+              id="active-deck-name"
+              value={activeName}
+              onChange={(event) => onRename(event.target.value)}
+            />
+          </div>
 
           <ScrollArea className="max-h-80">
             <ul className="grid gap-2">

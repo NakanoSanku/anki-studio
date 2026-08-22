@@ -3,12 +3,8 @@ export type AiSettings = {
   apiKey: string
   baseURL: string
   systemPrompt: string
-  fieldCompletePrompt: string
-  fieldRewritePrompt: string
   cardCompletePrompt: string
-  cardRewritePrompt: string
   batchPrompt: string
-  cardAuditPrompt: string
   templateEditPrompt: string
 }
 
@@ -18,24 +14,7 @@ const LEGACY_SETTINGS_KEY = "anki-studio.ai-settings.v1"
 export const DEFAULT_SYSTEM_PROMPT =
   "你在帮用户制作 Anki 单词卡片。只输出要求的内容，不要解释，不要加引号或 markdown。"
 
-export const DEFAULT_FIELD_COMPLETE_PROMPT = `请根据已有信息补全字段「{{field}}」。
-该字段备注：{{note}}
-整张卡片：
-{{context}}`
-
-export const DEFAULT_FIELD_REWRITE_PROMPT = `请重写字段「{{field}}」，保持原意，更适合记忆。
-该字段备注：{{note}}
-当前内容：{{current}}
-整张卡片：
-{{context}}`
-
-export const DEFAULT_CARD_COMPLETE_PROMPT = `补全这张卡片里仍然为空的字段，已有内容保持原意可微调。
-字段备注：
-{{notes}}
-当前内容：
-{{context}}`
-
-export const DEFAULT_CARD_REWRITE_PROMPT = `根据关键字段「{{key}}」重写整张卡片的全部字段。
+export const DEFAULT_CARD_COMPLETE_PROMPT = `只补全这张卡片里仍然为空的字段，不要修改已有字段。
 字段备注：
 {{notes}}
 当前内容：
@@ -49,21 +28,6 @@ export const DEFAULT_BATCH_PROMPT = `请生成 {{count}} 张互不重复的单�
 {{notes}}
 不要使用这些已有单词：{{existing}}
 每张卡片的「{{key}}」必须不同。`
-
-export const DEFAULT_CARD_AUDIT_PROMPT = `请按审核说明检查并重写这些卡片。
-审核说明：
-{{instruction}}
-
-字段：{{fields}}
-字段备注：
-{{notes}}
-首字段「{{key}}」不要改，除非有明显拼写错误。
-
-卡片（必须原样返回每张的 id）：
-{{cards}}
-
-返回 JSON 对象，格式为 {"cards":[{"id":"...","字段名":"..."}]}。
-只改需要改的字段；合格的字段保持原样。不要编造 id。`
 
 export const DEFAULT_TEMPLATE_EDIT_PROMPT = `按用户说明修改 Anki 卡片模板。
 用户说明：
@@ -99,12 +63,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   apiKey: "",
   baseURL: "https://api.openai.com/v1",
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  fieldCompletePrompt: DEFAULT_FIELD_COMPLETE_PROMPT,
-  fieldRewritePrompt: DEFAULT_FIELD_REWRITE_PROMPT,
   cardCompletePrompt: DEFAULT_CARD_COMPLETE_PROMPT,
-  cardRewritePrompt: DEFAULT_CARD_REWRITE_PROMPT,
   batchPrompt: DEFAULT_BATCH_PROMPT,
-  cardAuditPrompt: DEFAULT_CARD_AUDIT_PROMPT,
   templateEditPrompt: DEFAULT_TEMPLATE_EDIT_PROMPT,
 }
 
@@ -123,12 +83,8 @@ export function parseAiSettings(raw: unknown): AiSettings {
     apiKey: text(raw.apiKey, ""),
     baseURL: text(raw.baseURL, DEFAULT_AI_SETTINGS.baseURL),
     systemPrompt: text(raw.systemPrompt, DEFAULT_SYSTEM_PROMPT),
-    fieldCompletePrompt: text(raw.fieldCompletePrompt, DEFAULT_FIELD_COMPLETE_PROMPT),
-    fieldRewritePrompt: text(raw.fieldRewritePrompt, DEFAULT_FIELD_REWRITE_PROMPT),
     cardCompletePrompt: text(raw.cardCompletePrompt, DEFAULT_CARD_COMPLETE_PROMPT),
-    cardRewritePrompt: text(raw.cardRewritePrompt, DEFAULT_CARD_REWRITE_PROMPT),
     batchPrompt: text(raw.batchPrompt, DEFAULT_BATCH_PROMPT),
-    cardAuditPrompt: text(raw.cardAuditPrompt, DEFAULT_CARD_AUDIT_PROMPT),
     templateEditPrompt: text(raw.templateEditPrompt, DEFAULT_TEMPLATE_EDIT_PROMPT),
   }
 }
@@ -193,12 +149,8 @@ export function renderPrompt(template: string, vars: Record<string, string>): st
 
 export type PromptKey =
   | "systemPrompt"
-  | "fieldCompletePrompt"
-  | "fieldRewritePrompt"
   | "cardCompletePrompt"
-  | "cardRewritePrompt"
   | "batchPrompt"
-  | "cardAuditPrompt"
   | "templateEditPrompt"
 
 export type PromptVariable = {
@@ -212,16 +164,6 @@ export type PromptSpec = {
   hint: string
   vars: PromptVariable[]
 }
-
-const FIELD_VARS: PromptVariable[] = [
-  { id: "field", label: "当前字段" },
-  { id: "current", label: "当前内容" },
-  { id: "note", label: "字段备注" },
-  { id: "context", label: "整卡内容" },
-  { id: "key", label: "关键字段" },
-  { id: "fields", label: "字段列表" },
-  { id: "notes", label: "全部备注" },
-]
 
 const CARD_VARS: PromptVariable[] = [
   { id: "key", label: "关键字段" },
@@ -238,27 +180,9 @@ export const PROMPT_SPECS: PromptSpec[] = [
     vars: [],
   },
   {
-    key: "fieldCompletePrompt",
-    label: "字段补全",
-    hint: "单卡里点某个字段的补全。",
-    vars: FIELD_VARS,
-  },
-  {
-    key: "fieldRewritePrompt",
-    label: "字段重写",
-    hint: "单卡里点某个字段的重写。",
-    vars: FIELD_VARS,
-  },
-  {
     key: "cardCompletePrompt",
     label: "整卡补全",
-    hint: "单卡顶部的补全，只填空字段。",
-    vars: CARD_VARS,
-  },
-  {
-    key: "cardRewritePrompt",
-    label: "整卡重写",
-    hint: "单卡顶部的重写，按首字段重写整张。",
+    hint: "卡片编辑页唯一的 AI 编辑操作，只填写空字段。",
     vars: CARD_VARS,
   },
   {
@@ -272,19 +196,6 @@ export const PROMPT_SPECS: PromptSpec[] = [
       { id: "fields", label: "字段列表" },
       { id: "notes", label: "全部备注" },
       { id: "existing", label: "已有单词" },
-    ],
-  },
-  {
-    key: "cardAuditPrompt",
-    label: "批量审核",
-    hint: "卡片页按审核说明批量重写。说明填在弹窗里。",
-    vars: [
-      { id: "instruction", label: "审核说明" },
-      { id: "cards", label: "待审卡片" },
-      { id: "count", label: "本批数量" },
-      { id: "key", label: "关键字段" },
-      { id: "fields", label: "字段列表" },
-      { id: "notes", label: "全部备注" },
     ],
   },
   {

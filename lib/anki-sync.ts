@@ -1,5 +1,6 @@
 import {
   isCardEmpty,
+  templatesOf,
   ttsOf,
   type AnkiIdentity,
   type Card,
@@ -31,8 +32,7 @@ export function templateHash(deck: Deck): string {
     JSON.stringify({
       name: deck.name,
       fields: deck.fields,
-      front: deck.front,
-      back: deck.back,
+      templates: templatesOf(deck),
       css: deck.css,
       fieldTts: ttsOf(deck),
     })

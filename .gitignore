@@ -43,3 +43,8 @@ next-env.d.ts
 # local fixtures and session screenshots
 /tmp-*
 /*.png
+
+# cloudflare
+.open-next
+.wrangler
+.dev.vars

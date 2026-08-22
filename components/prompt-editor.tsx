@@ -18,7 +18,7 @@ export function PromptEditor({
   settings: AiSettings
   onChange: (key: PromptKey, value: string) => void
 }) {
-  const [key, setKey] = useState<PromptKey>("fieldCompletePrompt")
+  const [key, setKey] = useState<PromptKey>("cardCompletePrompt")
   const editorRef = useRef<CodeEditorHandle>(null)
   const spec = PROMPT_SPECS.find((item) => item.key === key) ?? PROMPT_SPECS[0]
   const changed = settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]
@@ -28,7 +28,7 @@ export function PromptEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium">提示词</p>
-          <p className="mt-0.5 text-xs text-foreground/45">{spec.hint}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{spec.hint}</p>
         </div>
         <Button
           type="button"
@@ -72,7 +72,7 @@ export function PromptEditor({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-foreground/45">系统提示词不使用变量。</p>
+        <p className="text-xs text-muted-foreground">系统提示词不使用变量。</p>
       )}
 
       <CodeEditor

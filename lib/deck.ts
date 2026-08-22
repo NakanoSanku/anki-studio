@@ -21,17 +21,77 @@ export type TtsField = {
   slow: boolean
 }
 
+export type CardTemplate = {
+  id: string
+  name: string
+  front: string
+  back: string
+}
+
+export type StoredFsrsCard = {
+  due: string
+  stability: number
+  difficulty: number
+  elapsed_days: number
+  scheduled_days: number
+  learning_steps: number
+  reps: number
+  lapses: number
+  state: number
+  last_review?: string
+}
+
+export type StoredReviewLog = {
+  rating: number
+  state: number
+  due: string
+  stability: number
+  difficulty: number
+  elapsed_days: number
+  last_elapsed_days: number
+  scheduled_days: number
+  learning_steps: number
+  review: string
+}
+
+export type ScheduledCard = {
+  noteId: string
+  templateId: string
+  card: StoredFsrsCard
+  logs: StoredReviewLog[]
+}
+
+export type FsrsDeckState = {
+  requestRetention: number
+  maximumInterval: number
+  dailyNewLimit: number
+  dailyReviewLimit: number
+  cards: Record<string, ScheduledCard>
+}
+
 export type Deck = {
-  version: 1
+  version: 1 | 2
   name: string
   fields: string[]
   fieldNotes: Record<string, string>
   fieldTts: Record<string, TtsField>
+  /** Legacy mirrors for the first template. Kept for V1 JSON compatibility. */
   front: string
   back: string
+  templates?: CardTemplate[]
   css: string
   cards: Card[]
+  fsrs?: FsrsDeckState
   anki?: AnkiIdentity
+}
+
+export const PRIMARY_TEMPLATE_ID = "card-1"
+
+export const DEFAULT_FSRS_STATE: Omit<FsrsDeckState, "cards"> = {
+  requestRetention: 0.9,
+  maximumInterval: 36500,
+  dailyNewLimit: 20,
+  dailyReviewLimit: 200,
 }
 
 export const TTS_LANGS: { id: TtsLang; label: string }[] = [
@@ -215,6 +275,140 @@ export const DEFAULT_CSS = `.card {
   line-height: 1.45;
 }`
 
+export function createTemplateId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function templatesOf(
+  deck: Pick<Deck, "front" | "back"> & { templates?: CardTemplate[] }
+): CardTemplate[] {
+  if (Array.isArray(deck.templates) && deck.templates.length > 0) {
+    const [primary, ...rest] = deck.templates
+    return [{ ...primary!, front: deck.front, back: deck.back }, ...rest]
+  }
+  return [
+    {
+      id: PRIMARY_TEMPLATE_ID,
+      name: "卡片 1",
+      front: deck.front,
+      back: deck.back,
+    },
+  ]
+}
+
+export function primaryTemplate(deck: Deck): CardTemplate {
+  return templatesOf(deck)[0]!
+}
+
+export function getCardTemplate(deck: Deck, templateId?: string): CardTemplate {
+  const templates = templatesOf(deck)
+  return templates.find((template) => template.id === templateId) ?? templates[0]!
+}
+
+export function withTemplates(deck: Deck, templates: CardTemplate[]): Deck {
+  const next = templates.length > 0 ? templates : templatesOf(deck)
+  const primary = next[0]!
+  return {
+    ...deck,
+    version: 2,
+    templates: next,
+    front: primary.front,
+    back: primary.back,
+  }
+}
+
+export function updateCardTemplate(
+  deck: Deck,
+  templateId: string,
+  patch: Partial<Pick<CardTemplate, "name" | "front" | "back">>
+): Deck {
+  const templates = templatesOf(deck).map((template) =>
+    template.id === templateId ? { ...template, ...patch } : template
+  )
+  return withTemplates(deck, templates)
+}
+
+export function addCardTemplate(deck: Deck): Deck {
+  const templates = templatesOf(deck)
+  let number = templates.length + 1
+  const names = new Set(templates.map((template) => template.name))
+  while (names.has(`卡片 ${number}`)) number += 1
+  return withTemplates(deck, [
+    ...templates,
+    {
+      id: createTemplateId(),
+      name: `卡片 ${number}`,
+      front: deck.front,
+      back: deck.back,
+    },
+  ])
+}
+
+export function duplicateCardTemplate(deck: Deck, templateId: string): Deck {
+  const templates = templatesOf(deck)
+  const source = templates.find((template) => template.id === templateId)
+  if (!source) return deck
+  let name = `${source.name} 副本`
+  let number = 2
+  const names = new Set(templates.map((template) => template.name))
+  while (names.has(name)) {
+    name = `${source.name} 副本 ${number}`
+    number += 1
+  }
+  return withTemplates(deck, [
+    ...templates,
+    { ...source, id: createTemplateId(), name },
+  ])
+}
+
+export function removeCardTemplate(deck: Deck, templateId: string): FieldChangeResult {
+  const templates = templatesOf(deck)
+  if (templates.length <= 1) {
+    return { ok: false, error: "至少保留一个卡片模板" }
+  }
+  const next = templates.filter((template) => template.id !== templateId)
+  if (next.length === templates.length) return { ok: false, error: "卡片模板不存在" }
+  const validIds = new Set(next.map((template) => template.id))
+  const cards = Object.fromEntries(
+    Object.entries(fsrsOf(deck).cards).filter(([, item]) => validIds.has(item.templateId))
+  )
+  return {
+    ok: true,
+    deck: withTemplates({ ...deck, fsrs: { ...fsrsOf(deck), cards } }, next),
+  }
+}
+
+export function scheduledCardKey(noteId: string, templateId: string): string {
+  return `${noteId}::${templateId}`
+}
+
+export function fsrsOf(deck: Pick<Deck, "cards"> & { fsrs?: FsrsDeckState }): FsrsDeckState {
+  const raw = deck.fsrs
+  const requestRetention =
+    typeof raw?.requestRetention === "number" && raw.requestRetention >= 0.7 && raw.requestRetention <= 0.99
+      ? raw.requestRetention
+      : DEFAULT_FSRS_STATE.requestRetention
+  return {
+    requestRetention: Math.round(requestRetention * 100) / 100,
+    maximumInterval:
+      typeof raw?.maximumInterval === "number" && raw.maximumInterval >= 1
+        ? Math.round(raw.maximumInterval)
+        : DEFAULT_FSRS_STATE.maximumInterval,
+    dailyNewLimit:
+      typeof raw?.dailyNewLimit === "number" && raw.dailyNewLimit >= 0
+        ? Math.round(raw.dailyNewLimit)
+        : DEFAULT_FSRS_STATE.dailyNewLimit,
+    dailyReviewLimit:
+      typeof raw?.dailyReviewLimit === "number" && raw.dailyReviewLimit >= 0
+        ? Math.round(raw.dailyReviewLimit)
+        : DEFAULT_FSRS_STATE.dailyReviewLimit,
+    cards: raw?.cards && typeof raw.cards === "object" ? raw.cards : {},
+  }
+}
+
 export function createCardId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID()
@@ -255,15 +449,24 @@ export function readStoredDeck(): Deck {
 export function createBlankDeck(name = "新卡包"): Deck {
   const fields = [...DEFAULT_FIELDS]
   return {
-    version: 1,
+    version: 2,
     name,
     fields,
     fieldNotes: { ...DEFAULT_FIELD_NOTES },
     fieldTts: {},
     front: DEFAULT_FRONT,
     back: DEFAULT_BACK,
+    templates: [
+      {
+        id: PRIMARY_TEMPLATE_ID,
+        name: "卡片 1",
+        front: DEFAULT_FRONT,
+        back: DEFAULT_BACK,
+      },
+    ],
     css: DEFAULT_CSS,
     cards: [createCard(fields)],
+    fsrs: { ...DEFAULT_FSRS_STATE, cards: {} },
   }
 }
 
@@ -287,6 +490,140 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+function finiteNumber(value: unknown, fallback = 0): number {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function isoDate(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number" && !(value instanceof Date)) {
+    return undefined
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
+function parseStoredFsrsCard(raw: unknown): StoredFsrsCard | null {
+  if (!isRecord(raw)) return null
+  const due = isoDate(raw.due)
+  const lastReview = raw.last_review == null ? undefined : isoDate(raw.last_review)
+  const state = Math.round(finiteNumber(raw.state, -1))
+  if (!due || state < 0 || state > 3) return null
+  return {
+    due,
+    stability: Math.max(0, finiteNumber(raw.stability)),
+    difficulty: Math.max(0, finiteNumber(raw.difficulty)),
+    elapsed_days: Math.max(0, finiteNumber(raw.elapsed_days)),
+    scheduled_days: Math.max(0, finiteNumber(raw.scheduled_days)),
+    learning_steps: Math.max(0, Math.round(finiteNumber(raw.learning_steps))),
+    reps: Math.max(0, Math.round(finiteNumber(raw.reps))),
+    lapses: Math.max(0, Math.round(finiteNumber(raw.lapses))),
+    state,
+    ...(lastReview ? { last_review: lastReview } : {}),
+  }
+}
+
+function parseStoredReviewLog(raw: unknown): StoredReviewLog | null {
+  if (!isRecord(raw)) return null
+  const due = isoDate(raw.due)
+  const review = isoDate(raw.review)
+  const rating = Math.round(finiteNumber(raw.rating, -1))
+  const state = Math.round(finiteNumber(raw.state, -1))
+  if (!due || !review || rating < 1 || rating > 4 || state < 0 || state > 3) return null
+  return {
+    rating,
+    state,
+    due,
+    stability: Math.max(0, finiteNumber(raw.stability)),
+    difficulty: Math.max(0, finiteNumber(raw.difficulty)),
+    elapsed_days: Math.max(0, finiteNumber(raw.elapsed_days)),
+    last_elapsed_days: Math.max(0, finiteNumber(raw.last_elapsed_days)),
+    scheduled_days: Math.max(0, finiteNumber(raw.scheduled_days)),
+    learning_steps: Math.max(0, Math.round(finiteNumber(raw.learning_steps))),
+    review,
+  }
+}
+
+function parseTemplates(data: Record<string, unknown>): CardTemplate[] {
+  const templates: CardTemplate[] = []
+  const ids = new Set<string>()
+  const rawTemplates = Array.isArray(data.templates) ? data.templates : []
+  for (const [index, raw] of rawTemplates.entries()) {
+    if (!isRecord(raw) || typeof raw.front !== "string" || typeof raw.back !== "string") continue
+    const requestedId = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : `card-${index + 1}`
+    let id = requestedId
+    let suffix = 2
+    while (ids.has(id)) {
+      id = `${requestedId}-${suffix}`
+      suffix += 1
+    }
+    ids.add(id)
+    templates.push({
+      id,
+      name:
+        typeof raw.name === "string" && raw.name.trim()
+          ? raw.name.trim()
+          : `卡片 ${index + 1}`,
+      front: raw.front,
+      back: raw.back,
+    })
+  }
+  if (templates.length > 0) return templates
+  return [
+    {
+      id: PRIMARY_TEMPLATE_ID,
+      name: "卡片 1",
+      front: typeof data.front === "string" ? data.front : DEFAULT_FRONT,
+      back: typeof data.back === "string" ? data.back : DEFAULT_BACK,
+    },
+  ]
+}
+
+function parseFsrsState(
+  raw: unknown,
+  noteIds: Set<string>,
+  templateIds: Set<string>
+): FsrsDeckState {
+  const source = isRecord(raw) ? raw : {}
+  const parsedCards: Record<string, ScheduledCard> = {}
+  const rawCards = isRecord(source.cards) ? source.cards : {}
+  for (const value of Object.values(rawCards)) {
+    if (!isRecord(value)) continue
+    const noteId = typeof value.noteId === "string" ? value.noteId : ""
+    const templateId = typeof value.templateId === "string" ? value.templateId : ""
+    if (!noteIds.has(noteId) || !templateIds.has(templateId)) continue
+    const card = parseStoredFsrsCard(value.card)
+    if (!card) continue
+    const logs = Array.isArray(value.logs)
+      ? value.logs.flatMap((item) => {
+          const parsed = parseStoredReviewLog(item)
+          return parsed ? [parsed] : []
+        })
+      : []
+    parsedCards[scheduledCardKey(noteId, templateId)] = { noteId, templateId, card, logs }
+  }
+  return {
+    requestRetention:
+      finiteNumber(source.requestRetention, DEFAULT_FSRS_STATE.requestRetention) >= 0.7 &&
+      finiteNumber(source.requestRetention, DEFAULT_FSRS_STATE.requestRetention) <= 0.99
+        ? finiteNumber(source.requestRetention, DEFAULT_FSRS_STATE.requestRetention)
+        : DEFAULT_FSRS_STATE.requestRetention,
+    maximumInterval: Math.max(
+      1,
+      Math.round(finiteNumber(source.maximumInterval, DEFAULT_FSRS_STATE.maximumInterval))
+    ),
+    dailyNewLimit: Math.max(
+      0,
+      Math.round(finiteNumber(source.dailyNewLimit, DEFAULT_FSRS_STATE.dailyNewLimit))
+    ),
+    dailyReviewLimit: Math.max(
+      0,
+      Math.round(finiteNumber(source.dailyReviewLimit, DEFAULT_FSRS_STATE.dailyReviewLimit))
+    ),
+    cards: parsedCards,
+  }
+}
+
 export function parseDeckJson(raw: string): Deck {
   let data: unknown
   try {
@@ -299,7 +636,7 @@ export function parseDeckJson(raw: string): Deck {
     throw new Error("卡包格式无效")
   }
 
-  if (data.version !== 1) {
+  if (data.version !== 1 && data.version !== 2) {
     throw new Error("不支持的卡包版本")
   }
 
@@ -320,13 +657,11 @@ export function parseDeckJson(raw: string): Deck {
     throw new Error("字段名不能重复")
   }
 
-  if (
-    typeof data.front !== "string" ||
-    typeof data.back !== "string" ||
-    typeof data.css !== "string"
-  ) {
+  if (typeof data.css !== "string") {
     throw new Error("模板内容无效")
   }
+
+  const templates = parseTemplates(data)
 
   if (!Array.isArray(data.cards)) {
     throw new Error("卡片列表无效")
@@ -367,16 +702,25 @@ export function parseDeckJson(raw: string): Deck {
     }
   }
 
+  const dedupedCards = dedupeCardsByFirstField(cards, fields)
+  const fsrs = parseFsrsState(
+    data.fsrs,
+    new Set(dedupedCards.map((card) => card.id)),
+    new Set(templates.map((template) => template.id))
+  )
+
   return {
-    version: 1,
+    version: 2,
     name: data.name.trim(),
     fields,
     fieldNotes,
     fieldTts,
-    front: data.front,
-    back: data.back,
+    front: templates[0]!.front,
+    back: templates[0]!.back,
+    templates,
     css: data.css,
-    cards: dedupeCardsByFirstField(cards, fields),
+    cards: dedupedCards,
+    fsrs,
     anki: parseAnkiIdentity(data.anki),
   }
 }
@@ -399,7 +743,19 @@ function parseAnkiIdentity(raw: unknown): AnkiIdentity | undefined {
 }
 
 export function serializeDeck(deck: Deck): string {
-  return JSON.stringify(deck, null, 2)
+  const templates = templatesOf(deck)
+  return JSON.stringify(
+    {
+      ...deck,
+      version: 2,
+      templates,
+      front: templates[0]!.front,
+      back: templates[0]!.back,
+      fsrs: fsrsOf(deck),
+    },
+    null,
+    2
+  )
 }
 
 export function uniqueFieldName(fields: string[], base = "新字段"): string {
@@ -434,22 +790,26 @@ export function tryRenameField(deck: Deck, from: string, to: string): FieldChang
   if (next === from) return { ok: true, deck }
   if (deck.fields.includes(next)) return { ok: false, error: `字段「${next}」已存在` }
 
+  const templates = templatesOf(deck).map((template) => ({
+    ...template,
+    front: renameFieldInTemplate(template.front, from, next),
+    back: renameFieldInTemplate(template.back, from, next),
+  }))
+
   return {
     ok: true,
-    deck: {
+    deck: withTemplates({
       ...deck,
       fields: deck.fields.map((field) => (field === from ? next : field)),
       fieldNotes: renameFieldNote(notesOf(deck), from, next),
       fieldTts: renameFieldTts(ttsOf(deck), from, next),
-      front: renameFieldInTemplate(deck.front, from, next),
-      back: renameFieldInTemplate(deck.back, from, next),
       cards: deck.cards.map((card) => {
         const values = { ...card.values }
         values[next] = values[from] ?? ""
         delete values[from]
         return { ...card, values }
       }),
-    },
+    }, templates),
   }
 }
 
@@ -491,9 +851,10 @@ export function tryRemoveField(deck: Deck, name: string): FieldChangeResult {
     return { ok: false, error: `TTS 字段「${dependents.join("、")}」还在朗读「${name}」，先删掉它们` }
   }
 
-  const usedIn: string[] = []
-  if (templateUsesField(deck.front, name)) usedIn.push("正面")
-  if (templateUsesField(deck.back, name)) usedIn.push("背面")
+  const usedIn = templatesOf(deck).flatMap((template) => [
+    ...(templateUsesField(template.front, name) ? [`「${template.name}」正面`] : []),
+    ...(templateUsesField(template.back, name) ? [`「${template.name}」背面`] : []),
+  ])
   if (usedIn.length > 0) {
     return { ok: false, error: `${usedIn.join("、")}模板还在使用「${name}」，先从模板里去掉再删除` }
   }
@@ -550,9 +911,19 @@ export function tryAddTtsField(
   }
   const name = requested || uniqueFieldName(deck.fields, `${source}_${input.lang}`)
 
+  const templates = templatesOf(deck)
+  const primary = templates[0]!
+  const nextTemplates = [
+    {
+      ...primary,
+      front: templateUsesField(primary.front, name) ? primary.front : `${primary.front}\n{{${name}}}`,
+    },
+    ...templates.slice(1),
+  ]
+
   return {
     ok: true,
-    deck: {
+    deck: withTemplates({
       ...deck,
       fields: [...deck.fields, name],
       fieldNotes: { ...notesOf(deck), [name]: "" },
@@ -560,12 +931,11 @@ export function tryAddTtsField(
         ...ttsOf(deck),
         [name]: { source, lang: input.lang, slow: Boolean(input.slow) },
       },
-      front: templateUsesField(deck.front, name) ? deck.front : `${deck.front}\n{{${name}}}`,
       cards: deck.cards.map((card) => ({
         ...card,
         values: { ...card.values, [name]: "" },
       })),
-    },
+    }, nextTemplates),
   }
 }
 
@@ -729,8 +1099,7 @@ export function setCardField(
 export function mergeCardAiValues(
   deck: Deck,
   cardId: string,
-  incoming: Record<string, string>,
-  action: "complete" | "rewrite"
+  incoming: Record<string, string>
 ): FieldChangeResult {
   const card = deck.cards.find((item) => item.id === cardId)
   if (!card) return { ok: false, error: "卡片已删除" }
@@ -739,7 +1108,7 @@ export function mergeCardAiValues(
   for (const field of textFields(deck)) {
     const generated = incoming[field]
     if (typeof generated !== "string") continue
-    if (action === "complete" && nextValues[field]?.trim()) continue
+    if (nextValues[field]?.trim()) continue
     nextValues[field] = generated
   }
 

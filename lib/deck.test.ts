@@ -129,16 +129,15 @@ describe("mergeCardAiValues", () => {
     const result = mergeCardAiValues(
       typed.deck,
       item.id,
-      { Word: "alpha", Translation: "AI 想覆盖" },
-      "complete"
+      { Word: "alpha", Translation: "AI 想覆盖" }
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.deck.cards[0]?.values.Translation).toBe("用户已填")
   })
 
-  it("rewrite updates returned fields without dropping later sibling edits", () => {
-    const item = card("alpha", "旧译")
+  it("fills empty sibling fields without changing existing values", () => {
+    const item = card("alpha")
     const extra = { ...item, values: { ...item.values, Extra: "keep" } }
     const deck = {
       ...testDeck([extra]),
@@ -148,14 +147,13 @@ describe("mergeCardAiValues", () => {
     const result = mergeCardAiValues(
       deck,
       extra.id,
-      { Word: "beta", Translation: "新译" },
-      "rewrite"
+      { Word: "beta", Translation: "AI 译文", Extra: "AI 想覆盖" }
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.deck.cards[0]?.values).toEqual({
-      Word: "beta",
-      Translation: "新译",
+      Word: "alpha",
+      Translation: "AI 译文",
       Extra: "keep",
     })
   })

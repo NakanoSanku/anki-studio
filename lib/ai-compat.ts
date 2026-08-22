@@ -105,28 +105,10 @@ export function pickCardList(parsed: unknown, fields: string[]): Record<string, 
   return jsonCardItems(parsed).map((item) => pickFieldValues(item, fields))
 }
 
-export function pickAuditedCards(
-  parsed: unknown,
-  fields: string[]
-): { id: string; values: Record<string, string> }[] {
-  return jsonCardItems(parsed).map((item) => {
-    const record = asRecord(item)
-    const nested = asRecord(record.values)
-    const id = readId(record.id) || readId(nested.id)
-    return { id, values: pickFieldValues(item, fields) }
-  })
-}
-
 function jsonCardItems(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) return parsed
   const cards = asRecord(parsed).cards
   return Array.isArray(cards) ? cards : []
-}
-
-function readId(value: unknown): string {
-  if (typeof value === "string" && value.trim()) return value.trim()
-  if (typeof value === "number" && Number.isFinite(value)) return String(value)
-  return ""
 }
 
 export function readChatText(payload: unknown): string {

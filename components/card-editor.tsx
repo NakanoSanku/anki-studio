@@ -1,20 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { Check, ChevronLeft, ChevronRight, Plus, Search, Sparkles } from "lucide-react"
 
-import { requestAuditAi, requestBatchAi, requestCardAi, requestFieldAi, type AiAction } from "@/lib/ai"
-import {
-  applyAuditResults,
-  AUDIT_CHUNK_SIZE,
-  AUDIT_MAX_COUNT,
-  chunkItems,
-  readAuditInstruction,
-  selectAuditTargets,
-  writeAuditInstruction,
-  type AuditScope,
-} from "@/lib/audit"
+import { requestBatchAi, requestCardAi } from "@/lib/ai"
 import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
-import { isAbortError } from "@/lib/ai-upstream"
+import { removeNoteSchedule } from "@/lib/fsrs"
 import {
   cardLabel,
   cardMatchesQuery,
@@ -34,10 +25,10 @@ import {
 } from "@/lib/deck"
 import {
   markReviewed,
+  markUnreviewed,
   matchesReviewFilter,
   pruneEditorState,
   readEditorState,
-  toggleFlagged,
   writeEditorState,
   type EditorState,
   type ReviewFilter,
@@ -63,52 +54,20 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { CardPreview } from "@/components/card-preview"
 import { useVirtualWindow } from "@/components/use-virtual-window"
 import { cn } from "@/lib/utils"
 
-type EditMode = "form" | "table"
+type MobilePane = "list" | "editor" | "preview"
 
-const MODE_KEY = "anki-studio.card-edit-mode"
 const LIST_ROW = 56
-const TABLE_ROW = 44
-const TABLE_HEADER = 36
 const FILTERS: { id: ReviewFilter; label: string }[] = [
   { id: "all", label: "全部" },
   { id: "unreviewed", label: "未审" },
-  { id: "flagged", label: "标记" },
 ]
-
-const AUDIT_SCOPES: { id: AuditScope; label: string }[] = [
-  { id: "unreviewed", label: "未审" },
-  { id: "flagged", label: "标记" },
-  { id: "visible", label: "当前筛选" },
-  { id: "all", label: "全部" },
-]
-
-type AuditProgress = {
-  done: number
-  total: number
-  written: number
-  skipped: number
-  status: "running" | "done" | "stopped" | "error"
-  message: string
-}
-
-function readMode(): EditMode {
-  if (typeof window === "undefined") return "form"
-  return window.localStorage.getItem(MODE_KEY) === "table" ? "table" : "form"
-}
 
 type DeckUpdater = Deck | ((current: Deck) => Deck)
 
@@ -131,7 +90,7 @@ export function CardEditor({
   onSelect,
   onPreviewSideChange,
 }: CardEditorProps) {
-  const [mode, setMode] = useState<EditMode>(readMode)
+  const [mobilePane, setMobilePane] = useState<MobilePane>("list")
   const [busyKeys, setBusyKeys] = useState<string[]>([])
   const busyRef = useRef(new Set<string>())
   const deckRef = useRef(deck)
@@ -140,12 +99,6 @@ export function CardEditor({
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
   const [batchCount, setBatchCount] = useState("10")
-  const [auditOpen, setAuditOpen] = useState(false)
-  const [auditInstruction, setAuditInstruction] = useState(readAuditInstruction)
-  const [auditScope, setAuditScope] = useState<AuditScope>("unreviewed")
-  const [auditCount, setAuditCount] = useState("20")
-  const [auditProgress, setAuditProgress] = useState<AuditProgress | null>(null)
-  const auditAbort = useRef<AbortController | null>(null)
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<ReviewFilter>("all")
   const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
@@ -153,6 +106,7 @@ export function CardEditor({
   const [jumpFocused, setJumpFocused] = useState(false)
   const selected = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
   const editableFields = textFields(deck)
+  const canCompleteSelected = editableFields.some((field) => !selected?.values[field]?.trim())
   const fieldTts = ttsOf(deck)
   const visibleCards = deck.cards.filter(
     (card) => cardMatchesQuery(card, editableFields, query) && matchesReviewFilter(card, review, filter)
@@ -160,27 +114,33 @@ export function CardEditor({
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
   const reviewedCount = review.reviewed.filter((id) => deck.cards.some((card) => card.id === id)).length
+  const isSelectedReviewed = Boolean(selected && review.reviewed.includes(selected.id))
   const isBusy = (task: string) => busyKeys.includes(task)
-  const listVirt = useVirtualWindow(visibleCards.length, LIST_ROW, 0, mode === "form")
-  const tableVirt = useVirtualWindow(visibleCards.length, TABLE_ROW, TABLE_HEADER, mode === "table")
+  const {
+    containerRef: listRef,
+    start: listStart,
+    end: listEnd,
+    padTop: listPadTop,
+    padBottom: listPadBottom,
+    scrollToIndex: scrollListToIndex,
+  } = useVirtualWindow(visibleCards.length, LIST_ROW)
   const visibleRef = useRef(visibleCards)
   const activeRef = useRef(activeId)
   const addCardRef = useRef<() => void>(() => {})
   const goRef = useRef<(delta: number) => void>(() => {})
-  const flagRef = useRef<() => void>(() => {})
+  const approveRef = useRef<() => void>(() => {})
   const jumpRef = useRef<(index: number) => void>(() => {})
-  visibleRef.current = visibleCards
-  activeRef.current = activeId
+
+  useEffect(() => {
+    visibleRef.current = visibleCards
+    activeRef.current = activeId
+  })
 
   useEffect(() => {
     pendingDecks.current.delete(deck)
     if (pendingDecks.current.size > 0 && !pendingDecks.current.has(deck)) return
     deckRef.current = deck
   }, [deck])
-
-  useEffect(() => {
-    localStorage.setItem(MODE_KEY, mode)
-  }, [mode])
 
   const persistReady = useRef(false)
   const deckIdRef = useRef(deckId)
@@ -205,9 +165,8 @@ export function CardEditor({
   useEffect(() => {
     const index = visibleRef.current.findIndex((card) => card.id === activeId)
     if (index < 0) return
-    if (mode === "table") tableVirt.scrollToIndex(index)
-    else listVirt.scrollToIndex(index)
-  }, [activeId, mode, filter, query, listVirt.scrollToIndex, tableVirt.scrollToIndex])
+    scrollListToIndex(index)
+  }, [activeId, filter, query, scrollListToIndex])
 
   const pushDeck = (next: Deck) => {
     deckRef.current = next
@@ -223,12 +182,12 @@ export function CardEditor({
   }
 
   const addCard = () => {
+    setMobilePane("editor")
     const current = deckRef.current
     const currentSelected = current.cards.find((card) => card.id === activeRef.current) ?? current.cards[0]
     if (currentSelected && isCardEmpty(currentSelected, current.fields)) {
       onSelect(currentSelected.id)
       setQuery("")
-      if (filter === "flagged") setFilter("all")
       return
     }
     const empty = current.cards.find((card) => isCardEmpty(card, current.fields))
@@ -236,25 +195,39 @@ export function CardEditor({
       pushDeck({ ...current, cards: moveItemAfter(current.cards, empty.id, currentSelected?.id) })
       onSelect(empty.id)
       setQuery("")
-      if (filter === "flagged") setFilter("all")
       return
     }
     const card = createCard(current.fields)
     pushDeck({ ...current, cards: insertItemsAfter(current.cards, currentSelected?.id, [card]) })
     onSelect(card.id)
     setQuery("")
-    if (filter === "flagged") setFilter("all")
   }
 
   const goVisible = (delta: number) => {
     const list = visibleRef.current
     if (list.length === 0) return
     const currentId = activeRef.current
-    if (delta > 0 && currentId) {
-      setReview((state) => markReviewed(state, currentId))
-    }
     const nextId = neighborId(list, currentId, delta)
     if (nextId) onSelect(nextId)
+  }
+
+  const approveCurrent = () => {
+    const currentId = activeRef.current
+    if (!currentId) return
+    const list = visibleRef.current
+    const currentIndex = list.findIndex((card) => card.id === currentId)
+    let nextId = currentIndex >= 0 ? list[currentIndex + 1]?.id ?? "" : list[0]?.id ?? ""
+    if (!nextId && filter === "unreviewed") {
+      nextId = list.find((card) => card.id !== currentId)?.id ?? ""
+    }
+    setReview((state) => markReviewed(state, currentId))
+    if (nextId) onSelect(nextId)
+  }
+
+  const undoCurrentReview = () => {
+    const currentId = activeRef.current
+    if (!currentId) return
+    setReview((state) => markUnreviewed(state, currentId))
   }
 
   const jumpTo = (index1: number) => {
@@ -265,23 +238,20 @@ export function CardEditor({
     onSelect(id)
   }
 
-  const flagCurrent = () => {
-    const id = activeRef.current
-    if (!id) return
-    setReview((state) => toggleFlagged(state, id))
-  }
-
-  addCardRef.current = addCard
-  goRef.current = goVisible
-  flagRef.current = flagCurrent
-  jumpRef.current = jumpTo
+  useEffect(() => {
+    addCardRef.current = addCard
+    goRef.current = goVisible
+    approveRef.current = approveCurrent
+    jumpRef.current = jumpTo
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.altKey || event.metaKey || event.ctrlKey) return
       if (event.isComposing) return
-      if (batchOpen || auditOpen || alert) return
-      const repeating = event.repeat && (event.key === "n" || event.key === "N" || event.key === "m" || event.key === "M")
+      if (batchOpen || alert) return
+      const repeating =
+        event.repeat && (event.key === "ArrowDown" || event.key === "n" || event.key === "N")
       if (repeating) return
       switch (event.key) {
         case "ArrowUp":
@@ -290,7 +260,7 @@ export function CardEditor({
           break
         case "ArrowDown":
           event.preventDefault()
-          goRef.current(1)
+          approveRef.current()
           break
         case "Home":
           event.preventDefault()
@@ -305,18 +275,13 @@ export function CardEditor({
           event.preventDefault()
           addCardRef.current()
           break
-        case "m":
-        case "M":
-          event.preventDefault()
-          flagRef.current()
-          break
         default:
           break
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [alert, auditOpen, batchOpen])
+  }, [alert, batchOpen])
 
   const updateCard = (id: string, field: string, value: string) => {
     if (fieldTts[field]) return false
@@ -325,6 +290,7 @@ export function CardEditor({
       setAlert(result.error)
       return false
     }
+    setReview((state) => markUnreviewed(state, id))
     return true
   }
 
@@ -340,23 +306,6 @@ export function CardEditor({
       busyRef.current.delete(task)
       setBusyKeys([...busyRef.current])
     }
-  }
-
-  const applyFieldAi = (field: string, action: AiAction) => {
-    if (!selected) return
-    const cardId = selected.id
-    const values = selected.values
-    void runAi(`field:${field}:${action}`, async () => {
-      const text = await requestFieldAi({
-        action,
-        field,
-        fields: editableFields,
-        values,
-        notes: notesOf(deck),
-      })
-      const result = commitChange((current) => setCardField(current, cardId, field, text))
-      if (!result.ok) throw new Error(result.error)
-    })
   }
 
   const applyBatchAi = () => {
@@ -398,144 +347,32 @@ export function CardEditor({
       setBatchOpen(false)
       setBatchTopic("")
       setQuery("")
-      if (filter === "flagged") setFilter("all")
     })
   }
 
-  const applyCardAi = (action: AiAction) => {
+  const applyCardCompletion = () => {
     if (!selected) return
     const cardId = selected.id
     const values = selected.values
-    void runAi(`card:${action}`, async () => {
+    void runAi("card:complete", async () => {
       const generated = await requestCardAi({
-        action,
         fields: editableFields,
         values,
         notes: notesOf(deck),
       })
-      const result = commitChange((current) => mergeCardAiValues(current, cardId, generated, action))
+      const result = commitChange((current) => mergeCardAiValues(current, cardId, generated))
       if (!result.ok) throw new Error(result.error)
+      setReview((state) => markUnreviewed(state, cardId))
     })
-  }
-
-  const openAudit = () => {
-    setAuditInstruction(readAuditInstruction())
-    setAuditProgress(null)
-    setAuditOpen(true)
-  }
-
-  const stopAudit = () => {
-    auditAbort.current?.abort()
-  }
-
-  const applyAuditAi = () => {
-    const instruction = auditInstruction.trim()
-    if (!instruction) {
-      setAlert("请填写审核说明")
-      return
-    }
-    if (instruction.length > 4000) {
-      setAlert("审核说明过长")
-      return
-    }
-    const count = Number(auditCount)
-    if (!Number.isFinite(count) || count < 1 || count > AUDIT_MAX_COUNT) {
-      setAlert(`本次数需要在 1 到 ${AUDIT_MAX_COUNT} 之间`)
-      return
-    }
-    const current = deckRef.current
-    const fields = textFields(current)
-    const notes = notesOf(current)
-    const targets = selectAuditTargets(current.cards, current.fields, {
-      scope: auditScope,
-      visibleIds: visibleRef.current.map((card) => card.id),
-      review,
-      limit: Math.floor(count),
-    })
-    if (targets.length === 0) {
-      setAlert("这个范围内没有可审核的卡片")
-      return
-    }
-    writeAuditInstruction(instruction)
-    if (busyRef.current.has("audit")) return
-    busyRef.current.add("audit")
-    setBusyKeys([...busyRef.current])
-    const controller = new AbortController()
-    auditAbort.current = controller
-    let written = 0
-    let skipped = 0
-    let done = 0
-    const total = targets.length
-    setAuditProgress({ done, total, written, skipped, status: "running", message: "审核中" })
-
-    void (async () => {
-      try {
-        for (const chunk of chunkItems(targets, AUDIT_CHUNK_SIZE)) {
-          if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError")
-          const snapshot = deckRef.current
-          const latest = chunk.map((card) => snapshot.cards.find((item) => item.id === card.id) ?? card)
-          const results = await requestAuditAi({
-            instruction,
-            cards: latest,
-            fields,
-            notes,
-            signal: controller.signal,
-          })
-          const applied = applyAuditResults(snapshot, latest, results)
-          if (applied.deck !== snapshot) pushDeck(applied.deck)
-          const reviewedIds = [...applied.applied, ...applied.unchanged]
-          if (reviewedIds.length > 0) {
-            setReview((state) => reviewedIds.reduce((next, id) => markReviewed(next, id), state))
-            const last = reviewedIds[reviewedIds.length - 1]
-            if (last) onSelect(last)
-          }
-          written += applied.applied.length
-          skipped += applied.skipped.length
-          done += chunk.length
-          setAuditProgress({ done, total, written, skipped, status: "running", message: "审核中" })
-        }
-        setAuditProgress({
-          done: total,
-          total,
-          written,
-          skipped,
-          status: "done",
-          message: `完成，写入 ${written} 张${skipped > 0 ? `，跳过 ${skipped}` : ""}`,
-        })
-      } catch (error) {
-        if (isAbortError(error)) {
-          setAuditProgress({
-            done,
-            total,
-            written,
-            skipped,
-            status: "stopped",
-            message: `已停止，写入 ${written} 张`,
-          })
-          return
-        }
-        const message = error instanceof Error ? error.message : "审核失败"
-        setAuditProgress({
-          done,
-          total,
-          written,
-          skipped,
-          status: "error",
-          message: `已写入 ${written} 张。${message}`,
-        })
-        setAlert(message)
-      } finally {
-        busyRef.current.delete("audit")
-        setBusyKeys([...busyRef.current])
-        if (auditAbort.current === controller) auditAbort.current = null
-      }
-    })()
   }
 
   const removeCard = (id: string) => {
     const current = deckRef.current
     const nextId = idAfterDelete(current.cards, id)
-    const next = { ...current, cards: current.cards.filter((card) => card.id !== id) }
+    const next = removeNoteSchedule(
+      { ...current, cards: current.cards.filter((card) => card.id !== id) },
+      id
+    )
     pushDeck(next)
     setReview((state) => pruneEditorState({ ...state, selectedId: nextId }, next.cards))
     if (selectedId === id) onSelect(nextId)
@@ -551,106 +388,159 @@ export function CardEditor({
     jumpTo(index)
   }
 
-  const flagged = Boolean(selected && review.flagged.includes(selected.id))
-
-  const toolbar = (
-    <div className="flex flex-col gap-2">
+  const desktopToolbar = (
+    <div className="hidden flex-col gap-2 lg:flex">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            data-testid="prev-card"
-            title="上一张（Alt+↑）"
-            disabled={visibleCards.length === 0}
-            onClick={() => goVisible(-1)}
-          >
-            上一张
-          </Button>
-          <form
-            className="flex items-center gap-1 text-sm"
-            onSubmit={(event) => {
-              event.preventDefault()
-              submitJump()
-            }}
-          >
-            <span className="text-muted-foreground">卡片</span>
-            <Input
-              value={jumpValue}
-              inputMode="numeric"
-              aria-label="跳转到卡片序号"
-              data-testid="jump-card-index"
-              className="h-7 w-14 border-black/8 bg-white/70 px-2 text-center"
-              onChange={(event) => setJumpText(event.target.value.replace(/[^\d]/g, ""))}
-              onFocus={() => {
-                setJumpText(selectedIndex > 0 ? String(selectedIndex) : "")
-                setJumpFocused(true)
-              }}
-              onBlur={() => {
-                submitJump()
-                setJumpFocused(false)
-              }}
-            />
-            <span className="text-muted-foreground">/ {deck.cards.length}</span>
-          </form>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            data-testid="next-card"
-            title="下一张（Alt+↓），当前记为已审"
-            disabled={visibleCards.length === 0}
-            onClick={() => goVisible(1)}
-          >
-            下一张
-          </Button>
-          <Button type="button" size="sm" data-testid="insert-after-card" title="在当前卡片后插入（Alt+N）" onClick={addCard}>
-            在后面插入
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            data-testid="audit-cards"
-            disabled={isBusy("audit")}
-            onClick={openAudit}
-          >
-            {isBusy("audit") ? "审核中" : "批量审核"}
-          </Button>
-          {mode === "form" ? (
-            <Button type="button" size="sm" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
-              批量生成
+          <div className="flex h-9 items-center rounded-xl border border-border/70 bg-card p-1 shadow-xs">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              data-testid="prev-card"
+              aria-label="上一张卡片"
+              title="上一张（Alt+↑）"
+              disabled={visibleCards.length === 0}
+              onClick={() => goVisible(-1)}
+            >
+              <ChevronLeft />
             </Button>
-          ) : null}
-          <p className="text-xs text-foreground/50">已审 {reviewedCount}</p>
+            <form
+              className="flex items-center gap-1 px-1 text-sm"
+              onSubmit={(event) => {
+                event.preventDefault()
+                submitJump()
+              }}
+            >
+              <span className="text-muted-foreground">卡片</span>
+              <Input
+                value={jumpValue}
+                inputMode="numeric"
+                aria-label="跳转到卡片序号"
+                data-testid="jump-card-index"
+                className="h-7 w-12 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
+                onChange={(event) => setJumpText(event.target.value.replace(/[^\d]/g, ""))}
+                onFocus={() => {
+                  setJumpText(selectedIndex > 0 ? String(selectedIndex) : "")
+                  setJumpFocused(true)
+                }}
+                onBlur={() => {
+                  submitJump()
+                  setJumpFocused(false)
+                }}
+              />
+              <span className="text-muted-foreground">/ {deck.cards.length}</span>
+            </form>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              data-testid="next-card"
+              aria-label="下一张卡片"
+              title="下一张卡片"
+              disabled={visibleCards.length === 0}
+              onClick={() => goVisible(1)}
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+          <Button type="button" data-testid="insert-after-card" title="在当前卡片后插入（Alt+N）" onClick={addCard}>
+            <Plus data-icon="inline-start" />
+            新建卡片
+          </Button>
+          <Button type="button" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
+            <Sparkles data-icon="inline-start" />
+            批量生成
+          </Button>
         </div>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="relative min-w-0">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             aria-label="搜索卡片"
             placeholder="搜索卡片"
-            className="h-8 w-44 border-black/8 bg-white/70 sm:w-56"
+            className="h-9 w-56 border-border bg-card pr-3 pl-8"
             onChange={(event) => setQuery(event.target.value)}
           />
-          <Tabs value={mode} onValueChange={(value) => setMode(value as EditMode)}>
-            <TabsList>
-              <TabsTrigger value="form">单卡</TabsTrigger>
-              <TabsTrigger value="table">表格</TabsTrigger>
-            </TabsList>
-          </Tabs>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg bg-black/4 p-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg bg-muted/70 p-0.5">
+            {FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                data-testid={`review-filter-${item.id}`}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs transition-colors",
+                  filter === item.id
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setFilter(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {query.trim() || filter !== "all"
+              ? `显示 ${visibleCards.length} / ${deck.cards.length}`
+              : `${deck.cards.length} 张 · 已审 ${reviewedCount}`}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">Alt+↓ 标记为已审核 · Alt+↑ 上一张 · Alt+N 新建</p>
+      </div>
+    </div>
+  )
+
+  const mobileListToolbar = (
+    <div className="space-y-2 lg:hidden">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            aria-label="搜索卡片"
+            placeholder="搜索卡片"
+            className="h-10 rounded-xl border-border bg-card pr-3 pl-9"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <Button
+          type="button"
+          size="icon-lg"
+          aria-label="新建卡片"
+          title="在当前卡片后新建"
+          onClick={addCard}
+        >
+          <Plus />
+        </Button>
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          className="px-3"
+          disabled={isBusy("batch")}
+          onClick={() => setBatchOpen(true)}
+        >
+          <Sparkles data-icon="inline-start" />
+          AI 生成
+        </Button>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex rounded-lg bg-muted/70 p-0.5">
           {FILTERS.map((item) => (
             <button
               key={item.id}
               type="button"
-              data-testid={`review-filter-${item.id}`}
+              data-testid={`mobile-review-filter-${item.id}`}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs transition-colors",
-                filter === item.id ? "bg-white text-foreground shadow-sm" : "text-foreground/60 hover:text-foreground"
+                "rounded-md px-3 py-1.5 text-xs transition-colors",
+                filter === item.id
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               )}
               onClick={() => setFilter(item.id)}
             >
@@ -658,12 +548,72 @@ export function CardEditor({
             </button>
           ))}
         </div>
-        <p className="text-xs text-foreground/45">
+        <p className="text-xs tabular-nums text-muted-foreground">
           {query.trim() || filter !== "all"
-            ? `显示 ${visibleCards.length} / ${deck.cards.length}`
-            : "Alt+↑/↓ 换卡 · Alt+N 插入 · Alt+M 标记"}
+            ? `${visibleCards.length} / ${deck.cards.length} 张`
+            : `${deck.cards.length} 张 · 已审 ${reviewedCount}`}
         </p>
       </div>
+    </div>
+  )
+
+  const mobilePager = (
+    <div className="flex items-center gap-2 lg:hidden">
+      <div className="grid h-10 min-w-0 flex-1 grid-cols-[2.25rem_1fr_2.25rem] items-center rounded-xl border border-border/70 bg-card p-0.5 shadow-xs">
+        <Button
+          type="button"
+          size="icon-lg"
+          variant="ghost"
+          aria-label="上一张卡片"
+          title="上一张"
+          disabled={selectedIndex <= 1}
+          onClick={() => jumpTo(selectedIndex - 1)}
+        >
+          <ChevronLeft />
+        </Button>
+        <div className="grid min-w-0 grid-cols-[minmax(3rem,1fr)_auto] items-center gap-2 px-1">
+          <Slider
+            id="mobile-card-slider"
+            data-testid="mobile-card-slider"
+            value={[Math.max(1, selectedIndex)]}
+            min={1}
+            max={Math.max(1, deck.cards.length)}
+            step={1}
+            disabled={deck.cards.length <= 1}
+            aria-label="拖动选择卡片"
+            aria-valuetext={
+              deck.cards.length === 0 ? "没有卡片" : `第 ${selectedIndex} 张，共 ${deck.cards.length} 张`
+            }
+            className="h-8 cursor-grab active:cursor-grabbing [&_[data-slot=slider-range]]:bg-transparent [&_[data-slot=slider-thumb]]:h-4 [&_[data-slot=slider-thumb]]:w-7 [&_[data-slot=slider-thumb]]:border-2 [&_[data-slot=slider-thumb]]:border-card [&_[data-slot=slider-thumb]]:bg-primary [&_[data-slot=slider-thumb]]:shadow-sm [&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-muted-foreground/20"
+            onValueChange={([index]) => {
+              if (index !== undefined && index !== selectedIndex) jumpTo(index)
+            }}
+          />
+          <output
+            htmlFor="mobile-card-slider"
+            aria-live="polite"
+            className="min-w-10 whitespace-nowrap text-right text-xs tabular-nums"
+          >
+            <span className="font-medium text-foreground">{selectedIndex}</span>
+            <span className="text-muted-foreground"> / {deck.cards.length}</span>
+          </output>
+        </div>
+        <Button
+          type="button"
+          size="icon-lg"
+          variant="ghost"
+          aria-label="下一张卡片"
+          title="下一张"
+          disabled={selectedIndex >= deck.cards.length}
+          onClick={() => jumpTo(selectedIndex + 1)}
+        >
+          <ChevronRight />
+        </Button>
+      </div>
+      <Button type="button" size="lg" className="px-3" onClick={addCard}>
+        <Plus data-icon="inline-start" />
+        新建
+      </Button>
     </div>
   )
 
@@ -673,6 +623,7 @@ export function CardEditor({
       values={selected?.values ?? {}}
       side={previewSide}
       onSideChange={onPreviewSideChange}
+      fillViewport
     />
   )
 
@@ -734,252 +685,73 @@ export function CardEditor({
     </Dialog>
   )
 
-  const auditRunning = isBusy("audit")
-  const auditDialog = (
-    <Dialog
-      open={auditOpen}
-      onOpenChange={(open) => {
-        if (!open && auditRunning) stopAudit()
-        setAuditOpen(open)
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>批量审核卡片</DialogTitle>
-          <DialogDescription>
-            按你的审核说明让 AI 重写卡片。已写入的不会回滚，可随时停止。包装提示词在设置里改。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="audit-instruction">审核说明</Label>
-            <Textarea
-              id="audit-instruction"
-              value={auditInstruction}
-              placeholder="例如：例句必须包含该单词；中文释义要简洁"
-              className="min-h-32"
-              disabled={auditRunning}
-              onChange={(event) => setAuditInstruction(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>范围</Label>
-            <div className="flex flex-wrap gap-1">
-              {AUDIT_SCOPES.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  size="sm"
-                  variant={auditScope === item.id ? "default" : "outline"}
-                  disabled={auditRunning}
-                  onClick={() => setAuditScope(item.id)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="audit-count">本次数量</Label>
-            <Input
-              id="audit-count"
-              type="number"
-              min={1}
-              max={AUDIT_MAX_COUNT}
-              value={auditCount}
-              disabled={auditRunning}
-              onChange={(event) => setAuditCount(event.target.value)}
-            />
-            <p className="text-xs text-foreground/45">一次最多 {AUDIT_MAX_COUNT} 张，每 {AUDIT_CHUNK_SIZE} 张请求一次模型。</p>
-          </div>
-          {auditProgress ? (
-            <p className="text-sm text-foreground/70" data-testid="audit-progress">
-              {auditProgress.message}
-              {auditProgress.status === "running"
-                ? ` ${auditProgress.done}/${auditProgress.total}，写入 ${auditProgress.written}`
-                : ""}
-            </p>
-          ) : null}
-        </div>
-        <DialogFooter>
-          {auditRunning ? (
-            <Button type="button" variant="outline" onClick={stopAudit}>
-              停止
-            </Button>
-          ) : (
-            <Button type="button" variant="outline" onClick={() => setAuditOpen(false)}>
-              关闭
-            </Button>
-          )}
-          <Button type="button" disabled={auditRunning} onClick={applyAuditAi}>
-            {auditRunning ? "审核中" : "开始审核"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-
   const renderListItem = (card: Card, index: number) => {
     const absolute = deck.cards.findIndex((item) => item.id === card.id) + 1
     const active = card.id === selected?.id
     const isReviewed = review.reviewed.includes(card.id)
-    const isFlagged = review.flagged.includes(card.id)
     return (
       <button
         id={`card-item-${card.id}`}
         key={card.id}
         type="button"
-        onClick={() => onSelect(card.id)}
+        onClick={() => {
+          onSelect(card.id)
+          setMobilePane("editor")
+        }}
         style={{ height: LIST_ROW }}
         className={cn(
           "flex w-full flex-col justify-center rounded-xl px-3 text-left transition-colors duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          active ? "bg-foreground text-background" : "text-foreground/80 hover:bg-black/4",
+          active ? "bg-primary text-primary-foreground" : "text-foreground/80 hover:bg-muted",
           !active && isReviewed && "opacity-55"
         )}
       >
         <span className="flex items-center gap-2">
-          <span className={cn("w-8 shrink-0 text-[11px] tabular-nums", active ? "text-background/70" : "text-foreground/40")}>
+          <span
+            className={cn(
+              "w-8 shrink-0 text-[11px] tabular-nums",
+              active ? "text-primary-foreground/70" : "text-muted-foreground"
+            )}
+          >
             {absolute || index + 1}
           </span>
           <span className="min-w-0 flex-1 truncate text-sm">{cardLabel(card, deck.fields)}</span>
-          {isFlagged ? (
-            <span className={cn("text-[10px]", active ? "text-background/80" : "text-foreground/45")}>标</span>
+          {isReviewed ? (
+            <span className="flex shrink-0 items-center gap-1 text-[10px]" aria-label="已审核">
+              <Check className="size-3" aria-hidden="true" />
+              已审
+            </span>
           ) : null}
         </span>
-        <span className={cn("line-clamp-1 pl-10 text-[11px]", active ? "text-background/65" : "text-foreground/45")}>
+        <span
+          className={cn(
+            "line-clamp-1 pl-10 text-[11px]",
+            active ? "text-primary-foreground/65" : "text-muted-foreground"
+          )}
+        >
           {cardSubtitle(card, deck.fields) || " "}
         </span>
       </button>
     )
   }
 
-  if (mode === "table") {
-    const slice = visibleCards.slice(tableVirt.start, tableVirt.end)
-    return (
-      <div className="flex min-w-0 flex-col gap-4">
-        {toolbar}
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-        <section className="flex min-w-0 flex-col gap-3">
-          <div className="min-w-0 overflow-hidden rounded-2xl bg-white/70 ring-1 ring-black/6">
-            {deck.cards.length === 0 ? (
-              <p className="px-3 py-10 text-center text-sm text-muted-foreground">还没有卡片</p>
-            ) : visibleCards.length === 0 ? (
-              <p className="px-3 py-10 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
-            ) : (
-              <div ref={tableVirt.ref} className="max-h-[min(64vh,620px)] overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="sticky top-0 z-10 w-10 bg-[#f7f4ee] text-center">#</TableHead>
-                      {deck.fields.map((field) => (
-                        <TableHead key={field} className="sticky top-0 z-10 min-w-36 bg-[#f7f4ee]">
-                          {field}
-                        </TableHead>
-                      ))}
-                      <TableHead className="sticky top-0 z-10 w-14 bg-[#f7f4ee]" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tableVirt.padTop > 0 ? (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={deck.fields.length + 2} className="border-0 p-0">
-                          <div style={{ height: tableVirt.padTop }} />
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                    {slice.map((card) => {
-                      const index = deck.cards.findIndex((item) => item.id === card.id)
-                      const active = card.id === selected?.id
-                      return (
-                        <TableRow
-                          id={`card-row-${card.id}`}
-                          key={card.id}
-                          data-state={active ? "selected" : undefined}
-                          className={cn(
-                            "cursor-pointer",
-                            active && "bg-foreground/5 hover:bg-foreground/5"
-                          )}
-                          onClick={() => onSelect(card.id)}
-                        >
-                          <TableCell className="text-center text-xs text-muted-foreground">
-                            {index + 1}
-                          </TableCell>
-                          {deck.fields.map((field) => {
-                            const tts = fieldTts[field]
-                            if (tts) {
-                              const sourceText = card.values[tts.source] ?? ""
-                              return (
-                                <TableCell key={field} className="whitespace-normal">
-                                  <div className="flex min-w-32 items-center gap-2">
-                                    <p className="min-w-0 flex-1 truncate text-xs text-foreground/55">
-                                      {sourceText.trim() || "源字段为空"}
-                                    </p>
-                                    <TtsPlayButton text={sourceText} lang={tts.lang} slow={tts.slow} />
-                                  </div>
-                                </TableCell>
-                              )
-                            }
-                            return (
-                            <TableCell key={field} className="whitespace-normal">
-                              <Input
-                                value={card.values[field] ?? ""}
-                                aria-label={`${field} 第 ${index + 1} 行`}
-                                className="h-8 min-w-32 border-black/6 bg-white/80"
-                                onFocus={() => onSelect(card.id)}
-                                onChange={(event) => updateCard(card.id, field, event.target.value)}
-                              />
-                            </TableCell>
-                            )
-                          })}
-                          <TableCell>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              aria-label={`删除第 ${index + 1} 张卡片`}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                removeCard(card.id)
-                              }}
-                            >
-                              删除
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                    {tableVirt.padBottom > 0 ? (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={deck.fields.length + 2} className="border-0 p-0">
-                          <div style={{ height: tableVirt.padBottom }} />
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </section>
-        {preview}
-        </div>
-        {aiDialog}
-        {batchDialog}
-        {auditDialog}
-      </div>
-    )
-  }
-
-  const listSlice = visibleCards.slice(listVirt.start, listVirt.end)
+  const listSlice = visibleCards.slice(listStart, listEnd)
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {toolbar}
+      {desktopToolbar}
+      <Tabs value={mobilePane} className="lg:hidden" onValueChange={(value) => setMobilePane(value as MobilePane)}>
+        <TabsList className="grid h-11 w-full grid-cols-3 rounded-xl p-1">
+          <TabsTrigger value="list">卡片</TabsTrigger>
+          <TabsTrigger value="editor">内容</TabsTrigger>
+          <TabsTrigger value="preview">预览</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {mobilePane === "list" ? mobileListToolbar : mobilePager}
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)_minmax(280px,0.9fr)]">
-      <section className="flex flex-col gap-3">
+      <section className={cn("flex-col gap-3 lg:flex", mobilePane === "list" ? "flex" : "hidden")}>
         <div
-          ref={listVirt.ref}
-          className="h-56 overflow-auto rounded-2xl bg-white/70 ring-1 ring-black/6 lg:h-[min(calc(100vh-16rem),720px)]"
+          ref={listRef}
+          className="h-[min(58vh,520px)] overflow-auto rounded-2xl border border-border/70 bg-card/70 lg:h-[min(calc(100vh-16rem),720px)]"
         >
           <div className="flex flex-col p-1.5">
             {deck.cards.length === 0 ? (
@@ -988,47 +760,52 @@ export function CardEditor({
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
             ) : (
               <>
-                {listVirt.padTop > 0 ? <div style={{ height: listVirt.padTop }} /> : null}
-                {listSlice.map((card, offset) => renderListItem(card, listVirt.start + offset))}
-                {listVirt.padBottom > 0 ? <div style={{ height: listVirt.padBottom }} /> : null}
+                {listPadTop > 0 ? <div style={{ height: listPadTop }} /> : null}
+                {listSlice.map((card, offset) => renderListItem(card, listStart + offset))}
+                {listPadBottom > 0 ? <div style={{ height: listPadBottom }} /> : null}
               </>
             )}
           </div>
         </div>
       </section>
 
-      <section className="flex min-h-0 flex-col gap-4">
+      <section
+        className={cn(
+          "min-h-0 flex-col gap-4 lg:flex",
+          mobilePane === "editor" ? "flex" : "hidden"
+        )}
+      >
         {selected ? (
           <>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium">编辑卡片</p>
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="shrink-0 text-sm font-medium">编辑卡片</p>
+              <div className="flex min-w-0 shrink-0 items-center gap-1">
                 <Button
                   type="button"
                   size="sm"
-                  variant={flagged ? "secondary" : "outline"}
-                  title="标记后可在「标记」里回头看（Alt+M）"
-                  onClick={flagCurrent}
+                  variant={isSelectedReviewed ? "outline" : "default"}
+                  data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"}
+                  aria-pressed={isSelectedReviewed}
+                  aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"}
+                  title={
+                    isSelectedReviewed
+                      ? "取消当前卡片的已审核状态"
+                      : "将当前卡片标记为已审核并前往下一张（Alt+↓）"
+                  }
+                  onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}
                 >
-                  {flagged ? "已标记" : "标记"}
+                  {isSelectedReviewed ? "取消已审核" : "标记为已审核"}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={isBusy("card:complete")}
-                  onClick={() => applyCardAi("complete")}
+                  disabled={!canCompleteSelected || isBusy("card:complete")}
+                  title={canCompleteSelected ? undefined : "当前没有需要补全的空字段"}
+                  onClick={applyCardCompletion}
                 >
-                  {isBusy("card:complete") ? "补全中" : "补全"}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={isBusy("card:rewrite") || !selected.values[deck.fields[0]]?.trim()}
-                  onClick={() => applyCardAi("rewrite")}
-                >
-                  {isBusy("card:rewrite") ? "重写中" : "重写"}
+                  <Sparkles data-icon="inline-start" />
+                  {isBusy("card:complete") ? "补全中" : "AI 补全"}
                 </Button>
                 <Button type="button" size="sm" variant="destructive" onClick={() => removeCard(selected.id)}>
                   删除
@@ -1045,80 +822,58 @@ export function CardEditor({
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <Label>{field}</Label>
-                          <p className="mt-0.5 text-xs text-foreground/45">
+                          <p className="mt-0.5 text-xs text-muted-foreground">
                             {ttsLangLabel(tts.lang)} · 来自「{tts.source}」
                             {tts.slow ? " · 慢速" : ""}
                           </p>
                         </div>
                         <TtsPlayButton text={sourceText} lang={tts.lang} slow={tts.slow} />
                       </div>
-                      <div className="rounded-xl bg-white/70 px-3 py-2 text-sm text-foreground/70 ring-1 ring-black/6">
+                      <div className="rounded-xl border border-border/70 bg-muted/50 px-3 py-2 text-sm text-foreground/80">
                         {sourceText.trim() || "源字段为空，导出时跳过"}
                       </div>
                     </div>
                   )
                 }
+                const fieldNote = notesOf(deck)[field]?.trim() || undefined
                 return (
-                <div key={field} className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <Label htmlFor={`field-${field}`}>{field}</Label>
-                      {notesOf(deck)[field]?.trim() ? (
-                        <p className="mt-0.5 text-xs text-foreground/45">{notesOf(deck)[field]}</p>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="ghost"
-                        disabled={isBusy(`field:${field}:complete`)}
-                        onClick={() => applyFieldAi(field, "complete")}
-                      >
-                        {isBusy(`field:${field}:complete`) ? "补全中" : "补全"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="ghost"
-                        disabled={isBusy(`field:${field}:rewrite`) || !selected.values[field]?.trim()}
-                        onClick={() => applyFieldAi(field, "rewrite")}
-                      >
-                        {isBusy(`field:${field}:rewrite`) ? "重写中" : "重写"}
-                      </Button>
-                    </div>
+                  <div key={field} className="space-y-2">
+                    <Label htmlFor={`field-${field}`}>{field}</Label>
+                    {editableFields.indexOf(field) >= 2 ? (
+                      <Textarea
+                        id={`field-${field}`}
+                        value={selected.values[field] ?? ""}
+                        placeholder={fieldNote}
+                        className="min-h-24 placeholder:text-muted-foreground/65"
+                        onChange={(event) => updateCard(selected.id, field, event.target.value)}
+                      />
+                    ) : (
+                      <Input
+                        id={`field-${field}`}
+                        value={selected.values[field] ?? ""}
+                        placeholder={fieldNote}
+                        className="placeholder:text-muted-foreground/65"
+                        onChange={(event) => updateCard(selected.id, field, event.target.value)}
+                      />
+                    )}
                   </div>
-                  {editableFields.indexOf(field) >= 2 ? (
-                    <Textarea
-                      id={`field-${field}`}
-                      value={selected.values[field] ?? ""}
-                      className="min-h-24"
-                      onChange={(event) => updateCard(selected.id, field, event.target.value)}
-                    />
-                  ) : (
-                    <Input
-                      id={`field-${field}`}
-                      value={selected.values[field] ?? ""}
-                      onChange={(event) => updateCard(selected.id, field, event.target.value)}
-                    />
-                  )}
-                </div>
                 )
               })}
             </div>
           </>
         ) : (
-          <div className="flex h-[360px] items-center justify-center rounded-2xl bg-white/70 text-sm text-muted-foreground ring-1 ring-black/6">
+          <div className="flex h-[360px] items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-sm text-muted-foreground">
             先新建一张卡片
           </div>
         )}
       </section>
 
-      {preview}
+      <section className={cn("lg:block", mobilePane === "preview" ? "block" : "hidden")}>
+        {preview}
+      </section>
       </div>
       {aiDialog}
       {batchDialog}
-      {auditDialog}
     </div>
   )
 }

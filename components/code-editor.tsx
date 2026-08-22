@@ -91,7 +91,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       <div
         role="group"
         aria-label={label}
-        className="min-w-0 overflow-hidden rounded-2xl bg-[#fbfaf6] ring-1 ring-black/8"
+        className="min-w-0 overflow-hidden rounded-2xl bg-[#17181d] shadow-[0_18px_42px_-30px_rgba(0,0,0,0.8)] ring-1 ring-white/10"
       >
         <div className="h-[280px] min-w-0 lg:h-[420px]">
           <CodeMirror
@@ -103,10 +103,19 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             theme={paperEditorTheme}
             indentWithTab
             placeholder={
-              placeholder ?? (language === "css" ? ".card { }" : language === "prompt" ? "在这里写提示词" : "{{Word}}")
+              placeholder ??
+              (language === "css"
+                ? ".card { }"
+                : language === "prompt"
+                  ? "在这里写提示词"
+                  : "{{Word}}")
             }
             extensions={
-              language === "css" ? cssExtensions : language === "prompt" ? promptExtensions : templateExtensions
+              language === "css"
+                ? cssExtensions
+                : language === "prompt"
+                  ? promptExtensions
+                  : templateExtensions
             }
             basicSetup={basicSetup}
             onChange={onChange}
@@ -114,7 +123,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             className="h-full max-w-full [&_.cm-editor]:h-full [&_.cm-editor]:max-w-full"
           />
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-black/6 px-3 py-1.5 font-mono text-[11px] text-foreground/45">
+        <div className="flex items-center justify-between gap-3 border-t border-white/8 px-3 py-1.5 font-mono text-[11px] text-slate-400">
           <span>
             Ln {caret.line}, Col {caret.column}
           </span>

@@ -5,11 +5,14 @@ import { csvToDeck } from "./csv"
 import { noteHash, templateHash } from "./anki-sync"
 import {
   createCard,
+  DEFAULT_FSRS_STATE,
   decodeTtsMeta,
   dedupeCardsByFirstField,
   encodeTtsMeta,
   parseDeckJson,
+  templatesOf,
   ttsOf,
+  type CardTemplate,
   type Card,
   type Deck,
 } from "./deck"
@@ -196,6 +199,7 @@ export async function exportApkg(
   const deckId = deck.anki?.deckId && deck.anki.deckId > 0 ? deck.anki.deckId : now + 1
   const modelName = `${deck.name} 模板`
   const fieldTts = ttsOf(deck)
+  const cardTemplates = templatesOf(deck)
 
   const flds = deck.fields.map((name, ord) => ({
     name,
@@ -219,26 +223,26 @@ export async function exportApkg(
       usn: -1,
       sortf: 0,
       did: deckId,
-      tmpls: [
-        {
-          name: "Card 1",
-          ord: 0,
-          qfmt: deck.front,
-          afmt: deck.back,
+      tmpls: cardTemplates.map((template, ord) =>
+        ({
+          name: template.name,
+          ord,
+          qfmt: template.front,
+          afmt: template.back,
           bqfmt: "",
           bafmt: "",
           did: null,
           bfont: "",
           bsize: 0,
-        },
-      ],
+        })
+      ),
       flds,
       css: deck.css,
       latexPre:
         "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
       latexPost: "\\end{document}",
       latexsvg: false,
-      req: [[0, "any", [0]]],
+      req: cardTemplates.map((_, ord) => [ord, "any", [0]]),
       tags: [],
       vers: [],
     },
@@ -365,8 +369,7 @@ export async function exportApkg(
 
   for (let i = 0; i < cards.length; i += 1) {
     const card = cards[i]
-    const noteId = now + 10 + i * 2
-    const cardId = noteId + 1
+    const noteId = now + 10 + i * (cardTemplates.length + 1)
     const fieldValues = await Promise.all(
       deck.fields.map((field) => {
         const tts = fieldTts[field]
@@ -391,26 +394,28 @@ export async function exportApkg(
       0,
       "",
     ])
-    insertCard.run([
-      cardId,
-      noteId,
-      deckId,
-      0,
-      nowSec,
-      -1,
-      0,
-      0,
-      i + 1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      "",
-    ])
+    for (let ord = 0; ord < cardTemplates.length; ord += 1) {
+      insertCard.run([
+        noteId + ord + 1,
+        noteId,
+        deckId,
+        ord,
+        nowSec,
+        -1,
+        0,
+        0,
+        i * cardTemplates.length + ord + 1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        "",
+      ])
+    }
   }
 
   insertNote.free()
@@ -461,12 +466,13 @@ export function apkgImportWarnings(input: {
   otherNotes: number
   namedDeckCount: number
   chosenDeckName: string
+  allTemplatesImported?: boolean
 }): string[] {
   const warnings: string[] = []
   if (input.modelCount > 1) {
     warnings.push(`卡包有 ${input.modelCount} 个笔记模板，只导入了「${input.chosenModelName}」`)
   }
-  if (input.templateCount > 1) {
+  if (input.templateCount > 1 && !input.allTemplatesImported) {
     warnings.push(
       `「${input.chosenModelName}」有 ${input.templateCount} 张卡模板，只用了「${input.chosenTemplateName}」`
     )
@@ -527,6 +533,22 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
 
   const sortedTmpls = [...(model.tmpls ?? [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
   const tmpl = sortedTmpls[0]
+  const templates: CardTemplate[] =
+    sortedTmpls.length > 0
+      ? sortedTmpls.map((item, index) => ({
+          id: `card-${index + 1}`,
+          name: item.name?.trim() || `卡片 ${index + 1}`,
+          front: item.qfmt ?? `{{${fields[0]}}}`,
+          back: item.afmt ?? "{{FrontSide}}",
+        }))
+      : [
+          {
+            id: "card-1",
+            name: "卡片 1",
+            front: `{{${fields[0]}}}`,
+            back: "{{FrontSide}}",
+          },
+        ]
   const mid = String(model.id)
   const modelEntries = Object.values(models).filter((item) => item && Array.isArray(item.flds))
   const namedDecks = Object.values(decks).filter(
@@ -552,6 +574,7 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
     otherNotes: noteRows.length - importedRows.length,
     namedDeckCount: namedDecks.length,
     chosenDeckName: deckName,
+    allTemplatesImported: true,
   })
 
   db.close()
@@ -575,15 +598,17 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
   }
 
   const importedDeck: Deck = {
-    version: 1,
+    version: 2,
     name: deckName,
     fields,
     fieldNotes: Object.fromEntries(fields.map((field) => [field, ""])),
     fieldTts,
-    front: tmpl?.qfmt ?? "{{" + fields[0] + "}}",
-    back: tmpl?.afmt ?? "{{FrontSide}}",
+    front: templates[0]!.front,
+    back: templates[0]!.back,
+    templates,
     css: model.css ?? "",
     cards: dedupeCardsByFirstField(cards, fields),
+    fsrs: { ...DEFAULT_FSRS_STATE, cards: {} },
   }
   const modelId = typeof model.id === "number" && model.id > 0 ? model.id : Date.now()
   const deckId = typeof namedDeck?.id === "number" && namedDeck.id > 0 ? namedDeck.id : Date.now() + 1

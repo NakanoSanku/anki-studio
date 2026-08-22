@@ -5,15 +5,12 @@ import {
   formatFieldNotes,
   formatTemplateFields,
   formatTtsFields,
-  type AuditAiInput,
   type BatchAiInput,
   type CardAiInput,
-  type FieldAiInput,
   type TemplateAiInput,
   type TemplateAiResult,
 } from "./ai"
-import { completeChat, completeJson, pickAuditedCards, pickCardList, pickFieldValues } from "./ai-compat"
-import { AUDIT_CHUNK_SIZE, formatAuditCards, type AuditCardResult } from "./audit"
+import { completeChat, completeJson, pickCardList, pickFieldValues } from "./ai-compat"
 import { parseAiSettings, renderPrompt } from "./ai-settings"
 
 export class AiRequestError extends Error {
@@ -47,62 +44,23 @@ export async function runTestAi(settingsRaw: unknown): Promise<void> {
   if (!text.trim()) throw new Error("模型没有返回内容")
 }
 
-export async function runFieldAi(body: FieldAiInput): Promise<string> {
-  const { action, field, fields, values } = body
-  if ((action !== "complete" && action !== "rewrite") || typeof field !== "string" || !fields?.includes(field)) {
-    throw new AiRequestError("参数无效")
-  }
-  const uniqueFields = requireFields(fields)
-  const settings = parseAiSettings(body.settings)
-  const notes = body.notes ?? {}
-  const context = formatCardContext(uniqueFields, values ?? {}, notes)
-  const current = values?.[field]?.trim() ?? ""
-  const vars = {
-    field,
-    current: current || "（空）",
-    context,
-    key: uniqueFields[0] ?? "",
-    fields: uniqueFields.join("、"),
-    note: notes[field]?.trim() || "（无）",
-    notes: formatFieldNotes(uniqueFields, notes),
-  }
-  const prompt =
-    action === "rewrite"
-      ? renderPrompt(settings.fieldRewritePrompt, vars)
-      : renderPrompt(settings.fieldCompletePrompt, vars)
-
-  const next = (
-    await completeChat({
-      settings,
-      system: settings.systemPrompt,
-      prompt,
-    })
-  ).trim()
-  if (!next) throw new Error("AI 没有返回内容")
-  return next
-}
-
 export async function runCardAi(body: CardAiInput): Promise<Record<string, string>> {
-  const { action, fields, values } = body
-  if (action !== "complete" && action !== "rewrite") throw new AiRequestError("参数无效")
+  const { fields, values } = body
   const uniqueFields = requireFields(fields)
   const current = values ?? {}
+  const emptyFields = uniqueFields.filter((field) => !current[field]?.trim())
+  if (emptyFields.length === 0) {
+    throw new AiRequestError("这张卡片没有需要补全的空字段")
+  }
   const notes = body.notes ?? {}
   const context = formatCardContext(uniqueFields, current, notes)
   const settings = parseAiSettings(body.settings)
-  const vars = {
-    field: uniqueFields[0] ?? "",
-    current: current[uniqueFields[0] ?? ""]?.trim() || "（空）",
+  const prompt = renderPrompt(settings.cardCompletePrompt, {
     context,
     key: uniqueFields[0] ?? "",
     fields: uniqueFields.join("、"),
-    note: notes[uniqueFields[0] ?? ""]?.trim() || "（无）",
     notes: formatFieldNotes(uniqueFields, notes),
-  }
-  const prompt =
-    action === "rewrite"
-      ? renderPrompt(settings.cardRewritePrompt, vars)
-      : renderPrompt(settings.cardCompletePrompt, vars)
+  })
 
   const parsed = await completeJson({
     settings,
@@ -110,14 +68,13 @@ export async function runCardAi(body: CardAiInput): Promise<Record<string, strin
     prompt,
   })
   const output = pickFieldValues(parsed, uniqueFields)
-  if (!uniqueFields.some((field) => output[field])) throw new Error("AI 没有返回有效结果")
 
-  const next: Record<string, string> = { ...current }
-  for (const field of uniqueFields) {
+  const next: Record<string, string> = {}
+  for (const field of emptyFields) {
     const generated = output[field] ?? ""
-    if (action === "complete" && current[field]?.trim()) continue
     if (generated) next[field] = generated
   }
+  if (Object.keys(next).length === 0) throw new Error("AI 没有返回可补全内容")
   return next
 }
 
@@ -157,41 +114,6 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
   const cards = pickCardList(parsed, fields)
   if (cards.length === 0) throw new Error("AI 没有返回卡片")
   return cards
-}
-
-export async function runAuditAi(body: AuditAiInput): Promise<AuditCardResult[]> {
-  const instruction = typeof body.instruction === "string" ? body.instruction.trim() : ""
-  if (!instruction) throw new AiRequestError("请填写审核说明")
-  if (instruction.length > 4000) throw new AiRequestError("审核说明过长")
-  const fields = requireFields(body.fields)
-  const cards = Array.isArray(body.cards) ? body.cards : []
-  if (cards.length === 0) throw new AiRequestError("没有可审核的卡片")
-  if (cards.length > AUDIT_CHUNK_SIZE) throw new AiRequestError("单次审核数量过多")
-
-  const settings = parseAiSettings(body.settings)
-  const notes = body.notes ?? {}
-  const prompt = renderPrompt(settings.cardAuditPrompt, {
-    instruction,
-    cards: formatAuditCards(cards, fields),
-    count: String(cards.length),
-    fields: fields.join("、"),
-    key: fields[0] ?? "",
-    field: fields[0] ?? "",
-    current: "",
-    context: formatFieldNotes(fields, notes),
-    note: notes[fields[0] ?? ""]?.trim() || "（无）",
-    notes: formatFieldNotes(fields, notes),
-  })
-
-  const parsed = await completeJson({
-    settings,
-    system: `${settings.systemPrompt}\n返回 JSON，cards 是对象数组，每项必须带 id，键还包括：${fields.join("、")}。`,
-    prompt,
-    signal: body.signal,
-  })
-  const output = pickAuditedCards(parsed, fields)
-  if (output.length === 0) throw new Error("AI 没有返回审核结果")
-  return output
 }
 
 export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiResult> {
@@ -260,5 +182,3 @@ export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiRe
         : nextCss || css,
   }
 }
-
-

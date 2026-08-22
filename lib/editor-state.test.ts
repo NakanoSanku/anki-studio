@@ -4,10 +4,10 @@ import { createCard } from "./deck"
 import {
   defaultEditorState,
   markReviewed,
+  markUnreviewed,
   matchesReviewFilter,
   parseEditorState,
   pruneEditorState,
-  toggleFlagged,
 } from "./editor-state"
 
 const fields = ["Word", "Translation"]
@@ -25,7 +25,7 @@ describe("parseEditorState", () => {
     )
     expect(state.selectedId).toBe(cards[1]!.id)
     expect(state.reviewed).toEqual([cards[0]!.id])
-    expect(state.flagged).toEqual([cards[2]!.id])
+    expect(state).not.toHaveProperty("flagged")
   })
 
   it("falls back to the first unreviewed card when the cursor is gone", () => {
@@ -43,26 +43,28 @@ describe("pruneEditorState", () => {
       {
         selectedId: cards[0]!.id,
         reviewed: [cards[0]!.id, "gone"],
-        flagged: [cards[1]!.id, "gone"],
       },
       [cards[1]!]
     )
     expect(state).toEqual({
       selectedId: cards[1]!.id,
       reviewed: [],
-      flagged: [cards[1]!.id],
     })
   })
 })
 
 describe("review helpers", () => {
-  it("marks reviewed and toggles flags", () => {
+  it("marks reviewed and filters unreviewed cards", () => {
     const start = defaultEditorState({ cards })
     const reviewed = markReviewed(start, cards[0]!.id)
     expect(matchesReviewFilter(cards[0]!, reviewed, "unreviewed")).toBe(false)
     expect(matchesReviewFilter(cards[1]!, reviewed, "unreviewed")).toBe(true)
-    const flagged = toggleFlagged(reviewed, cards[1]!.id)
-    expect(matchesReviewFilter(cards[1]!, flagged, "flagged")).toBe(true)
-    expect(toggleFlagged(flagged, cards[1]!.id).flagged).toEqual([])
+  })
+
+  it("returns an edited card to the unreviewed queue", () => {
+    const reviewed = markReviewed(defaultEditorState({ cards }), cards[0]!.id)
+    const pending = markUnreviewed(reviewed, cards[0]!.id)
+    expect(pending.reviewed).not.toContain(cards[0]!.id)
+    expect(matchesReviewFilter(cards[0]!, pending, "unreviewed")).toBe(true)
   })
 })

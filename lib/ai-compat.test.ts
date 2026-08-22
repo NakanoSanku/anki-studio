@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { parseJsonPayload, pickAuditedCards, pickCardList, pickFieldValues, readChatText } from "./ai-compat"
+import { parseJsonPayload, pickCardList, pickFieldValues, readChatText } from "./ai-compat"
 
 describe("parseJsonPayload", () => {
   it("reads fenced and embedded JSON", () => {
@@ -30,25 +30,6 @@ describe("pickCardList", () => {
   })
 })
 
-describe("pickAuditedCards", () => {
-  it("keeps card ids alongside field values", () => {
-    expect(
-      pickAuditedCards(
-        {
-          cards: [
-            { id: "c1", Word: "alpha", Translation: "一" },
-            { id: 2, values: { Word: "beta" } },
-          ],
-        },
-        ["Word", "Translation"]
-      )
-    ).toEqual([
-      { id: "c1", values: { Word: "alpha", Translation: "一" } },
-      { id: "2", values: { Word: "beta", Translation: "" } },
-    ])
-  })
-})
-
 describe("readChatText", () => {
   it("reads OpenAI and array content", () => {
     expect(
@@ -63,4 +44,3 @@ describe("readChatText", () => {
     ).toBe("parts")
   })
 })
-

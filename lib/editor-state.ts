@@ -2,12 +2,11 @@ import type { Card, Deck } from "./deck"
 
 export const EDITOR_STATE_KEY_PREFIX = "anki-studio.editor."
 
-export type ReviewFilter = "all" | "unreviewed" | "flagged"
+export type ReviewFilter = "all" | "unreviewed"
 
 export type EditorState = {
   selectedId: string
   reviewed: string[]
-  flagged: string[]
 }
 
 export function editorStateKey(deckId: string): string {
@@ -30,18 +29,16 @@ export function defaultEditorState(deck: Pick<Deck, "cards">): EditorState {
   return {
     selectedId: deck.cards[0]?.id ?? "",
     reviewed: [],
-    flagged: [],
   }
 }
 
 export function pruneEditorState(state: EditorState, cards: Card[]): EditorState {
   const allowed = new Set(cards.map((card) => card.id))
   const reviewed = uniqueIds(state.reviewed, allowed)
-  const flagged = uniqueIds(state.flagged, allowed)
   const selectedId = allowed.has(state.selectedId)
     ? state.selectedId
     : cards.find((card) => !reviewed.includes(card.id))?.id ?? cards[0]?.id ?? ""
-  return { selectedId, reviewed, flagged }
+  return { selectedId, reviewed }
 }
 
 export function parseEditorState(raw: string, deck: Pick<Deck, "cards">): EditorState {
@@ -53,10 +50,7 @@ export function parseEditorState(raw: string, deck: Pick<Deck, "cards">): Editor
     const reviewed = Array.isArray(record.reviewed)
       ? record.reviewed.filter((id): id is string => typeof id === "string")
       : []
-    const flagged = Array.isArray(record.flagged)
-      ? record.flagged.filter((id): id is string => typeof id === "string")
-      : []
-    return pruneEditorState({ selectedId, reviewed, flagged }, deck.cards)
+    return pruneEditorState({ selectedId, reviewed }, deck.cards)
   } catch {
     return defaultEditorState(deck)
   }
@@ -96,16 +90,12 @@ export function markReviewed(state: EditorState, id: string): EditorState {
   return { ...state, reviewed: [...state.reviewed, id] }
 }
 
-export function toggleFlagged(state: EditorState, id: string): EditorState {
-  if (!id) return state
-  const flagged = state.flagged.includes(id)
-    ? state.flagged.filter((item) => item !== id)
-    : [...state.flagged, id]
-  return { ...state, flagged }
+export function markUnreviewed(state: EditorState, id: string): EditorState {
+  if (!id || !state.reviewed.includes(id)) return state
+  return { ...state, reviewed: state.reviewed.filter((reviewedId) => reviewedId !== id) }
 }
 
 export function matchesReviewFilter(card: Card, state: EditorState, filter: ReviewFilter): boolean {
   if (filter === "unreviewed") return !state.reviewed.includes(card.id)
-  if (filter === "flagged") return state.flagged.includes(card.id)
   return true
 }

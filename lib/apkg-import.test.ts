@@ -4,7 +4,14 @@ import { describe, expect, it } from "vitest"
 
 import { withAnkiIdentity } from "./anki-sync"
 import { apkgImportWarnings, exportApkg, importApkg, importDeckFile, setSqlWasmPath } from "./apkg"
-import { createCard, createDefaultDeck, serializeDeck } from "./deck"
+import {
+  addCardTemplate,
+  createCard,
+  createDefaultDeck,
+  serializeDeck,
+  templatesOf,
+  updateCardTemplate,
+} from "./deck"
 
 setSqlWasmPath(join(process.cwd(), "node_modules/sql.js/dist/sql-wasm.wasm"))
 
@@ -95,5 +102,25 @@ describe("exportApkg incremental", () => {
     expect(result.deck.anki?.modelId).toBe(111)
     expect(result.deck.anki?.deckId).toBe(222)
     expect(result.deck.front).toContain("{{Word}}")
+  })
+
+  it("round-trips every card template", async () => {
+    let deck = addCardTemplate(deckWithCards())
+    const reverse = templatesOf(deck)[1]!
+    deck = updateCardTemplate(deck, reverse.id, {
+      name: "反向卡",
+      front: "{{Translation}}",
+      back: "{{Word}}",
+    })
+
+    const blob = await exportApkg(deck)
+    const result = await importApkg(await blob.arrayBuffer())
+    const templates = templatesOf(result.deck)
+
+    expect(templates).toHaveLength(2)
+    expect(templates.map((template) => template.name)).toEqual(["卡片 1", "反向卡"])
+    expect(templates[1]?.front).toBe("{{Translation}}")
+    expect(templates[1]?.back).toBe("{{Word}}")
+    expect(result.warnings.some((warning) => warning.includes("只用了"))).toBe(false)
   })
 })
