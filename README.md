@@ -58,3 +58,12 @@ pnpm deploy
 ```
 
 建议给 Worker 打开 Cloudflare Access，只允许你的邮箱。生产环境默认 `REQUIRE_ACCESS=1`，未带 Access 令牌的同步请求会被拒绝。
+
+### 4. Vercel 部署
+
+项目也支持 Vercel。请在 Vercel 项目的 `Settings → Environment Variables` 中为 Production（以及需要的 Preview 环境）配置：
+
+- `GOOGLE_SHEETS_SYNC_URL`
+- `GOOGLE_SHEETS_SYNC_SECRET`
+
+Vercel 运行时直接读取服务器环境变量，不需要配置 `REQUIRE_ACCESS`；访问控制可继续使用 Vercel Deployment Protection。

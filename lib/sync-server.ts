@@ -1,5 +1,3 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare"
-
 import {
   createGoogleSheetsSyncGateway,
   type GoogleSheetsSyncGateway,
@@ -9,11 +7,12 @@ export async function getSyncEnv(
   request: Request
 ): Promise<{ ok: true; gateway: GoogleSheetsSyncGateway } | { ok: false; response: Response }> {
   try {
-    const { env } = await getCloudflareContext({ async: true })
-    if (env.REQUIRE_ACCESS === "1" && !request.headers.get("cf-access-jwt-assertion")) {
+    if (process.env.REQUIRE_ACCESS === "1" && !request.headers.get("cf-access-jwt-assertion")) {
       return { ok: false, response: Response.json({ error: "未登录" }, { status: 401 }) }
     }
-    if (!env.GOOGLE_SHEETS_SYNC_URL || !env.GOOGLE_SHEETS_SYNC_SECRET) {
+    const url = process.env.GOOGLE_SHEETS_SYNC_URL
+    const secret = process.env.GOOGLE_SHEETS_SYNC_SECRET
+    if (!url || !secret) {
       return {
         ok: false,
         response: Response.json(
@@ -25,8 +24,8 @@ export async function getSyncEnv(
     return {
       ok: true,
       gateway: createGoogleSheetsSyncGateway({
-        url: env.GOOGLE_SHEETS_SYNC_URL,
-        secret: env.GOOGLE_SHEETS_SYNC_SECRET,
+        url,
+        secret,
       }),
     }
   } catch (error) {
