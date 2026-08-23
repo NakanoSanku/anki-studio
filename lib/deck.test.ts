@@ -11,6 +11,7 @@ import {
   parseDeckJson,
   serializeDeck,
   setCardField,
+  tryAddField,
   type Card,
 } from "./deck"
 
@@ -117,6 +118,37 @@ describe("setCardField", () => {
     const beta = card("beta")
     const result = setCardField(testDeck([alpha, beta]), beta.id, "Word", "alpha")
     expect(result).toEqual({ ok: false, error: "已存在卡片「alpha」" })
+  })
+})
+
+describe("tryAddField", () => {
+  it("adds the chosen name and note without changing existing values", () => {
+    const result = tryAddField(testDeck([card("alpha", "一")]), {
+      name: "PartOfSpeech",
+      note: "词性，只填写常用缩写",
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.deck.fields).toEqual(["Word", "Translation", "PartOfSpeech"])
+    expect(result.deck.fieldNotes?.PartOfSpeech).toBe("词性，只填写常用缩写")
+    expect(result.deck.cards[0]?.values).toEqual({
+      Word: "alpha",
+      Translation: "一",
+      PartOfSpeech: "",
+    })
+  })
+
+  it("rejects empty and duplicate field names before changing the deck", () => {
+    const deck = testDeck([card("alpha")])
+    expect(tryAddField(deck, { name: "   " })).toEqual({
+      ok: false,
+      error: "字段名不能为空",
+    })
+    expect(tryAddField(deck, { name: "Word" })).toEqual({
+      ok: false,
+      error: "字段「Word」已存在",
+    })
   })
 })
 

@@ -813,8 +813,12 @@ export function tryRenameField(deck: Deck, from: string, to: string): FieldChang
   }
 }
 
-export function tryAddField(deck: Deck): FieldChangeResult {
-  const name = uniqueFieldName(deck.fields)
+export function tryAddField(
+  deck: Deck,
+  input: { name?: string; note?: string } = {}
+): FieldChangeResult {
+  const name = input.name === undefined ? uniqueFieldName(deck.fields) : input.name.trim()
+  if (!name) return { ok: false, error: "字段名不能为空" }
   if (deck.fields.includes(name)) {
     return { ok: false, error: `字段「${name}」已存在` }
   }
@@ -824,7 +828,7 @@ export function tryAddField(deck: Deck): FieldChangeResult {
     deck: {
       ...deck,
       fields: [...deck.fields, name],
-      fieldNotes: { ...notesOf(deck), [name]: "" },
+      fieldNotes: { ...notesOf(deck), [name]: input.note?.trim() ?? "" },
       fieldTts: ttsOf(deck),
       cards: deck.cards.map((card) => ({
         ...card,

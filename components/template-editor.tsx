@@ -281,6 +281,9 @@ export function TemplateEditor({
   const [templateId, setTemplateId] = useState(() => templatesOf(deck)[0]!.id)
   const [deleteTemplateOpen, setDeleteTemplateOpen] = useState(false)
   const [alert, setAlert] = useState("")
+  const [fieldOpen, setFieldOpen] = useState(false)
+  const [newFieldName, setNewFieldName] = useState("")
+  const [newFieldNote, setNewFieldNote] = useState("")
   const [ttsOpen, setTtsOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
@@ -377,6 +380,21 @@ export function TemplateEditor({
     }
     setAlert(result.error)
     return false
+  }
+
+  const openFieldDialog = () => {
+    setNewFieldName("")
+    setNewFieldNote("")
+    setFieldOpen(true)
+  }
+
+  const addField = () => {
+    const result = tryAddField(deck, {
+      name: newFieldName,
+      note: newFieldNote,
+    })
+    if (!applyFieldChange(result)) return
+    setFieldOpen(false)
   }
 
   const openTtsDialog = () => {
@@ -544,7 +562,7 @@ export function TemplateEditor({
                   <Volume2 data-icon="inline-start" />
                   TTS
                 </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => applyFieldChange(tryAddField(deck))}>
+                <Button type="button" size="sm" variant="outline" onClick={openFieldDialog}>
                   <Plus data-icon="inline-start" />
                   字段
                 </Button>
@@ -681,6 +699,50 @@ export function TemplateEditor({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={fieldOpen} onOpenChange={setFieldOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>添加字段</DialogTitle>
+            <DialogDescription>
+              字段名用于模板变量；备注会提示笔记填写要求，并作为上下文传给 AI。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="field-name">字段名</Label>
+              <Input
+                id="field-name"
+                autoFocus
+                value={newFieldName}
+                placeholder="例如：PartOfSpeech"
+                onChange={(event) => setNewFieldName(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="field-note">字段备注</Label>
+              <Textarea
+                id="field-note"
+                value={newFieldNote}
+                placeholder="说明字段含义、格式或生成要求"
+                className="min-h-24 resize-y"
+                onChange={(event) => setNewFieldNote(event.target.value)}
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                备注会淡色显示在空输入框内，已有内容时不会显示。
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setFieldOpen(false)}>
+              取消
+            </Button>
+            <Button type="button" disabled={!newFieldName.trim()} onClick={addField}>
+              添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={ttsOpen} onOpenChange={setTtsOpen}>
         <DialogContent>
