@@ -40,7 +40,6 @@ import { createHttpTransport } from "@/lib/sync-transport"
 import { createIdbStore } from "@/lib/studio-store-idb"
 import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CardEditor } from "@/components/card-editor"
 import { DeckLibraryDialog } from "@/components/deck-library-dialog"
 import { DeckToolsPanel } from "@/components/deck-tools-panel"
@@ -52,29 +51,26 @@ import { StudyOverview } from "@/components/study-overview"
 import { StudySession } from "@/components/study-session"
 import { TemplateEditor } from "@/components/template-editor"
 
-type EditTab = "template" | "cards"
-
 const VIEW_KEY = "anki-studio.view"
-const EDIT_KEY = "anki-studio.edit-tab"
+const LEGACY_EDIT_KEY = "anki-studio.edit-tab"
+
+function readLegacyEditView(): Extract<StudioView, "notes" | "templates"> {
+  return window.localStorage.getItem(LEGACY_EDIT_KEY) === "template" ? "templates" : "notes"
+}
 
 function readView(): StudioView {
   if (typeof window === "undefined") return "study"
   const query = new URLSearchParams(window.location.search).get("tab")
-  if (query === "template" || query === "cards") return "edit"
+  if (query === "template" || query === "templates") return "templates"
+  if (query === "cards" || query === "notes") return "notes"
   if (query === "settings") return "settings"
-  if (query === "study" || query === "edit") return query
+  if (query === "study") return query
+  if (query === "edit") return readLegacyEditView()
   if (query === "decks") return "study"
   const stored = window.localStorage.getItem(VIEW_KEY)
-  if (stored === "study" || stored === "edit" || stored === "settings") return stored
+  if (stored === "edit") return readLegacyEditView()
+  if (stored === "study" || stored === "notes" || stored === "templates" || stored === "settings") return stored
   return "study"
-}
-
-function readEditTab(): EditTab {
-  if (typeof window === "undefined") return "cards"
-  const query = new URLSearchParams(window.location.search).get("tab")
-  if (query === "template" || query === "cards") return query
-  const stored = window.localStorage.getItem(EDIT_KEY)
-  return stored === "template" ? "template" : "cards"
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -119,7 +115,6 @@ export function Studio() {
   const [view, setView] = useState<StudioView>(readView)
   const [studyActive, setStudyActive] = useState(false)
   const [studyImmersive, setStudyImmersive] = useState(false)
-  const [editTab, setEditTab] = useState<EditTab>(readEditTab)
   const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
   const [status, setStatus] = useState<string>("")
@@ -150,13 +145,12 @@ export function Studio() {
 
   useEffect(() => {
     localStorage.setItem(VIEW_KEY, view)
-    localStorage.setItem(EDIT_KEY, editTab)
     const url = new URL(window.location.href)
     if (!url.searchParams.has("tab")) return
     url.searchParams.delete("tab")
     const next = `${url.pathname}${url.search}${url.hash}`
     window.history.replaceState(null, "", next)
-  }, [view, editTab])
+  }, [view])
 
   const previewCard = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
 
@@ -501,7 +495,8 @@ export function Studio() {
   const studyQueueCount = getStudyQueue(deck).length
   const pageTitle: Record<StudioView, string> = {
     study: "学习",
-    edit: editTab === "cards" ? "编辑卡片" : "设计模板",
+    notes: "笔记",
+    templates: "模板",
     settings: "设置",
   }
 
@@ -608,37 +603,30 @@ export function Studio() {
           />
         ) : null}
 
-        {view === "edit" ? (
+        {view === "notes" ? (
           <div className="mx-auto w-full max-w-7xl">
-            <Tabs value={editTab} onValueChange={(value) => setEditTab(value as EditTab)} className="gap-5">
-              <div className="flex items-center justify-between gap-3">
-                <TabsList>
-                  <TabsTrigger value="cards">卡片内容</TabsTrigger>
-                  <TabsTrigger value="template">卡片模板</TabsTrigger>
-                </TabsList>
-              </div>
-              <TabsContent value="cards" className="min-w-0">
-                <CardEditor
-                  deck={deck}
-                  deckId={library.activeId}
-                  selectedId={selectedId}
-                  previewSide={previewSide}
-                  onChange={setDeck}
-                  onSelect={setSelectedId}
-                  onPreviewSideChange={setPreviewSide}
-                />
-              </TabsContent>
-              <TabsContent value="template" className="min-w-0">
-                <TemplateEditor
-                  key={library.activeId}
-                  deck={deck}
-                  previewCard={previewCard}
-                  previewSide={previewSide}
-                  onChange={setDeck}
-                  onPreviewSideChange={setPreviewSide}
-                />
-              </TabsContent>
-            </Tabs>
+            <CardEditor
+              deck={deck}
+              deckId={library.activeId}
+              selectedId={selectedId}
+              previewSide={previewSide}
+              onChange={setDeck}
+              onSelect={setSelectedId}
+              onPreviewSideChange={setPreviewSide}
+            />
+          </div>
+        ) : null}
+
+        {view === "templates" ? (
+          <div className="mx-auto w-full max-w-7xl">
+            <TemplateEditor
+              key={library.activeId}
+              deck={deck}
+              previewCard={previewCard}
+              previewSide={previewSide}
+              onChange={setDeck}
+              onPreviewSideChange={setPreviewSide}
+            />
           </div>
         ) : null}
 

@@ -5,6 +5,7 @@ import {
   BookOpen,
   Cloud,
   CloudOff,
+  FileText,
   Layers3,
   LoaderCircle,
   Settings2,
@@ -16,7 +17,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-export type StudioView = "study" | "edit" | "settings"
+export type StudioView = "study" | "notes" | "templates" | "settings"
 
 type StudioShellProps = {
   view: StudioView
@@ -35,7 +36,8 @@ type StudioShellProps = {
 
 const NAV_ITEMS = [
   { id: "study", label: "学习", icon: BookOpen },
-  { id: "edit", label: "编辑", icon: Layers3 },
+  { id: "notes", label: "笔记", icon: FileText },
+  { id: "templates", label: "模板", icon: Layers3 },
   { id: "settings", label: "设置", icon: Settings2 },
 ] as const
 
@@ -271,7 +273,7 @@ export function StudioShell({
 
       {!activeStudy ? (
         <nav
-          className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-3 border-t border-border/80 bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_-24px_rgba(28,25,23,0.6)] backdrop-blur-xl lg:hidden"
+          className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-border/80 bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_30px_-24px_rgba(28,25,23,0.6)] backdrop-blur-xl lg:hidden"
           aria-label="移动端导航"
         >
           {NAV_ITEMS.map((item) => {
