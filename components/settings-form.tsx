@@ -341,7 +341,7 @@ export function SettingsForm({
                   <div>
                     <CardTitle>Google Sheets 同步</CardTitle>
                     <CardDescription className="mt-1 leading-5">
-                      卡包、模板和学习记录保存到你的 Google Sheet；语音缓存与 API Key 留在本机。
+                      一个 Google Sheet 可保存多个卡包，每个卡包使用独立工作表；语音缓存与 API Key 留在本机。
                     </CardDescription>
                   </div>
                 </div>

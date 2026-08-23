@@ -10,10 +10,12 @@ import type {
 } from "./sync-types"
 
 const SHEETS_API_ROOT = "https://sheets.googleapis.com/v4/spreadsheets"
-const DATA_SHEET_NAME = "_anki_studio_sync"
+const INDEX_SHEET_NAME = "_anki_studio_sync"
 const HAS_WRITTEN_METADATA_KEY = "anki_studio_has_data"
+const DECK_SHEET_METADATA_KEY = "anki_studio_deck_id"
+const LEGACY_SCHEMA_VERSION = 2
 const CHUNK_SIZE = 40_000
-const HEADERS = [
+const DATA_HEADERS = [
   "deck_id",
   "revision",
   "updated_at",
@@ -26,8 +28,20 @@ const HEADERS = [
   "schema_version",
   "version_id",
 ] as const
+const INDEX_HEADERS = [
+  "deck_id",
+  "revision",
+  "updated_at",
+  "deleted_at",
+  "name",
+  "card_count",
+  "sheet_id",
+  "sheet_title",
+  "schema_version",
+  "version_id",
+] as const
 
-export const GOOGLE_SHEETS_SCHEMA_VERSION = 2
+export const GOOGLE_SHEETS_SCHEMA_VERSION = 3
 export const MAX_SYNC_PAYLOAD_BYTES = 8 * 1024 * 1024
 
 export type GoogleSheetsClient = {
@@ -48,14 +62,18 @@ type SheetProperties = {
   gridProperties?: { frozenRowCount?: number }
 }
 
+type DeveloperMetadata = {
+  metadataId?: number
+  metadataKey?: string
+  metadataValue?: string
+  location?: { sheetId?: number; spreadsheet?: boolean }
+}
+
 type SpreadsheetMetadata = {
   spreadsheetId?: string
   properties?: { title?: string }
   sheets?: Array<{ properties?: SheetProperties }>
-  developerMetadata?: Array<{
-    metadataKey?: string
-    metadataValue?: string
-  }>
+  developerMetadata?: DeveloperMetadata[]
 }
 
 type BatchUpdateResponse = {
@@ -66,13 +84,22 @@ type ValuesResponse = {
   values?: unknown[][]
 }
 
-type DataSheet = {
+type SyncIndexSheet = {
   sheetId: number
   title: string
 }
 
+type DeckDataSheet = {
+  sheetId: number
+  title: string
+}
+
+type SyncStorage = {
+  indexSheet: SyncIndexSheet
+  metadata: SpreadsheetMetadata
+}
+
 type SyncRow = {
-  rowNumber: number
   id: string
   revision: number
   updatedAt: number
@@ -90,6 +117,25 @@ type SyncVersion = {
   revision: number
   versionId: string
   rows: SyncRow[]
+}
+
+type IndexRow = {
+  id: string
+  revision: number
+  updatedAt: number
+  deletedAt: number | null
+  name: string
+  cardCount: number
+  sheetId: number | null
+  sheetTitle: string
+  schemaVersion: number
+  versionId: string
+}
+
+type IndexVersion = {
+  revision: number
+  versionId: string
+  row: IndexRow
 }
 
 type GoogleErrorPayload = {
@@ -159,19 +205,20 @@ async function sheetsRequest<T>(
   return (data ?? {}) as T
 }
 
-function quotedRange(range: string): string {
-  return `'${DATA_SHEET_NAME}'!${range}`
+function quotedRange(sheetTitle: string, range: string): string {
+  return `'${sheetTitle.replaceAll("'", "''")}'!${range}`
 }
 
 async function readValues(
   client: GoogleSheetsClient,
+  sheetTitle: string,
   range: string,
   fetchImpl: typeof fetch
 ): Promise<unknown[][]> {
   const query = new URLSearchParams({ valueRenderOption: "UNFORMATTED_VALUE" })
   const data = await sheetsRequest<ValuesResponse>(
     client,
-    `/values/${encodeURIComponent(quotedRange(range))}?${query}`,
+    `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}?${query}`,
     {},
     fetchImpl
   )
@@ -180,6 +227,7 @@ async function readValues(
 
 async function updateValues(
   client: GoogleSheetsClient,
+  sheetTitle: string,
   range: string,
   values: unknown[][],
   fetchImpl: typeof fetch
@@ -187,7 +235,7 @@ async function updateValues(
   const query = new URLSearchParams({ valueInputOption: "RAW" })
   await sheetsRequest(
     client,
-    `/values/${encodeURIComponent(quotedRange(range))}?${query}`,
+    `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}?${query}`,
     { method: "PUT", body: JSON.stringify({ values }) },
     fetchImpl
   )
@@ -195,6 +243,8 @@ async function updateValues(
 
 async function appendValues(
   client: GoogleSheetsClient,
+  sheetTitle: string,
+  range: string,
   values: unknown[][],
   fetchImpl: typeof fetch
 ): Promise<void> {
@@ -204,7 +254,7 @@ async function appendValues(
   })
   await sheetsRequest(
     client,
-    `/values/${encodeURIComponent(quotedRange("A:K"))}:append?${query}`,
+    `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}:append?${query}`,
     { method: "POST", body: JSON.stringify({ values }) },
     fetchImpl
   )
@@ -231,7 +281,7 @@ async function readSpreadsheetMetadata(
     "spreadsheetId",
     "properties(title)",
     "sheets(properties(sheetId,title,hidden,gridProperties(frozenRowCount)))",
-    "developerMetadata(metadataKey,metadataValue)",
+    "developerMetadata(metadataId,metadataKey,metadataValue,location(sheetId,spreadsheet))",
   ].join(",")
   return sheetsRequest<SpreadsheetMetadata>(
     client,
@@ -251,75 +301,50 @@ function rowHasValue(row: unknown[] | undefined): boolean {
   return Boolean(row?.some((value) => value !== "" && value != null))
 }
 
-function headerMatches(row: unknown[]): boolean {
-  return HEADERS.every((header, index) => row[index] === header)
+function headerMatches(row: unknown[], headers: readonly string[]): boolean {
+  return headers.every((header, index) => row[index] === header)
+    && !row.slice(headers.length).some((value) => value !== "" && value != null)
 }
 
-async function ensureDataSheet(
-  client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
-): Promise<DataSheet> {
-  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
-  const alreadyWritten = hasWrittenData(metadata)
-  let properties = metadata.sheets?.find(
-    (sheet) => sheet.properties?.title === DATA_SHEET_NAME
-  )?.properties
+function sheetProperties(metadata: SpreadsheetMetadata): SheetProperties[] {
+  return (metadata.sheets ?? [])
+    .map((sheet) => sheet.properties)
+    .filter((properties): properties is SheetProperties => Boolean(properties))
+}
 
-  if (!properties) {
-    if (alreadyWritten) {
-      throw new Error("Google Sheet 同步工作表已被删除，请先从备份恢复")
-    }
-    const created = await batchUpdate(client, [{
-      addSheet: {
-        properties: {
-          title: DATA_SHEET_NAME,
-          hidden: true,
-          gridProperties: {
-            columnCount: HEADERS.length,
-            frozenRowCount: 1,
-            rowCount: 1000,
-          },
-        },
+function findSheetById(metadata: SpreadsheetMetadata, sheetId: number): SheetProperties | undefined {
+  return sheetProperties(metadata).find((properties) => properties.sheetId === sheetId)
+}
+
+function deckIdForSheet(metadata: SpreadsheetMetadata, sheetId: number): string | null {
+  const value = metadata.developerMetadata?.find((item) => (
+    item.metadataKey === DECK_SHEET_METADATA_KEY && item.location?.sheetId === sheetId
+  ))?.metadataValue
+  return typeof value === "string" && value ? value : null
+}
+
+function findTaggedDeckSheet(metadata: SpreadsheetMetadata, deckId: string): SheetProperties | undefined {
+  const sheetId = metadata.developerMetadata?.find((item) => (
+    item.metadataKey === DECK_SHEET_METADATA_KEY && item.metadataValue === deckId
+  ))?.location?.sheetId
+  return typeof sheetId === "number" ? findSheetById(metadata, sheetId) : undefined
+}
+
+function addLocalSheetMetadata(
+  metadata: SpreadsheetMetadata,
+  properties: SheetProperties,
+  deckId?: string
+): void {
+  metadata.sheets = [...(metadata.sheets ?? []), { properties }]
+  if (deckId && typeof properties.sheetId === "number") {
+    metadata.developerMetadata = [
+      ...(metadata.developerMetadata ?? []),
+      {
+        metadataKey: DECK_SHEET_METADATA_KEY,
+        metadataValue: deckId,
+        location: { sheetId: properties.sheetId },
       },
-    }], fetchImpl)
-    properties = created.replies?.[0]?.addSheet?.properties
-  }
-
-  if (typeof properties?.sheetId !== "number") {
-    throw new Error("Google Sheet 同步工作表初始化失败")
-  }
-
-  const preview = await readValues(client, "A1:K2", fetchImpl)
-  const header = preview[0] ?? []
-  if (!rowHasValue(header)) {
-    if (alreadyWritten) {
-      throw new Error("Google Sheet 同步表头已被清空，请先从备份恢复")
-    }
-    await updateValues(client, "A1:K1", [[...HEADERS]], fetchImpl)
-  } else if (!headerMatches(header)) {
-    throw new Error("Google Sheet 同步表结构不兼容")
-  }
-
-  if (alreadyWritten && !rowHasValue(preview[1])) {
-    throw new Error("Google Sheet 同步数据已被清空，请先从备份恢复")
-  }
-
-  if (properties.hidden !== true || properties.gridProperties?.frozenRowCount !== 1) {
-    await batchUpdate(client, [{
-      updateSheetProperties: {
-        properties: {
-          sheetId: properties.sheetId,
-          hidden: true,
-          gridProperties: { frozenRowCount: 1 },
-        },
-        fields: "hidden,gridProperties.frozenRowCount",
-      },
-    }], fetchImpl)
-  }
-
-  return {
-    sheetId: properties.sheetId,
-    title: metadata.properties?.title?.trim() || "Google Sheet",
+    ]
   }
 }
 
@@ -328,17 +353,14 @@ function positiveNumberOrNull(value: unknown): number | null {
   return Number.isFinite(number) && number > 0 ? number : null
 }
 
-async function readRows(
-  client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
-): Promise<{ dataSheet: DataSheet; rows: SyncRow[] }> {
-  const dataSheet = await ensureDataSheet(client, fetchImpl)
-  const values = await readValues(client, "A2:K", fetchImpl)
+function parseSyncRows(
+  values: unknown[][],
+  expectedSchemaVersion: number
+): SyncRow[] {
   const rows: SyncRow[] = []
-  values.forEach((valuesRow, index) => {
+  values.forEach((valuesRow) => {
     if (!rowHasValue(valuesRow)) return
     const row: SyncRow = {
-      rowNumber: index + 2,
       id: String(valuesRow[0] ?? ""),
       revision: Number(valuesRow[1]),
       updatedAt: Number(valuesRow[2]),
@@ -361,14 +383,53 @@ async function readRows(
       || !Number.isInteger(row.partCount)
       || row.partCount <= 0
       || !row.payload
-      || row.schemaVersion !== GOOGLE_SHEETS_SCHEMA_VERSION
+      || row.schemaVersion !== expectedSchemaVersion
       || !/^[A-Za-z0-9_-]{16,80}$/.test(row.versionId)
     ) {
       throw new Error("Google Sheet 同步数据已损坏，请先从备份恢复")
     }
     rows.push(row)
   })
-  return { dataSheet, rows }
+  return rows
+}
+
+function parseIndexRows(values: unknown[][]): IndexRow[] {
+  const rows: IndexRow[] = []
+  values.forEach((valuesRow) => {
+    if (!rowHasValue(valuesRow)) return
+    const deletedAt = positiveNumberOrNull(valuesRow[3])
+    const sheetIdValue = valuesRow[6]
+    const sheetId = sheetIdValue === "" || sheetIdValue == null
+      ? null
+      : Number(sheetIdValue)
+    const row: IndexRow = {
+      id: String(valuesRow[0] ?? ""),
+      revision: Number(valuesRow[1]),
+      updatedAt: Number(valuesRow[2]),
+      deletedAt,
+      name: String(valuesRow[4] ?? ""),
+      cardCount: Number(valuesRow[5]),
+      sheetId,
+      sheetTitle: String(valuesRow[7] ?? ""),
+      schemaVersion: Number(valuesRow[8]),
+      versionId: String(valuesRow[9] ?? ""),
+    }
+    if (
+      !/^[A-Za-z0-9_-]{6,80}$/.test(row.id)
+      || !Number.isSafeInteger(row.revision)
+      || row.revision <= 0
+      || !Number.isFinite(row.updatedAt)
+      || !Number.isFinite(row.cardCount)
+      || row.cardCount < 0
+      || (!deletedAt && (!Number.isInteger(sheetId) || sheetId == null || sheetId < 0))
+      || row.schemaVersion !== GOOGLE_SHEETS_SCHEMA_VERSION
+      || !/^[A-Za-z0-9_-]{16,80}$/.test(row.versionId)
+    ) {
+      throw new Error("Google Sheet 同步目录已损坏，请先从备份恢复")
+    }
+    rows.push(row)
+  })
+  return rows
 }
 
 function findCurrentVersion(rows: SyncRow[], id: string): SyncVersion | null {
@@ -388,7 +449,30 @@ function findCurrentVersion(rows: SyncRow[], id: string): SyncVersion | null {
   return winner ? { revision, versionId: winner[0], rows: winner[1] } : null
 }
 
-function decodePayload(version: SyncVersion): RemoteDeckPayload {
+function findExactVersion(
+  rows: SyncRow[],
+  id: string,
+  revision: number,
+  versionId: string
+): SyncVersion | null {
+  const matching = rows.filter((row) => (
+    row.id === id && row.revision === revision && row.versionId === versionId
+  ))
+  return matching.length > 0 ? { revision, versionId, rows: matching } : null
+}
+
+function findCurrentIndexVersion(rows: IndexRow[], id: string): IndexVersion | null {
+  const winner = rows
+    .filter((row) => row.id === id)
+    .sort((left, right) => (
+      right.revision - left.revision
+      || right.updatedAt - left.updatedAt
+      || right.versionId.localeCompare(left.versionId)
+    ))[0]
+  return winner ? { revision: winner.revision, versionId: winner.versionId, row: winner } : null
+}
+
+function decodePayload(version: SyncVersion, expectedSchemaVersion: number): RemoteDeckPayload {
   const rows = version.rows.slice().sort((left, right) => left.partIndex - right.partIndex)
   const partCount = rows.length > 0 ? rows[0]!.partCount : 0
   if (!partCount || rows.length !== partCount) {
@@ -398,7 +482,7 @@ function decodePayload(version: SyncVersion): RemoteDeckPayload {
     if (
       row.partIndex !== index
       || row.partCount !== partCount
-      || row.schemaVersion !== GOOGLE_SHEETS_SCHEMA_VERSION
+      || row.schemaVersion !== expectedSchemaVersion
       || row.versionId !== version.versionId
     ) {
       throw new Error("Google Sheet 中的卡包分块无效")
@@ -430,11 +514,101 @@ function nextRevision(currentRevision: number): number {
   return Math.max(currentRevision + 1, Date.now() * 2048 + random)
 }
 
+function dataRowsForPayload(
+  id: string,
+  payload: RemoteDeckPayload,
+  versionId: string
+): unknown[][] {
+  const json = JSON.stringify(payload)
+  if (Buffer.byteLength(json, "utf8") > MAX_SYNC_PAYLOAD_BYTES) {
+    throw new Error("卡包太大，无法同步")
+  }
+  const parts = chunk(Buffer.from(json, "utf8").toString("base64url"))
+  const name = payload.deck?.name.trim().slice(0, 200) || "未命名卡包"
+  const cardCount = payload.deck?.cards.length ?? 0
+  return parts.map((part, index) => [
+    id,
+    payload.rev,
+    payload.updatedAt,
+    payload.deletedAt ?? "",
+    name,
+    cardCount,
+    index,
+    parts.length,
+    part,
+    GOOGLE_SHEETS_SCHEMA_VERSION,
+    versionId,
+  ])
+}
+
+function indexValues(row: IndexRow): unknown[] {
+  return [
+    row.id,
+    row.revision,
+    row.updatedAt,
+    row.deletedAt ?? "",
+    row.name,
+    row.cardCount,
+    row.sheetId ?? "",
+    row.sheetTitle,
+    row.schemaVersion,
+    row.versionId,
+  ]
+}
+
+function tombstonePayload(row: IndexRow): RemoteDeckPayload {
+  return {
+    rev: row.revision,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+    deck: null,
+    editorState: null,
+  }
+}
+
+function sanitizedSheetTitle(value: string): string {
+  const title = value
+    .normalize("NFKC")
+    .replace(/[\\/?*\[\]:\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  return (title || "未命名卡包").slice(0, 100)
+}
+
+function uniqueSheetTitle(
+  requested: string,
+  metadata: SpreadsheetMetadata,
+  excludeSheetId?: number
+): string {
+  const base = sanitizedSheetTitle(requested)
+  const used = new Set(sheetProperties(metadata)
+    .filter((sheet) => sheet.sheetId !== excludeSheetId)
+    .map((sheet) => (sheet.title ?? "").normalize("NFKC").toLocaleLowerCase()))
+  if (!used.has(base.toLocaleLowerCase())) return base
+  for (let index = 2; index < 10_000; index += 1) {
+    const suffix = ` (${index})`
+    const candidate = `${base.slice(0, 100 - suffix.length).trimEnd()}${suffix}`
+    if (!used.has(candidate.toLocaleLowerCase())) return candidate
+  }
+  throw new Error("Google Sheet 中可用的卡包标签名已耗尽")
+}
+
+function randomSheetId(metadata: SpreadsheetMetadata): number {
+  const used = new Set(sheetProperties(metadata)
+    .map((sheet) => sheet.sheetId)
+    .filter((id): id is number => typeof id === "number"))
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const id = crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff
+    if (!used.has(id)) return id
+  }
+  throw new Error("Google Sheet 工作表 ID 生成失败")
+}
+
 async function markHasWrittenData(
   client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
   fetchImpl: typeof fetch
 ): Promise<void> {
-  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
   if (hasWrittenData(metadata)) return
   await batchUpdate(client, [{
     createDeveloperMetadata: {
@@ -446,46 +620,399 @@ async function markHasWrittenData(
       },
     },
   }], fetchImpl)
+  metadata.developerMetadata = [
+    ...(metadata.developerMetadata ?? []),
+    {
+      metadataKey: HAS_WRITTEN_METADATA_KEY,
+      metadataValue: "1",
+      location: { spreadsheet: true },
+    },
+  ]
 }
 
-function deletionRequests(sheetId: number, rowNumbers: number[]): unknown[] {
-  if (rowNumbers.length === 0) return []
-  const rows = [...new Set(rowNumbers)].sort((left, right) => right - left)
-  const ranges: Array<{ start: number; end: number }> = []
-  let end = rows[0]!
-  let start = end
-  for (let index = 1; index <= rows.length; index += 1) {
-    const row = rows[index]
-    if (row === start - 1) {
-      start = row
-      continue
-    }
-    ranges.push({ start, end })
-    if (row != null) {
-      start = row
-      end = row
-    }
+async function ensureIndexProperties(
+  client: GoogleSheetsClient,
+  properties: SheetProperties,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  if (typeof properties.sheetId !== "number") {
+    throw new Error("Google Sheet 同步索引初始化失败")
   }
-  return ranges.map((range) => ({
-    deleteDimension: {
-      range: {
-        sheetId,
-        dimension: "ROWS",
-        startIndex: range.start - 1,
-        endIndex: range.end,
+  if (properties.hidden === true && properties.gridProperties?.frozenRowCount === 1) return
+  await batchUpdate(client, [{
+    updateSheetProperties: {
+      properties: {
+        sheetId: properties.sheetId,
+        hidden: true,
+        gridProperties: { frozenRowCount: 1 },
+      },
+      fields: "hidden,gridProperties.frozenRowCount",
+    },
+  }], fetchImpl)
+  properties.hidden = true
+  properties.gridProperties = { ...properties.gridProperties, frozenRowCount: 1 }
+}
+
+async function createDeckSheet(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  deckId: string,
+  requestedTitle: string,
+  fetchImpl: typeof fetch
+): Promise<DeckDataSheet> {
+  const sheetId = randomSheetId(metadata)
+  const title = uniqueSheetTitle(requestedTitle, metadata)
+  await batchUpdate(client, [
+    {
+      addSheet: {
+        properties: {
+          sheetId,
+          title,
+          hidden: false,
+          gridProperties: {
+            columnCount: DATA_HEADERS.length,
+            frozenRowCount: 1,
+            rowCount: 1000,
+          },
+        },
       },
     },
-  }))
+    {
+      createDeveloperMetadata: {
+        developerMetadata: {
+          location: { sheetId },
+          metadataKey: DECK_SHEET_METADATA_KEY,
+          metadataValue: deckId,
+          visibility: "DOCUMENT",
+        },
+      },
+    },
+  ], fetchImpl)
+  const properties: SheetProperties = {
+    sheetId,
+    title,
+    hidden: false,
+    gridProperties: { frozenRowCount: 1 },
+  }
+  addLocalSheetMetadata(metadata, properties, deckId)
+  await updateValues(client, title, "A1:K1", [[...DATA_HEADERS]], fetchImpl)
+  return { sheetId, title }
+}
+
+async function tagDeckSheet(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  sheetId: number,
+  deckId: string,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  if (deckIdForSheet(metadata, sheetId) === deckId) return
+  await batchUpdate(client, [{
+    createDeveloperMetadata: {
+      developerMetadata: {
+        location: { sheetId },
+        metadataKey: DECK_SHEET_METADATA_KEY,
+        metadataValue: deckId,
+        visibility: "DOCUMENT",
+      },
+    },
+  }], fetchImpl)
+  metadata.developerMetadata = [
+    ...(metadata.developerMetadata ?? []),
+    {
+      metadataKey: DECK_SHEET_METADATA_KEY,
+      metadataValue: deckId,
+      location: { sheetId },
+    },
+  ]
+}
+
+async function ensureDeckSheet(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  deckId: string,
+  deckName: string,
+  preferredSheetId: number | null,
+  fetchImpl: typeof fetch
+): Promise<DeckDataSheet> {
+  let properties = preferredSheetId == null
+    ? undefined
+    : findSheetById(metadata, preferredSheetId)
+  properties ??= findTaggedDeckSheet(metadata, deckId)
+
+  if (!properties) {
+    if (preferredSheetId != null) {
+      throw new Error(`卡包「${deckName || "未命名卡包"}」对应的工作表已被删除，请先从备份恢复`)
+    }
+    return createDeckSheet(client, metadata, deckId, deckName, fetchImpl)
+  }
+  if (typeof properties.sheetId !== "number" || !properties.title) {
+    throw new Error("Google Sheet 卡包工作表无效")
+  }
+
+  const taggedDeckId = deckIdForSheet(metadata, properties.sheetId)
+  if (taggedDeckId && taggedDeckId !== deckId) {
+    throw new Error("Google Sheet 卡包工作表映射冲突")
+  }
+  if (!taggedDeckId) {
+    await tagDeckSheet(client, metadata, properties.sheetId, deckId, fetchImpl)
+  }
+
+  const preview = await readValues(client, properties.title, "A1:K1", fetchImpl)
+  const header = preview[0] ?? []
+  if (!rowHasValue(header)) {
+    await updateValues(client, properties.title, "A1:K1", [[...DATA_HEADERS]], fetchImpl)
+  } else if (!headerMatches(header, DATA_HEADERS)) {
+    throw new Error(`卡包工作表「${properties.title}」结构不兼容`)
+  }
+
+  if (properties.hidden === true || properties.gridProperties?.frozenRowCount !== 1) {
+    await batchUpdate(client, [{
+      updateSheetProperties: {
+        properties: {
+          sheetId: properties.sheetId,
+          hidden: false,
+          gridProperties: { frozenRowCount: 1 },
+        },
+        fields: "hidden,gridProperties.frozenRowCount",
+      },
+    }], fetchImpl)
+    properties.hidden = false
+    properties.gridProperties = { ...properties.gridProperties, frozenRowCount: 1 }
+  }
+  return { sheetId: properties.sheetId, title: properties.title }
+}
+
+async function renameDeckSheet(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  dataSheet: DeckDataSheet,
+  deckName: string,
+  fetchImpl: typeof fetch
+): Promise<DeckDataSheet> {
+  const title = uniqueSheetTitle(deckName, metadata, dataSheet.sheetId)
+  if (title === dataSheet.title) return dataSheet
+  await batchUpdate(client, [{
+    updateSheetProperties: {
+      properties: { sheetId: dataSheet.sheetId, title },
+      fields: "title",
+    },
+  }], fetchImpl)
+  const properties = findSheetById(metadata, dataSheet.sheetId)
+  if (properties) properties.title = title
+  return { ...dataSheet, title }
+}
+
+async function replaceSheetData(
+  client: GoogleSheetsClient,
+  dataSheet: DeckDataSheet,
+  rows: unknown[][],
+  fetchImpl: typeof fetch
+): Promise<void> {
+  const existing = await readValues(client, dataSheet.title, "A1:K", fetchImpl)
+  const rowCount = Math.max(existing.length, rows.length + 1, 1)
+  const values: unknown[][] = [
+    [...DATA_HEADERS],
+    ...rows,
+    ...Array.from({ length: rowCount - rows.length - 1 }, () => Array(DATA_HEADERS.length).fill("")),
+  ]
+  await updateValues(client, dataSheet.title, `A1:K${rowCount}`, values, fetchImpl)
+}
+
+async function migrateLegacyStorage(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  indexProperties: SheetProperties,
+  fetchImpl: typeof fetch
+): Promise<SyncStorage> {
+  if (typeof indexProperties.sheetId !== "number" || !indexProperties.title) {
+    throw new Error("Google Sheet 旧同步工作表无效")
+  }
+  const legacyValues = await readValues(client, indexProperties.title, "A2:K", fetchImpl)
+  const legacyRows = parseSyncRows(legacyValues, LEGACY_SCHEMA_VERSION)
+  const ids = [...new Set(legacyRows.map((row) => row.id))]
+  const migratedRows: unknown[][] = []
+
+  for (const id of ids) {
+    const current = findCurrentVersion(legacyRows, id)
+    if (!current) continue
+    const payload = decodePayload(current, LEGACY_SCHEMA_VERSION)
+    const first = current.rows[0]!
+    const deletedAt = positiveNumberOrNull(payload.deletedAt)
+    let dataSheet: DeckDataSheet | null = null
+    if (!deletedAt) {
+      if (!payload.deck) throw new Error("Google Sheet 旧卡包缺少内容")
+      dataSheet = await ensureDeckSheet(
+        client,
+        metadata,
+        id,
+        payload.deck.name,
+        null,
+        fetchImpl
+      )
+      await replaceSheetData(
+        client,
+        dataSheet,
+        dataRowsForPayload(id, payload, current.versionId),
+        fetchImpl
+      )
+    }
+    migratedRows.push(indexValues({
+      id,
+      revision: current.revision,
+      updatedAt: payload.updatedAt,
+      deletedAt,
+      name: payload.deck?.name.trim().slice(0, 200) || first.name || "未命名卡包",
+      cardCount: payload.deck?.cards.length ?? Math.max(0, first.cardCount || 0),
+      sheetId: dataSheet?.sheetId ?? null,
+      sheetTitle: dataSheet?.title ?? "",
+      schemaVersion: GOOGLE_SHEETS_SCHEMA_VERSION,
+      versionId: current.versionId,
+    }))
+  }
+
+  const rowCount = Math.max(legacyValues.length + 1, migratedRows.length + 1, 1)
+  const replacement: unknown[][] = [
+    [...INDEX_HEADERS, ""],
+    ...migratedRows.map((row) => [...row, ""]),
+    ...Array.from({ length: rowCount - migratedRows.length - 1 }, () => Array(DATA_HEADERS.length).fill("")),
+  ]
+  await updateValues(client, indexProperties.title, `A1:K${rowCount}`, replacement, fetchImpl)
+  await ensureIndexProperties(client, indexProperties, fetchImpl)
+  if (ids.length > 0) await markHasWrittenData(client, metadata, fetchImpl)
+  return {
+    indexSheet: { sheetId: indexProperties.sheetId, title: indexProperties.title },
+    metadata,
+  }
+}
+
+async function ensureSyncStorage(
+  client: GoogleSheetsClient,
+  fetchImpl: typeof fetch
+): Promise<SyncStorage> {
+  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
+  const alreadyWritten = hasWrittenData(metadata)
+  let properties = sheetProperties(metadata).find((sheet) => sheet.title === INDEX_SHEET_NAME)
+
+  if (!properties) {
+    if (alreadyWritten) {
+      throw new Error("Google Sheet 同步索引已被删除，请先从备份恢复")
+    }
+    const created = await batchUpdate(client, [{
+      addSheet: {
+        properties: {
+          title: INDEX_SHEET_NAME,
+          hidden: true,
+          gridProperties: {
+            columnCount: DATA_HEADERS.length,
+            frozenRowCount: 1,
+            rowCount: 1000,
+          },
+        },
+      },
+    }], fetchImpl)
+    properties = created.replies?.[0]?.addSheet?.properties
+    if (properties) addLocalSheetMetadata(metadata, properties)
+  }
+
+  if (typeof properties?.sheetId !== "number" || !properties.title) {
+    throw new Error("Google Sheet 同步索引初始化失败")
+  }
+
+  const preview = await readValues(client, properties.title, "A1:K2", fetchImpl)
+  const header = preview[0] ?? []
+  if (!rowHasValue(header)) {
+    if (alreadyWritten) {
+      throw new Error("Google Sheet 同步索引表头已被清空，请先从备份恢复")
+    }
+    await updateValues(client, properties.title, "A1:J1", [[...INDEX_HEADERS]], fetchImpl)
+  } else if (headerMatches(header, DATA_HEADERS)) {
+    return migrateLegacyStorage(client, metadata, properties, fetchImpl)
+  } else if (!headerMatches(header, INDEX_HEADERS)) {
+    throw new Error("Google Sheet 同步索引结构不兼容")
+  }
+
+  if (alreadyWritten && !rowHasValue(preview[1])) {
+    throw new Error("Google Sheet 同步目录已被清空，请先从备份恢复")
+  }
+  await ensureIndexProperties(client, properties, fetchImpl)
+  return {
+    indexSheet: { sheetId: properties.sheetId, title: properties.title },
+    metadata,
+  }
+}
+
+async function readIndexState(
+  client: GoogleSheetsClient,
+  fetchImpl: typeof fetch
+): Promise<{ storage: SyncStorage; rows: IndexRow[] }> {
+  const storage = await ensureSyncStorage(client, fetchImpl)
+  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
+  return { storage, rows: parseIndexRows(values) }
+}
+
+async function readDeckRows(
+  client: GoogleSheetsClient,
+  dataSheet: DeckDataSheet,
+  fetchImpl: typeof fetch
+): Promise<SyncRow[]> {
+  const values = await readValues(client, dataSheet.title, "A2:K", fetchImpl)
+  return parseSyncRows(values, GOOGLE_SHEETS_SCHEMA_VERSION)
+}
+
+async function payloadForIndexVersion(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  current: IndexVersion,
+  fetchImpl: typeof fetch
+): Promise<RemoteDeckPayload> {
+  if (current.row.deletedAt) return tombstonePayload(current.row)
+  if (current.row.sheetId == null) {
+    throw new Error("Google Sheet 同步目录缺少卡包工作表")
+  }
+  const properties = findSheetById(metadata, current.row.sheetId)
+  if (typeof properties?.sheetId !== "number" || !properties.title) {
+    throw new Error(`卡包「${current.row.name}」对应的工作表已被删除，请先从备份恢复`)
+  }
+  const dataSheet = { sheetId: properties.sheetId, title: properties.title }
+  const rows = await readDeckRows(client, dataSheet, fetchImpl)
+  const version = findExactVersion(rows, current.row.id, current.revision, current.versionId)
+  if (!version) throw new Error(`卡包工作表「${properties.title}」缺少目录指定的版本`)
+  return decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
+}
+
+async function deleteDeckSheet(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  dataSheet: DeckDataSheet,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  const otherVisibleSheet = sheetProperties(metadata).some((sheet) => (
+    sheet.sheetId !== dataSheet.sheetId && sheet.hidden !== true
+  ))
+  const requests: unknown[] = []
+  if (!otherVisibleSheet) {
+    requests.push({
+      addSheet: {
+        properties: {
+          title: uniqueSheetTitle("Anki Studio", metadata, dataSheet.sheetId),
+          hidden: false,
+        },
+      },
+    })
+  }
+  requests.push({ deleteSheet: { sheetId: dataSheet.sheetId } })
+  await batchUpdate(client, requests, fetchImpl)
 }
 
 export async function connectGoogleSheet(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<GoogleSheetDetails> {
-  const dataSheet = await ensureDataSheet(client, fetchImpl)
+  const storage = await ensureSyncStorage(client, fetchImpl)
   return {
     id: client.spreadsheetId,
-    title: dataSheet.title,
+    title: storage.metadata.properties?.title?.trim() || "Google Sheet",
     url: googleSpreadsheetUrl(client.spreadsheetId),
   }
 }
@@ -501,19 +1028,18 @@ export async function listGoogleSheetsIndex(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteIndexEntry[]> {
-  const { rows } = await readRows(client, fetchImpl)
+  const { rows } = await readIndexState(client, fetchImpl)
   const ids = [...new Set(rows.map((row) => row.id))]
   return parseRemoteIndex(ids.map((id) => {
-    const current = findCurrentVersion(rows, id)
+    const current = findCurrentIndexVersion(rows, id)
     if (!current) return null
-    const first = current.rows[0]!
     return {
       id,
       rev: current.revision,
-      name: first.name || "未命名卡包",
-      cardCount: Math.max(0, first.cardCount || 0),
-      updatedAt: Math.max(0, first.updatedAt || 0),
-      deletedAt: positiveNumberOrNull(first.deletedAt),
+      name: current.row.name || "未命名卡包",
+      cardCount: Math.max(0, current.row.cardCount || 0),
+      updatedAt: Math.max(0, current.row.updatedAt || 0),
+      deletedAt: current.row.deletedAt,
     }
   }).filter((entry) => entry !== null))
 }
@@ -523,9 +1049,11 @@ export async function getGoogleSheetsDeck(
   id: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteDeckPayload | null> {
-  const { rows } = await readRows(client, fetchImpl)
-  const current = findCurrentVersion(rows, id)
-  return current ? decodePayload(current) : null
+  const { storage, rows } = await readIndexState(client, fetchImpl)
+  const current = findCurrentIndexVersion(rows, id)
+  return current
+    ? payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
+    : null
 }
 
 export async function putGoogleSheetsDeck(
@@ -534,9 +1062,11 @@ export async function putGoogleSheetsDeck(
   body: PutDeckBody,
   fetchImpl: typeof fetch = fetch
 ): Promise<PutDeckResult> {
-  const { dataSheet, rows: allRows } = await readRows(client, fetchImpl)
-  const current = findCurrentVersion(allRows, id)
-  const currentPayload = current ? decodePayload(current) : null
+  const { storage, rows: indexRows } = await readIndexState(client, fetchImpl)
+  const current = findCurrentIndexVersion(indexRows, id)
+  const currentPayload = current
+    ? await payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
+    : null
   const currentRevision = currentPayload?.rev ?? 0
   if (currentRevision !== body.expectedRev) {
     return {
@@ -560,52 +1090,84 @@ export async function putGoogleSheetsDeck(
     deck,
     editorState: deletedAt ? null : body.editorState ?? currentPayload?.editorState ?? null,
   }
-  const json = JSON.stringify(payload)
-  if (Buffer.byteLength(json, "utf8") > MAX_SYNC_PAYLOAD_BYTES) {
-    throw new Error("卡包太大，无法同步")
+  const name = deck?.name.trim().slice(0, 200) || current?.row.name || "未命名卡包"
+  const cardCount = deck?.cards.length ?? current?.row.cardCount ?? 0
+  let dataSheet: DeckDataSheet | null = null
+
+  if (!deletedAt) {
+    dataSheet = await ensureDeckSheet(
+      client,
+      storage.metadata,
+      id,
+      name,
+      current?.row.sheetId ?? null,
+      fetchImpl
+    )
+    await appendValues(
+      client,
+      dataSheet.title,
+      "A:K",
+      dataRowsForPayload(id, payload, versionId),
+      fetchImpl
+    )
   }
-  const parts = chunk(Buffer.from(json, "utf8").toString("base64url"))
-  const name = deck?.name.trim().slice(0, 200) || "未命名卡包"
-  const cardCount = deck?.cards.length ?? 0
-  const rows = parts.map((part, index) => [
-    id,
-    revision,
-    updatedAt,
-    deletedAt ?? "",
-    name,
-    cardCount,
-    index,
-    parts.length,
-    part,
-    GOOGLE_SHEETS_SCHEMA_VERSION,
-    versionId,
-  ])
 
-  await appendValues(client, rows, fetchImpl)
-  await markHasWrittenData(client, fetchImpl)
+  await appendValues(client, storage.indexSheet.title, "A:J", [[
+    ...indexValues({
+      id,
+      revision,
+      updatedAt,
+      deletedAt,
+      name,
+      cardCount,
+      sheetId: dataSheet?.sheetId ?? null,
+      sheetTitle: dataSheet?.title ?? "",
+      schemaVersion: GOOGLE_SHEETS_SCHEMA_VERSION,
+      versionId,
+    }),
+  ]], fetchImpl)
+  await markHasWrittenData(client, storage.metadata, fetchImpl)
 
-  const afterWrite = await readRows(client, fetchImpl)
-  const winner = findCurrentVersion(afterWrite.rows, id)
+  const afterWriteValues = await readValues(
+    client,
+    storage.indexSheet.title,
+    "A2:J",
+    fetchImpl
+  )
+  const afterWriteRows = parseIndexRows(afterWriteValues)
+  const winner = findCurrentIndexVersion(afterWriteRows, id)
   if (!winner || winner.versionId !== versionId) {
     return {
       ok: false,
       conflict: true,
       server: winner
-        ? decodePayload(winner)
+        ? await payloadForIndexVersion(client, storage.metadata, winner, fetchImpl)
         : { rev: 0, updatedAt: 0, deletedAt: null, deck: null, editorState: null },
     }
   }
 
-  const oldRows = allRows.filter((row) => row.id === id).map((row) => row.rowNumber)
-  const requests = deletionRequests(dataSheet.sheetId, oldRows)
-  if (requests.length > 0) {
-    try {
-      await batchUpdate(client, requests, fetchImpl)
-    } catch (error) {
-      console.error(JSON.stringify({
-        message: "old Google Sheets sync chunks cleanup failed",
-        error: String(error),
-      }))
+  if (dataSheet) {
+    const writtenRows = await readDeckRows(client, dataSheet, fetchImpl)
+    const writtenVersion = findExactVersion(writtenRows, id, revision, versionId)
+    if (!writtenVersion) throw new Error("Google Sheet 卡包数据写入不完整")
+    decodePayload(writtenVersion, GOOGLE_SHEETS_SCHEMA_VERSION)
+    await renameDeckSheet(client, storage.metadata, dataSheet, name, fetchImpl)
+  } else if (current?.row.sheetId != null) {
+    const properties = findSheetById(storage.metadata, current.row.sheetId)
+    if (typeof properties?.sheetId === "number" && properties.title) {
+      try {
+        await deleteDeckSheet(
+          client,
+          storage.metadata,
+          { sheetId: properties.sheetId, title: properties.title },
+          fetchImpl
+        )
+      } catch (error) {
+        console.error(JSON.stringify({
+          message: "deleted Google Sheets deck sheet cleanup failed",
+          error: String(error),
+        }))
+      }
     }
   }
 

@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer"
+
 import { describe, expect, it } from "vitest"
 
 import { createDefaultDeck } from "./deck"
@@ -14,13 +16,117 @@ const client = createGoogleSheetsClient({
   accessToken: "short-lived-access-token",
 })
 
-function createSheetsApi() {
-  let sheetExists = false
-  let hidden = false
-  let frozenRowCount = 0
-  let header: unknown[] = []
-  const rows: unknown[][] = []
-  let hasWritten = false
+const DATA_HEADERS = [
+  "deck_id",
+  "revision",
+  "updated_at",
+  "deleted_at",
+  "name",
+  "card_count",
+  "part_index",
+  "part_count",
+  "payload_base64",
+  "schema_version",
+  "version_id",
+]
+
+type FakeSheet = {
+  sheetId: number
+  title: string
+  hidden: boolean
+  frozenRowCount: number
+  values: unknown[][]
+}
+
+type FakeDeveloperMetadata = {
+  metadataKey: string
+  metadataValue: string
+  location: { spreadsheet?: boolean; sheetId?: number }
+}
+
+function hasValue(row: unknown[] | undefined): boolean {
+  return Boolean(row?.some((value) => value !== "" && value != null))
+}
+
+function compactValues(values: unknown[][]): unknown[][] {
+  const rows = values.map((row) => {
+    const next = [...row]
+    while (next.length > 0 && (next.at(-1) === "" || next.at(-1) == null)) next.pop()
+    return next
+  })
+  while (rows.length > 0 && !hasValue(rows.at(-1))) rows.pop()
+  return rows
+}
+
+function columnNumber(value: string): number {
+  return [...value].reduce((total, character) => total * 26 + character.charCodeAt(0) - 64, 0)
+}
+
+function parseA1(range: string): {
+  startRow: number
+  endRow?: number
+  startColumn: number
+  endColumn: number
+} {
+  const [startRaw, endRaw = startRaw] = range.split(":")
+  const start = /^([A-Z]+)(\d+)?$/.exec(startRaw ?? "")
+  const end = /^([A-Z]+)(\d+)?$/.exec(endRaw ?? "")
+  if (!start || !end) throw new Error(`Unsupported fake range: ${range}`)
+  return {
+    startRow: Math.max(0, Number(start[2] ?? 1) - 1),
+    endRow: end[2] ? Number(end[2]) : undefined,
+    startColumn: columnNumber(start[1]!) - 1,
+    endColumn: columnNumber(end[1]!),
+  }
+}
+
+function parseValuesPath(pathname: string): {
+  sheetTitle: string
+  range: string
+  append: boolean
+} {
+  const encoded = pathname.split("/values/")[1]
+  if (!encoded) throw new Error(`Unsupported fake values path: ${pathname}`)
+  const decoded = decodeURIComponent(encoded)
+  const append = decoded.endsWith(":append")
+  const reference = append ? decoded.slice(0, -":append".length) : decoded
+  const separator = reference.lastIndexOf("!")
+  const quotedTitle = reference.slice(0, separator)
+  const range = reference.slice(separator + 1)
+  const sheetTitle = quotedTitle.startsWith("'") && quotedTitle.endsWith("'")
+    ? quotedTitle.slice(1, -1).replaceAll("''", "'")
+    : quotedTitle
+  return { sheetTitle, range, append }
+}
+
+function createSheetsApi(options: {
+  legacyRows?: unknown[][]
+  hasWritten?: boolean
+} = {}) {
+  const sheets = new Map<number, FakeSheet>()
+  sheets.set(0, {
+    sheetId: 0,
+    title: "Sheet1",
+    hidden: false,
+    frozenRowCount: 0,
+    values: [],
+  })
+  if (options.legacyRows) {
+    sheets.set(7, {
+      sheetId: 7,
+      title: "_anki_studio_sync",
+      hidden: true,
+      frozenRowCount: 1,
+      values: [[...DATA_HEADERS], ...options.legacyRows],
+    })
+  }
+  const developerMetadata: FakeDeveloperMetadata[] = options.hasWritten
+    ? [{
+        metadataKey: "anki_studio_has_data",
+        metadataValue: "1",
+        location: { spreadsheet: true },
+      }]
+    : []
   const requests: Array<{ url: URL; init?: RequestInit }> = []
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
@@ -31,82 +137,168 @@ function createSheetsApi() {
     if (url.pathname.endsWith(":batchUpdate")) {
       const body = JSON.parse(String(init?.body)) as { requests?: Array<Record<string, unknown>> }
       const replies = (body.requests ?? []).map((request) => {
-        if (request.addSheet) {
-          sheetExists = true
-          hidden = true
-          frozenRowCount = 1
+        const addSheet = request.addSheet as { properties?: Record<string, unknown> } | undefined
+        if (addSheet) {
+          const requested = addSheet.properties ?? {}
+          const sheetId = typeof requested.sheetId === "number"
+            ? requested.sheetId
+            : Math.max(...sheets.keys()) + 1
+          const grid = requested.gridProperties as { frozenRowCount?: number } | undefined
+          const sheet: FakeSheet = {
+            sheetId,
+            title: String(requested.title ?? `Sheet${sheetId}`),
+            hidden: Boolean(requested.hidden),
+            frozenRowCount: Number(grid?.frozenRowCount ?? 0),
+            values: [],
+          }
+          sheets.set(sheetId, sheet)
           return {
             addSheet: {
               properties: {
-                sheetId: 7,
-                title: "_anki_studio_sync",
-                hidden,
-                gridProperties: { frozenRowCount },
+                sheetId,
+                title: sheet.title,
+                hidden: sheet.hidden,
+                gridProperties: { frozenRowCount: sheet.frozenRowCount },
               },
             },
           }
         }
-        if (request.updateSheetProperties) {
-          hidden = true
-          frozenRowCount = 1
+
+        const update = request.updateSheetProperties as {
+          properties?: Record<string, unknown>
+        } | undefined
+        if (update?.properties) {
+          const sheet = sheets.get(Number(update.properties.sheetId))
+          if (!sheet) throw new Error("fake sheet missing")
+          if (typeof update.properties.title === "string") sheet.title = update.properties.title
+          if (typeof update.properties.hidden === "boolean") sheet.hidden = update.properties.hidden
+          const grid = update.properties.gridProperties as { frozenRowCount?: number } | undefined
+          if (typeof grid?.frozenRowCount === "number") sheet.frozenRowCount = grid.frozenRowCount
         }
-        if (request.createDeveloperMetadata) hasWritten = true
+
+        const createMetadata = request.createDeveloperMetadata as {
+          developerMetadata?: FakeDeveloperMetadata
+        } | undefined
+        if (createMetadata?.developerMetadata) {
+          developerMetadata.push(structuredClone(createMetadata.developerMetadata))
+        }
+
         const deletion = request.deleteDimension as {
-          range?: { startIndex?: number; endIndex?: number }
+          range?: { sheetId?: number; startIndex?: number; endIndex?: number }
         } | undefined
         if (deletion?.range) {
-          const start = Math.max(0, Number(deletion.range.startIndex) - 1)
-          const count = Number(deletion.range.endIndex) - Number(deletion.range.startIndex)
-          rows.splice(start, count)
+          const sheet = sheets.get(Number(deletion.range.sheetId))
+          if (!sheet) throw new Error("fake sheet missing")
+          const start = Number(deletion.range.startIndex)
+          const count = Number(deletion.range.endIndex) - start
+          sheet.values.splice(start, count)
+        }
+
+        const deleteSheet = request.deleteSheet as { sheetId?: number } | undefined
+        if (deleteSheet && typeof deleteSheet.sheetId === "number") {
+          sheets.delete(deleteSheet.sheetId)
+          for (let index = developerMetadata.length - 1; index >= 0; index -= 1) {
+            if (developerMetadata[index]?.location.sheetId === deleteSheet.sheetId) {
+              developerMetadata.splice(index, 1)
+            }
+          }
         }
         return {}
       })
       return Response.json({ replies })
     }
 
-    const decodedPath = decodeURIComponent(url.pathname)
-    if (decodedPath.includes("/values/")) {
-      if (url.pathname.endsWith(":append")) {
+    if (url.pathname.includes("/values/")) {
+      const reference = parseValuesPath(url.pathname)
+      const sheet = [...sheets.values()].find((item) => item.title === reference.sheetTitle)
+      if (!sheet) return Response.json({ error: { message: "sheet missing" } }, { status: 404 })
+      const parsedRange = parseA1(reference.range)
+
+      if (reference.append) {
         const body = JSON.parse(String(init?.body)) as { values?: unknown[][] }
-        rows.push(...(body.values ?? []))
+        sheet.values.push(...structuredClone(body.values ?? []))
         return Response.json({ updates: { updatedRows: body.values?.length ?? 0 } })
       }
+
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body)) as { values?: unknown[][] }
-        header = body.values?.[0] ?? []
-        return Response.json({ updatedRows: 1 })
+        for (const [rowOffset, incoming] of (body.values ?? []).entries()) {
+          const rowIndex = parsedRange.startRow + rowOffset
+          const current = [...(sheet.values[rowIndex] ?? [])]
+          for (const [columnOffset, value] of incoming.entries()) {
+            current[parsedRange.startColumn + columnOffset] = structuredClone(value)
+          }
+          sheet.values[rowIndex] = current
+        }
+        return Response.json({ updatedRows: body.values?.length ?? 0 })
       }
-      if (decodedPath.includes("A1:K2")) {
-        return Response.json({ values: rows.length > 0 ? [header, rows[0]] : [header] })
-      }
-      if (decodedPath.includes("A2:K")) return Response.json({ values: rows })
+
+      const selected = sheet.values
+        .slice(parsedRange.startRow, parsedRange.endRow)
+        .map((row) => row.slice(parsedRange.startColumn, parsedRange.endColumn))
+      const values = compactValues(selected)
+      return Response.json(values.length > 0 ? { values } : {})
     }
 
     return Response.json({
       spreadsheetId: client.spreadsheetId,
       properties: { title: "Anki 云端卡包" },
-      sheets: sheetExists ? [{
+      sheets: [...sheets.values()].map((sheet) => ({
         properties: {
-          sheetId: 7,
-          title: "_anki_studio_sync",
-          hidden,
-          gridProperties: { frozenRowCount },
+          sheetId: sheet.sheetId,
+          title: sheet.title,
+          hidden: sheet.hidden,
+          gridProperties: { frozenRowCount: sheet.frozenRowCount },
         },
-      }] : [],
-      developerMetadata: hasWritten
-        ? [{ metadataKey: "anki_studio_has_data", metadataValue: "1" }]
-        : [],
+      })),
+      developerMetadata,
     })
   }
 
   return {
     fetchImpl: fetchImpl as typeof fetch,
-    state: () => ({ sheetExists, hidden, frozenRowCount, header, rows, hasWritten, requests }),
+    state: () => ({
+      sheets: [...sheets.values()].map((sheet) => structuredClone(sheet)),
+      developerMetadata: structuredClone(developerMetadata),
+      requests,
+    }),
   }
 }
 
+function deckSheets(api: ReturnType<typeof createSheetsApi>): FakeSheet[] {
+  const state = api.state()
+  const ids = new Set(state.developerMetadata
+    .filter((item) => item.metadataKey === "anki_studio_deck_id")
+    .map((item) => item.location.sheetId))
+  return state.sheets.filter((sheet) => ids.has(sheet.sheetId))
+}
+
+function legacyRow(id: string, name: string): unknown[] {
+  const deck = { ...createDefaultDeck(), name }
+  const payload = {
+    rev: 42,
+    updatedAt: 1_700_000_000_000,
+    deletedAt: null,
+    deck,
+    editorState: null,
+  }
+  return [
+    id,
+    payload.rev,
+    payload.updatedAt,
+    "",
+    name,
+    deck.cards.length,
+    0,
+    1,
+    Buffer.from(JSON.stringify(payload), "utf8").toString("base64url"),
+    2,
+    "legacy-version-0001",
+  ]
+}
+
 describe("Google Sheets API sync", () => {
-  it("initializes a hidden sync sheet in a Picker-selected spreadsheet", async () => {
+  it("initializes a hidden v3 index in a Picker-selected spreadsheet", async () => {
     const api = createSheetsApi()
     const result = await connectGoogleSheet(client, api.fetchImpl)
 
@@ -114,18 +306,76 @@ describe("Google Sheets API sync", () => {
       id: "spreadsheet-1234567890",
       title: "Anki 云端卡包",
     })
-    expect(api.state()).toMatchObject({
-      sheetExists: true,
-      hidden: true,
-      frozenRowCount: 1,
-    })
-    expect(api.state().header).toHaveLength(11)
+    const index = api.state().sheets.find((sheet) => sheet.title === "_anki_studio_sync")
+    expect(index).toMatchObject({ hidden: true, frozenRowCount: 1 })
+    expect(index?.values[0]).toHaveLength(10)
+    expect(index?.values[0]).toContain("sheet_id")
   })
 
-  it("writes, reads, indexes, and conflict-checks a deck directly through Sheets API", async () => {
+  it("stores multiple decks in separate, stably mapped sheets", async () => {
     const api = createSheetsApi()
-    const deck = { ...createDefaultDeck(), name: "泰语" }
+    const firstDeck = { ...createDefaultDeck(), name: "泰语/日常" }
+    const secondDeck = { ...createDefaultDeck(), name: "泰语/日常" }
 
+    const first = await putGoogleSheetsDeck(client, "remote-deck-a", {
+      expectedRev: 0,
+      deck: firstDeck,
+    }, api.fetchImpl)
+    const second = await putGoogleSheetsDeck(client, "remote-deck-b", {
+      expectedRev: 0,
+      deck: secondDeck,
+    }, api.fetchImpl)
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+
+    expect(deckSheets(api).map((sheet) => sheet.title).sort()).toEqual([
+      "泰语 日常",
+      "泰语 日常 (2)",
+    ])
+    await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
+      { id: "remote-deck-a", name: "泰语/日常", cardCount: 1 },
+      { id: "remote-deck-b", name: "泰语/日常", cardCount: 1 },
+    ])
+    await expect(getGoogleSheetsDeck(client, "remote-deck-a", api.fetchImpl)).resolves.toMatchObject({
+      deck: { name: "泰语/日常" },
+    })
+    await expect(getGoogleSheetsDeck(client, "remote-deck-b", api.fetchImpl)).resolves.toMatchObject({
+      deck: { name: "泰语/日常" },
+    })
+  })
+
+  it("renames the existing mapped sheet and preserves optimistic conflicts", async () => {
+    const api = createSheetsApi()
+    const deck = { ...createDefaultDeck(), name: "Kate's Thai" }
+    const saved = await putGoogleSheetsDeck(client, "remote-deck", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) throw new Error("expected save to succeed")
+    const originalSheetId = deckSheets(api)[0]?.sheetId
+
+    const renamed = await putGoogleSheetsDeck(client, "remote-deck", {
+      expectedRev: saved.rev,
+      deck: { ...deck, name: "泰语进阶" },
+    }, api.fetchImpl)
+    expect(renamed.ok).toBe(true)
+    expect(deckSheets(api)).toMatchObject([{ sheetId: originalSheetId, title: "泰语进阶" }])
+
+    const conflict = await putGoogleSheetsDeck(client, "remote-deck", {
+      expectedRev: saved.rev,
+      deck,
+    }, api.fetchImpl)
+    expect(conflict).toMatchObject({
+      ok: false,
+      conflict: true,
+      server: { deck: { name: "泰语进阶" } },
+    })
+  })
+
+  it("keeps a tombstone in the index and removes a deleted deck sheet", async () => {
+    const api = createSheetsApi()
+    const deck = { ...createDefaultDeck(), name: "待删除" }
     const saved = await putGoogleSheetsDeck(client, "remote-deck", {
       expectedRev: 0,
       deck,
@@ -133,17 +383,38 @@ describe("Google Sheets API sync", () => {
     expect(saved.ok).toBe(true)
     if (!saved.ok) throw new Error("expected save to succeed")
 
-    const payload = await getGoogleSheetsDeck(client, "remote-deck", api.fetchImpl)
-    expect(payload).toMatchObject({ rev: saved.rev, deck: { name: "泰语" } })
-    await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
-      { id: "remote-deck", rev: saved.rev, name: "泰语", cardCount: 1 },
-    ])
-
-    const conflict = await putGoogleSheetsDeck(client, "remote-deck", {
-      expectedRev: 0,
+    const deletedAt = Date.now()
+    const deleted = await putGoogleSheetsDeck(client, "remote-deck", {
+      expectedRev: saved.rev,
       deck,
+      deletedAt,
     }, api.fetchImpl)
-    expect(conflict).toMatchObject({ ok: false, conflict: true, server: { rev: saved.rev } })
-    expect(api.state().hasWritten).toBe(true)
+    expect(deleted.ok).toBe(true)
+    expect(deckSheets(api)).toHaveLength(0)
+    await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
+      { id: "remote-deck", deletedAt },
+    ])
+    await expect(getGoogleSheetsDeck(client, "remote-deck", api.fetchImpl)).resolves.toMatchObject({
+      deletedAt,
+      deck: null,
+    })
+  })
+
+  it("migrates the legacy v2 hidden payload sheet without losing data", async () => {
+    const api = createSheetsApi({
+      legacyRows: [legacyRow("legacy-deck", "旧卡包")],
+      hasWritten: true,
+    })
+
+    await expect(connectGoogleSheet(client, api.fetchImpl)).resolves.toMatchObject({
+      title: "Anki 云端卡包",
+    })
+    const index = api.state().sheets.find((sheet) => sheet.title === "_anki_studio_sync")
+    expect(index?.values[0]?.slice(0, 10)).toContain("sheet_id")
+    expect(deckSheets(api)).toMatchObject([{ title: "旧卡包" }])
+    await expect(getGoogleSheetsDeck(client, "legacy-deck", api.fetchImpl)).resolves.toMatchObject({
+      rev: 42,
+      deck: { name: "旧卡包" },
+    })
   })
 })

@@ -126,7 +126,7 @@ export function GoogleSheetPickerPanel({
 
   const connect = async (spreadsheetId: string) => {
     setBusy("connect")
-    setMessage("正在检查表格并初始化同步页…")
+    setMessage("正在检查表格并初始化同步结构…")
     try {
       const response = await fetch("/api/google-sheets/connect", {
         method: "POST",
@@ -153,7 +153,7 @@ export function GoogleSheetPickerPanel({
       const next = { id: sheet.id, name: sheet.name, url: sheet.url }
       writeGoogleSheetConnection(next)
       setLink(next.url)
-      setMessage("表格已连接，同步页已准备好")
+      setMessage("表格已连接；每个卡包会使用独立工作表")
       onConnectionChange?.(true)
       onConnected?.()
     } catch (error) {
@@ -257,7 +257,7 @@ export function GoogleSheetPickerPanel({
             </Badge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Picker 只授权你选中的文件；同一台设备也可以直接粘贴已授权表格的链接。
+            一个表格文件可同步多个卡包，每个卡包对应一个工作表；Picker 只授权你选中的文件。
           </p>
         </div>
       </div>
