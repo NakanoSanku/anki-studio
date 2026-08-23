@@ -10,8 +10,5 @@
   },
   "observability": {
     "enabled": true
-  },
-  "vars": {
-    "REQUIRE_ACCESS": "1"
   }
 }

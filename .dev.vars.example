@@ -1,8 +1,7 @@
-REQUIRE_ACCESS=0
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=replace-with-google-oauth-client-secret
 AUTH_SECRET=replace-with-a-random-32-byte-secret
 GOOGLE_ALLOWED_EMAILS=you@example.com
 NEXTAUTH_URL=http://localhost:3000
-GOOGLE_SHEETS_SYNC_URL=https://script.google.com/macros/s/your-deployment-id/exec
-GOOGLE_SHEETS_SYNC_SECRET=replace-with-the-secret-from-setup
+GOOGLE_PICKER_API_KEY=replace-with-a-restricted-browser-api-key
+GOOGLE_CLOUD_PROJECT_NUMBER=123456789012

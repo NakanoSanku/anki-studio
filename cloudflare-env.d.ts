@@ -4,10 +4,9 @@ declare global {
     GOOGLE_ALLOWED_EMAILS?: string
     GOOGLE_CLIENT_ID?: string
     GOOGLE_CLIENT_SECRET?: string
-    GOOGLE_SHEETS_SYNC_SECRET?: string
-    GOOGLE_SHEETS_SYNC_URL?: string
+    GOOGLE_CLOUD_PROJECT_NUMBER?: string
+    GOOGLE_PICKER_API_KEY?: string
     NEXTAUTH_URL?: string
-    REQUIRE_ACCESS?: string
   }
 }
 

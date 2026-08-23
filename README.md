@@ -28,32 +28,43 @@ pnpm dev
 
 ## 云同步（Google Sheets）
 
-单人用，电脑 + 手机。卡包以分块数据保存在你自己的 Google Sheet；绑定表格的 Apps Script 使用脚本锁完成版本检查和写入，继续支持本机 / 云端 / 另存为冲突处理。Google OAuth 负责确认访问者身份，未登录时仍可离线编辑和学习，但不能访问云端同步数据。
+单人用，电脑 + 手机。应用通过 Google OAuth 和 Sheets API 直接读写用户选择的表格，不再需要 Apps Script 网关。设置页优先使用 Google Picker 选择并授权文件，也支持粘贴已授权表格的编辑链接。每台新设备选择或粘贴一次同一张表格即可。
 
-### 1. 创建同步表和 Apps Script
+同步数据写入隐藏工作表 `_anki_studio_sync`。卡包会拆成多个单元格，继续支持本机 / 云端 / 另存为冲突处理；语音缓存和 OpenAI API Key 不会上传。不要手动编辑或删除隐藏工作表；表头或既有数据异常时同步会停止，不会把损坏误判成远端删除。
 
-1. 新建一个 Google Sheet，在 `扩展程序 → Apps Script` 打开绑定脚本。
-2. 将 [`google-sheets-sync/Code.gs`](./google-sheets-sync/Code.gs) 粘贴到 `Code.gs`，并将 [`google-sheets-sync/appsscript.json`](./google-sheets-sync/appsscript.json) 的内容粘贴到项目清单。
-3. 在编辑器中运行 `setupGoogleSheetsSync` 并授权。执行日志会给出 `secret`；它只用于服务器与脚本之间的鉴权，不要放进前端代码或提交到 Git。
-4. 选择 `部署 → 新建部署 → Web 应用`，执行身份选“我”，访问权限选“任何人”，然后复制以 `/exec` 结尾的 Web App 地址。部署新版本后仍使用同一个 `/exec` 地址。
+### 1. 配置 Google Cloud API
 
-同步数据写入隐藏工作表 `_anki_studio_sync`。单个卡包会被拆成多个单元格，避免 Google Sheets 的单元格字符限制；语音缓存和 OpenAI API Key 不会上传。不要手动编辑或删除隐藏工作表；脚本检测到表头、分块或既有数据被清空时会停止同步，不会把损坏误判成远端删除。
+在同一个 Google Cloud 项目中启用：
+
+- [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+- [Google Sheets API](https://console.cloud.google.com/apis/library/sheets.googleapis.com)
+- [Google Picker API](https://console.cloud.google.com/apis/library/picker.googleapis.com)
+
+然后创建一个浏览器 API Key，建议：
+
+1. “应用限制”选择“网站”，加入 `http://localhost:3000/*` 和正式站点域名。
+2. “API 限制”只允许 Google Picker API。
+3. 将 Key 保存为 `GOOGLE_PICKER_API_KEY`。
+4. 从 Cloud 项目概览复制纯数字“项目编号”，保存为 `GOOGLE_CLOUD_PROJECT_NUMBER`。它不是项目 ID。
 
 ### 2. 配置 Google OAuth
 
-1. 在 [Google Cloud Console](https://console.cloud.google.com/apis/credentials) 配置 OAuth 同意屏幕并创建“Web 应用”类型的 OAuth 客户端。
-2. 添加已获授权的重定向 URI：
+1. 在 [Google Auth Platform](https://console.cloud.google.com/auth/overview) 配置 OAuth 同意屏幕，并创建“Web 应用”类型的 OAuth 客户端。
+2. 添加已获授权的 JavaScript 来源：
+   - 本地：`http://localhost:3000`
+   - 生产：`https://你的域名`
+3. 添加已获授权的重定向 URI：
    - 本地：`http://localhost:3000/api/auth/callback/google`
    - 生产：`https://你的域名/api/auth/callback/google`
-3. 保存客户端 ID、客户端密钥，并生成会话密钥：
+4. 保存客户端 ID、客户端密钥，并生成会话密钥：
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-4. 配置 `GOOGLE_ALLOWED_EMAILS`。这是可登录帐号白名单，多个邮箱用逗号分隔；Google 返回的邮箱必须已经验证并出现在列表中。
+5. 配置 `GOOGLE_ALLOWED_EMAILS`。这是可登录帐号白名单，多个邮箱用逗号分隔；Google 返回的邮箱必须已经验证并出现在列表中。
 
-OAuth 只申请 `openid`、`email`、`profile` 基本身份范围。Google Sheet 仍由服务器通过 Apps Script 网关访问，OAuth token 不会保存到 IndexedDB 或同步表。
+OAuth 使用 `drive.file` 最小权限，只能访问应用创建或用户通过 Picker 授权的文件。短期访问令牌由服务端会话续期，不会保存到 IndexedDB 或同步表。直接粘贴链接只有在该文件已经对本应用授权时才能连接；否则先通过 Picker 选择一次。
 
 ### 3. 本地开发
 
@@ -69,31 +80,38 @@ pnpm preview
 
 ### 4. Cloudflare 部署
 
-将同步配置、OAuth 客户端密钥和会话密钥保存为 Worker secret，再部署应用；`NEXTAUTH_URL` 应设为正式域名：
+将 Picker 配置、OAuth 客户端密钥和会话密钥保存为 Worker secret，再部署应用；`NEXTAUTH_URL` 应设为正式域名：
 
 ```bash
-pnpm wrangler secret put GOOGLE_SHEETS_SYNC_URL
-pnpm wrangler secret put GOOGLE_SHEETS_SYNC_SECRET
 pnpm wrangler secret put GOOGLE_CLIENT_ID
 pnpm wrangler secret put GOOGLE_CLIENT_SECRET
 pnpm wrangler secret put AUTH_SECRET
 pnpm wrangler secret put GOOGLE_ALLOWED_EMAILS
+pnpm wrangler secret put GOOGLE_PICKER_API_KEY
+pnpm wrangler secret put GOOGLE_CLOUD_PROJECT_NUMBER
 pnpm wrangler secret put NEXTAUTH_URL
 pnpm deploy
 ```
 
-Google OAuth 配置完整时，它会取代 `REQUIRE_ACCESS` 成为同步 API 的身份校验。未配置 OAuth 时，生产环境仍会回退到 `REQUIRE_ACCESS=1` 的 Cloudflare Access 校验。
+Google OAuth 是 Sheets API 同步的身份与文件权限来源；未配置时仍可离线编辑和学习，但云同步不可用。
 
 ### 5. Vercel 部署
 
 项目也支持 Vercel。请在 Vercel 项目的 `Settings → Environment Variables` 中为 Production（以及需要的 Preview 环境）配置：
 
-- `GOOGLE_SHEETS_SYNC_URL`
-- `GOOGLE_SHEETS_SYNC_SECRET`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `AUTH_SECRET`
 - `GOOGLE_ALLOWED_EMAILS`
+- `GOOGLE_PICKER_API_KEY`
+- `GOOGLE_CLOUD_PROJECT_NUMBER`
 - `NEXTAUTH_URL`（例如 `https://anki-studio.example.com`）
 
-Vercel 运行时直接读取服务器环境变量，不需要配置 `REQUIRE_ACCESS`。Google Cloud Console 中的生产回调地址必须与 `NEXTAUTH_URL` 使用同一个域名；Vercel Deployment Protection 可按需保留。
+Google Cloud Console 中的 JavaScript 来源、生产回调地址和 API Key 网站限制必须与 `NEXTAUTH_URL` 使用同一个域名；Vercel Deployment Protection 可按需保留。
+
+### 6. 在应用中连接表格
+
+1. 打开 `设置 → 同步`，连接 Google 帐号并同意表格文件权限。
+2. 点击“选择 Google 表格”，选择现有表格；也可以先新建一张空表再选择。
+3. 应用验证文件后会自动创建隐藏同步页，并显示表格名称和可点击链接。
+4. 其他设备登录同一帐号，再选择同一张表；如果已经授权，也可直接粘贴其编辑链接。

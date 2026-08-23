@@ -1,4 +1,5 @@
 import { getServerSession, type NextAuthOptions, type Profile, type Session } from "next-auth"
+import type { JWT } from "next-auth/jwt"
 import GoogleProvider from "next-auth/providers/google"
 
 type Environment = Record<string, string | undefined>
@@ -15,6 +16,29 @@ export type GoogleOAuthConfiguration =
     }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/drive.file"
+const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60_000
+
+type GoogleToken = JWT & {
+  googleAccessToken?: string
+  googleRefreshToken?: string
+  googleAccessTokenExpires?: number
+  googleScope?: string
+  googleAccessError?: "RefreshAccessTokenError"
+}
+
+export type GoogleSession = Session & {
+  googleAccessToken?: string
+  googleScope?: string
+  googleAccessError?: "RefreshAccessTokenError"
+}
+
+type GoogleTokenResponse = {
+  access_token?: unknown
+  expires_in?: unknown
+  refresh_token?: unknown
+  scope?: unknown
+}
 
 export function parseAllowedGoogleEmails(raw: string | undefined): string[] {
   return [...new Set(
@@ -74,6 +98,53 @@ export function isAllowedGoogleSession(
   return Boolean(email && allowedEmails.includes(email))
 }
 
+export function hasGoogleSheetsScope(scope: string | undefined): boolean {
+  return (scope ?? "").split(/\s+/).includes(GOOGLE_SHEETS_SCOPE)
+}
+
+export async function refreshGoogleAccessToken(
+  token: GoogleToken,
+  configuration: GoogleOAuthConfiguration = readGoogleOAuthConfiguration(),
+  fetchImpl: typeof fetch = fetch
+): Promise<GoogleToken> {
+  if (configuration.state !== "ready" || !token.googleRefreshToken) {
+    return { ...token, googleAccessError: "RefreshAccessTokenError" }
+  }
+
+  try {
+    const response = await fetchImpl("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: configuration.clientId,
+        client_secret: configuration.clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: token.googleRefreshToken,
+      }),
+      cache: "no-store",
+    })
+    const data = await response.json() as GoogleTokenResponse
+    if (!response.ok || typeof data.access_token !== "string") {
+      throw new Error("Google access token refresh failed")
+    }
+
+    const expiresIn = Number(data.expires_in)
+    return {
+      ...token,
+      googleAccessToken: data.access_token,
+      googleAccessTokenExpires: Date.now()
+        + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600) * 1000,
+      googleRefreshToken: typeof data.refresh_token === "string"
+        ? data.refresh_token
+        : token.googleRefreshToken,
+      googleScope: typeof data.scope === "string" ? data.scope : token.googleScope,
+      googleAccessError: undefined,
+    }
+  } catch {
+    return { ...token, googleAccessError: "RefreshAccessTokenError" }
+  }
+}
+
 const startupConfiguration = readGoogleOAuthConfiguration()
 
 export const authOptions: NextAuthOptions = {
@@ -87,6 +158,14 @@ export const authOptions: NextAuthOptions = {
         GoogleProvider({
           clientId: startupConfiguration.clientId,
           clientSecret: startupConfiguration.clientSecret,
+          authorization: {
+            params: {
+              access_type: "offline",
+              include_granted_scopes: "true",
+              prompt: "consent",
+              scope: `openid email profile ${GOOGLE_SHEETS_SCOPE}`,
+            },
+          },
         }),
       ]
     : [],
@@ -100,9 +179,47 @@ export const authOptions: NextAuthOptions = {
       return configuration.state === "ready"
         && isAllowedGoogleProfile(profile, configuration.allowedEmails)
     },
+    async jwt({ token, account }) {
+      const googleToken = token as GoogleToken
+      if (account?.provider === "google") {
+        return {
+          ...googleToken,
+          googleAccessToken: account.access_token,
+          googleRefreshToken: account.refresh_token ?? googleToken.googleRefreshToken,
+          googleAccessTokenExpires: typeof account.expires_at === "number"
+            ? account.expires_at * 1000
+            : Date.now() + 3600 * 1000,
+          googleScope: account.scope,
+          googleAccessError: undefined,
+        }
+      }
+
+      if (
+        googleToken.googleAccessToken
+        && googleToken.googleAccessTokenExpires
+        && Date.now() < googleToken.googleAccessTokenExpires - ACCESS_TOKEN_REFRESH_MARGIN_MS
+      ) {
+        return googleToken
+      }
+
+      if (googleToken.googleRefreshToken) {
+        return refreshGoogleAccessToken(googleToken)
+      }
+      return googleToken.googleAccessToken
+        ? { ...googleToken, googleAccessError: "RefreshAccessTokenError" }
+        : googleToken
+    },
+    async session({ session, token }) {
+      const googleSession = session as GoogleSession
+      const googleToken = token as GoogleToken
+      googleSession.googleAccessToken = googleToken.googleAccessToken
+      googleSession.googleScope = googleToken.googleScope
+      googleSession.googleAccessError = googleToken.googleAccessError
+      return googleSession
+    },
   },
 }
 
-export async function getGoogleSession(): Promise<Session | null> {
-  return getServerSession(authOptions)
+export async function getGoogleSession(): Promise<GoogleSession | null> {
+  return getServerSession(authOptions) as Promise<GoogleSession | null>
 }

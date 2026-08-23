@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
+  hasGoogleSheetsScope,
   isAllowedGoogleProfile,
   isAllowedGoogleSession,
   parseAllowedGoogleEmails,
   readGoogleOAuthConfiguration,
+  refreshGoogleAccessToken,
 } from "./google-auth"
 
 describe("Google OAuth configuration", () => {
@@ -45,5 +47,39 @@ describe("Google OAuth configuration", () => {
     expect(isAllowedGoogleProfile({ email: "other@example.com", email_verified: true }, allowed)).toBe(false)
     expect(isAllowedGoogleSession({ expires: "soon", user: { email: "KATE@example.com" } }, allowed)).toBe(true)
     expect(isAllowedGoogleSession({ expires: "soon", user: { email: "other@example.com" } }, allowed)).toBe(false)
+  })
+
+  it("recognizes only the per-file Google Drive scope", () => {
+    expect(hasGoogleSheetsScope("openid https://www.googleapis.com/auth/drive.file email")).toBe(true)
+    expect(hasGoogleSheetsScope("openid email profile")).toBe(false)
+  })
+
+  it("refreshes an expired Google access token without exposing the refresh token", async () => {
+    const configuration = readGoogleOAuthConfiguration({
+      GOOGLE_CLIENT_ID: "client-id",
+      GOOGLE_CLIENT_SECRET: "client-secret",
+      GOOGLE_ALLOWED_EMAILS: "kate@example.com",
+      AUTH_SECRET: "session-secret",
+    })
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(String(init?.body)).toContain("refresh_token=refresh-token")
+      return Response.json({
+        access_token: "new-access-token",
+        expires_in: 3600,
+        scope: "https://www.googleapis.com/auth/drive.file",
+      })
+    }) as unknown as typeof fetch
+
+    const result = await refreshGoogleAccessToken({
+      googleAccessToken: "expired-token",
+      googleRefreshToken: "refresh-token",
+      googleAccessTokenExpires: 1,
+    }, configuration, fetchImpl)
+
+    expect(result).toMatchObject({
+      googleAccessToken: "new-access-token",
+      googleRefreshToken: "refresh-token",
+      googleAccessError: undefined,
+    })
   })
 })

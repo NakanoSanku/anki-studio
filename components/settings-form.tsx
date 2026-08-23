@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PromptEditor } from "@/components/prompt-editor"
 import { GoogleAccountPanel } from "@/components/google-account-panel"
+import { GoogleSheetPickerPanel } from "@/components/google-sheet-picker-panel"
 
 export type SyncPanelState = {
   syncing: boolean
@@ -71,7 +72,8 @@ export function SettingsForm({
   const [models, setModels] = useState<string[]>([])
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
-  const [googleAuthenticated, setGoogleAuthenticated] = useState<boolean | undefined>()
+  const [googleReady, setGoogleReady] = useState<boolean | undefined>()
+  const [sheetConnected, setSheetConnected] = useState(false)
   const desktopLayout = useDesktopSettingsLayout()
   const fsrsSettings = deck ? fsrsOf(deck) : null
 
@@ -345,11 +347,22 @@ export function SettingsForm({
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <GoogleAccountPanel onAuthenticatedChange={setGoogleAuthenticated} />
+                <GoogleAccountPanel onReadyChange={setGoogleReady} />
+                <GoogleSheetPickerPanel
+                  enabled={googleReady === true}
+                  onConnectionChange={setSheetConnected}
+                  onConnected={onSyncNow}
+                />
                 <div className="rounded-xl border border-border/70 bg-muted/35 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium">{sync.message}</span>
-                    {sync.dirtyCount > 0 ? <Badge variant="secondary">{sync.dirtyCount} 待上传</Badge> : <Badge variant="outline">最新</Badge>}
+                    {sync.dirtyCount > 0 ? (
+                      <Badge variant="secondary">{sync.dirtyCount} 待上传</Badge>
+                    ) : sync.unavailable ? (
+                      <Badge variant="secondary">仅本机</Badge>
+                    ) : (
+                      <Badge variant="outline">最新</Badge>
+                    )}
                   </div>
                   {sync.lastSyncAt ? (
                     <p className="mt-2 text-xs text-muted-foreground">上次同步 {new Date(sync.lastSyncAt).toLocaleString()}</p>
@@ -362,11 +375,17 @@ export function SettingsForm({
                   type="button"
                   className="sm:w-fit"
                   variant="outline"
-                  disabled={sync.syncing || googleAuthenticated === false}
+                  disabled={sync.syncing || googleReady !== true || !sheetConnected}
                   onClick={onSyncNow}
                 >
                   <RefreshCw className={sync.syncing ? "size-4 animate-spin" : "size-4"} />
-                  {sync.syncing ? "同步中…" : googleAuthenticated === false ? "连接帐号后同步" : "立即同步"}
+                  {sync.syncing
+                    ? "同步中…"
+                    : googleReady !== true
+                      ? "授权帐号后同步"
+                      : !sheetConnected
+                        ? "选择表格后同步"
+                        : "立即同步"}
                 </Button>
               </CardContent>
             </Card>

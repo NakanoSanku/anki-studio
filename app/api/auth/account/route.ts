@@ -1,5 +1,6 @@
 import {
   getGoogleSession,
+  hasGoogleSheetsScope,
   isAllowedGoogleSession,
   readGoogleOAuthConfiguration,
 } from "@/lib/google-auth"
@@ -24,6 +25,11 @@ export async function GET() {
     return Response.json({
       configured: true,
       authenticated: true,
+      sheetsAuthorized: Boolean(
+        session?.googleAccessToken
+        && !session.googleAccessError
+        && hasGoogleSheetsScope(session.googleScope)
+      ),
       user: {
         name: session?.user?.name ?? null,
         email: session?.user?.email ?? null,

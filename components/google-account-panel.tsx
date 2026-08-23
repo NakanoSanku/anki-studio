@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { signIn, signOut } from "next-auth/react"
-import { Check, LoaderCircle, LogOut, ShieldAlert, UserRound } from "lucide-react"
+import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, UserRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ type AccountState =
   | { phase: "loading" }
   | { phase: "unconfigured"; issue: string }
   | { phase: "signed-out" }
-  | { phase: "signed-in"; name: string | null; email: string }
+  | { phase: "signed-in"; name: string | null; email: string; sheetsAuthorized: boolean }
   | { phase: "error"; issue: string }
 
 function GoogleMark() {
@@ -26,9 +26,9 @@ function GoogleMark() {
 }
 
 export function GoogleAccountPanel({
-  onAuthenticatedChange,
+  onReadyChange,
 }: {
-  onAuthenticatedChange?: (authenticated: boolean | undefined) => void
+  onReadyChange?: (ready: boolean | undefined) => void
 }) {
   const [account, setAccount] = useState<AccountState>({ phase: "loading" })
   const [busy, setBusy] = useState(false)
@@ -40,38 +40,40 @@ export function GoogleAccountPanel({
         const data = await response.json() as {
           configured?: boolean
           authenticated?: boolean
+          sheetsAuthorized?: boolean
           issue?: string
           user?: { name?: string | null; email?: string | null }
         }
         if (cancelled) return
         if (!data.configured) {
-          onAuthenticatedChange?.(undefined)
+          onReadyChange?.(undefined)
           setAccount({ phase: "unconfigured", issue: data.issue ?? "Google OAuth 尚未配置" })
         } else if (data.authenticated && data.user?.email) {
-          onAuthenticatedChange?.(true)
+          onReadyChange?.(data.sheetsAuthorized === true)
           setAccount({
             phase: "signed-in",
             name: data.user.name ?? null,
             email: data.user.email,
+            sheetsAuthorized: data.sheetsAuthorized === true,
           })
         } else if (response.ok) {
-          onAuthenticatedChange?.(false)
+          onReadyChange?.(false)
           setAccount({ phase: "signed-out" })
         } else {
-          onAuthenticatedChange?.(undefined)
+          onReadyChange?.(undefined)
           setAccount({ phase: "error", issue: data.issue ?? "无法读取 Google 帐号状态" })
         }
       })
       .catch(() => {
         if (!cancelled) {
-          onAuthenticatedChange?.(undefined)
+          onReadyChange?.(undefined)
           setAccount({ phase: "error", issue: "无法读取 Google 帐号状态" })
         }
       })
     return () => {
       cancelled = true
     }
-  }, [onAuthenticatedChange])
+  }, [onReadyChange])
 
   const connect = async () => {
     setBusy(true)
@@ -125,16 +127,30 @@ export function GoogleAccountPanel({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-sm font-medium">{account.name || "Google 帐号"}</p>
-            <Badge variant="outline" className="gap-1 text-emerald-700 dark:text-emerald-300">
-              <Check className="size-3" />已连接
-            </Badge>
+            {account.sheetsAuthorized ? (
+              <Badge variant="outline" className="gap-1 text-emerald-700 dark:text-emerald-300">
+                <Check className="size-3" />表格已授权
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-amber-700 dark:text-amber-300">
+                <KeyRound className="size-3" />需要表格权限
+              </Badge>
+            )}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.email}</p>
         </div>
-        <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect()}>
-          {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-          退出登录
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {!account.sheetsAuthorized ? (
+            <Button type="button" disabled={busy} onClick={() => void connect()}>
+              {busy ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+              授权表格
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect()}>
+            {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogOut className="size-4" />}
+            退出登录
+          </Button>
+        </div>
       </div>
     )
   }
@@ -147,7 +163,7 @@ export function GoogleAccountPanel({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">连接 Google 帐号</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          登录后才能访问这套部署绑定的 Google Sheet；本机编辑和学习不受影响。
+          登录并授权后，可从 Google Picker 选择自己的表格；本机编辑和学习不受影响。
         </p>
       </div>
       <Button type="button" disabled={busy} onClick={() => void connect()}>
