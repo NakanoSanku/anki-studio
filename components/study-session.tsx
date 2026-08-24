@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   BarChart3,
-  BookOpen,
   CheckCircle2,
   Flame,
   Gauge,
   Maximize2,
   Minimize2,
+  Pencil,
   RotateCcw,
   Sparkles,
   X,
@@ -16,17 +16,21 @@ import {
 
 import { TtsPlayButton } from "@/components/tts-play-button"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { previewValues, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
+import { notesOf, previewValues, setCardField, textFields, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
 import {
   Rating,
   formatDueDate,
@@ -217,76 +221,50 @@ function SessionDetails({
 }
 
 function FocusHeader({
-  deckName,
   completed,
   total,
   progress,
   stats,
   now,
   onExit,
+  onEdit,
   immersive,
   onToggleImmersive,
 }: {
-  deckName: string
   completed: number
   total: number
   progress: number
   stats: StudyStats
   now: Date
   onExit: () => void
+  onEdit: () => void
   immersive: boolean
   onToggleImmersive: () => void
 }) {
   return (
     <header
       className={cn(
-        "relative z-20 shrink-0 border-b border-border/65 bg-background/92 backdrop-blur-xl transition-colors duration-300 motion-reduce:transition-none",
+        "relative z-20 shrink-0 border-b border-border/65 bg-background/92 pt-[env(safe-area-inset-top)]",
         immersive && "border-transparent bg-background/72"
       )}
     >
-      <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 sm:min-h-16 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,28rem)_minmax(0,1fr)] sm:px-5 lg:px-7">
-        <div
-          className={cn(
-            "flex min-w-0 items-center gap-2 px-2 transition-opacity duration-300 motion-reduce:transition-none",
-            immersive && "opacity-45"
-          )}
-        >
-          <BookOpen className="size-4 shrink-0 text-primary" />
-          <span className="truncate text-sm font-medium">{deckName}</span>
-          <span className="hidden shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground md:inline">
-            本轮卡包
-          </span>
-        </div>
+      <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 sm:min-h-16 sm:px-5">
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="退出学习" onClick={onExit}>
+          <X className="size-4" />
+        </Button>
 
-        <div className="hidden min-w-0 items-center gap-3 sm:flex">
+        <div className="flex min-w-0 items-center gap-3">
           <Progress value={progress} aria-label={`本轮已完成 ${completed}，共 ${total} 张`} />
           <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
             {completed} / {total}
           </span>
         </div>
 
-        <div
-          className={cn(
-            "flex items-center justify-end gap-1 transition-opacity duration-300 motion-reduce:transition-none",
-            immersive && "opacity-45 hover:opacity-100 focus-within:opacity-100"
-          )}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label={immersive ? "退出沉浸模式" : "进入沉浸模式"}
-                aria-pressed={immersive}
-                aria-keyshortcuts="F"
-                onClick={onToggleImmersive}
-              >
-                {immersive ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{immersive ? "退出沉浸模式 · F" : "沉浸模式 · F"}</TooltipContent>
-          </Tooltip>
+        <div className="flex items-center justify-end gap-1">
+          <Button type="button" size="sm" variant="ghost" aria-label="改这条笔记" onClick={onEdit}>
+            <Pencil className="size-4" />
+            改
+          </Button>
           <SessionDetails
             completed={completed}
             total={total}
@@ -296,11 +274,18 @@ function FocusHeader({
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label="退出学习" onClick={onExit}>
-                <X className="size-4" />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={immersive ? "退出全屏" : "全屏"}
+                aria-pressed={immersive}
+                onClick={onToggleImmersive}
+              >
+                {immersive ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>退出学习</TooltipContent>
+            <TooltipContent>{immersive ? "退出全屏" : "全屏"}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -387,6 +372,9 @@ export function StudySession({
   onImmersiveChange,
 }: StudySessionProps) {
   const [revealed, setRevealed] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editValues, setEditValues] = useState<Record<string, string>>({})
+  const [editError, setEditError] = useState("")
   const [clock, setClock] = useState(() => Date.now())
   const [completed, setCompleted] = useState(0)
   const [initialCount] = useState(() => getStudyQueue(deck, new Date()).length)
@@ -399,7 +387,7 @@ export function StudySession({
     [current, deck, now]
   )
 
-  useScreenWakeLock(immersive && Boolean(current))
+  useScreenWakeLock(Boolean(current))
 
   const reveal = useCallback(() => {
     setRevealed(true)
@@ -451,9 +439,9 @@ export function StudySession({
       const target = event.target as HTMLElement | null
       if (target?.closest("input, textarea, select, [contenteditable=true], .cm-editor")) return
       if (document.querySelector('[role="dialog"]')) return
-      if (event.key.toLowerCase() === "f") {
+      if (event.key === "Escape") {
         event.preventDefault()
-        toggleImmersive()
+        onExit()
         return
       }
       if (event.code === "Space" && current && !revealed) {
@@ -467,7 +455,7 @@ export function StudySession({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [current, options, rate, reveal, revealed, toggleImmersive])
+  }, [current, onExit, options, rate, reveal, revealed])
 
   const total = Math.max(initialCount, completed + queue.length)
   const progress = total > 0 ? Math.min(100, (completed / total) * 100) : 100
@@ -510,13 +498,17 @@ export function StudySession({
   return (
     <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="学习会话">
       <FocusHeader
-        deckName={deck.name}
         completed={completed}
         total={total}
         progress={progress}
         stats={stats}
         now={now}
         onExit={onExit}
+        onEdit={() => {
+          setEditValues({ ...current.note.values })
+          setEditError("")
+          setEditOpen(true)
+        }}
         immersive={immersive}
         onToggleImmersive={toggleImmersive}
       />
@@ -537,7 +529,7 @@ export function StudySession({
             type="button"
             className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 focus-visible:ring-inset"
             onClick={reveal}
-            aria-label="显示答案"
+            aria-label="显示答案" aria-keyshortcuts="Space"
             aria-keyshortcuts="Space"
           />
         ) : null}
@@ -595,6 +587,63 @@ export function StudySession({
         onReveal={reveal}
         onRate={rate}
       />
+
+      <Sheet open={editOpen} onOpenChange={setEditOpen}>
+        <SheetContent side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <SheetHeader>
+            <SheetTitle>改这条笔记</SheetTitle>
+            <SheetDescription>保存后回到当前卡片。</SheetDescription>
+          </SheetHeader>
+          <div className="flex max-h-[50dvh] flex-col gap-4 overflow-y-auto px-4">
+            {textFields(deck).map((field) => {
+              const note = notesOf(deck)[field]?.trim()
+              const long = textFields(deck).indexOf(field) >= 2
+              return (
+                <div key={field} className="space-y-2">
+                  <Label htmlFor={`study-edit-${field}`}>{field}</Label>
+                  {long ? (
+                    <Textarea
+                      id={`study-edit-${field}`}
+                      value={editValues[field] ?? ""}
+                      placeholder={note}
+                      className="min-h-24"
+                      onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
+                    />
+                  ) : (
+                    <Input
+                      id={`study-edit-${field}`}
+                      value={editValues[field] ?? ""}
+                      placeholder={note}
+                      onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
+          </div>
+          <SheetFooter>
+            <Button
+              type="button"
+              onClick={() => {
+                let next = deck
+                for (const field of textFields(deck)) {
+                  const result = setCardField(next, current.note.id, field, editValues[field] ?? "")
+                  if (!result.ok) {
+                    setEditError(result.error)
+                    return
+                  }
+                  next = result.deck
+                }
+                onChange(next)
+                setEditOpen(false)
+              }}
+            >
+              保存
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </section>
   )
 }

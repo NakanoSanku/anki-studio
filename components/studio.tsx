@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { hasAnkiPush, markNotesPushed, planAnkiPush, withAnkiIdentity, type AnkiPushPlan } from "@/lib/anki-sync"
 import { exportApkg, importDeckFile } from "@/lib/apkg"
+import { PATHS, noteIdFromPath, notePath } from "@/lib/app-paths"
 import { deckToCsv } from "@/lib/csv"
 import {
   addLibraryDeck,
@@ -26,12 +28,14 @@ import {
 } from "@/lib/import-preview"
 import { listTtsJobs } from "@/lib/tts"
 import {
+  createCard,
   createDefaultDeck,
   safeFilename,
   serializeDeck,
   ttsOf,
   type Deck,
 } from "@/lib/deck"
+import { shouldDiscardNoteOnLeave, withoutDiscardedNote } from "@/lib/empty-note"
 import { readEditorState } from "@/lib/editor-state"
 import { expireStatus, replaceTimer } from "@/lib/transient-status"
 import { dirtyCount, runSyncCycle } from "@/lib/sync-client"
@@ -40,38 +44,18 @@ import { createHttpTransport } from "@/lib/sync-transport"
 import { createIdbStore } from "@/lib/studio-store-idb"
 import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
+import { AppShell } from "@/components/app-shell"
 import { CardEditor } from "@/components/card-editor"
 import { DeckLibraryDialog } from "@/components/deck-library-dialog"
+import { DeckSwitcher } from "@/components/deck-switcher"
 import { DeckToolsPanel } from "@/components/deck-tools-panel"
 import { ImportPreviewDialog } from "@/components/import-preview-dialog"
 import { SettingsForm } from "@/components/settings-form"
+import { SettingsOverview } from "@/components/settings-overview"
 import { SyncConflictDialog } from "@/components/sync-conflict-dialog"
-import { StudioShell, type StudioView } from "@/components/studio-shell"
 import { StudyOverview } from "@/components/study-overview"
 import { StudySession } from "@/components/study-session"
 import { TemplateEditor } from "@/components/template-editor"
-
-const VIEW_KEY = "anki-studio.view"
-const LEGACY_EDIT_KEY = "anki-studio.edit-tab"
-
-function readLegacyEditView(): Extract<StudioView, "notes" | "templates"> {
-  return window.localStorage.getItem(LEGACY_EDIT_KEY) === "template" ? "templates" : "notes"
-}
-
-function readView(): StudioView {
-  if (typeof window === "undefined") return "study"
-  const query = new URLSearchParams(window.location.search).get("tab")
-  if (query === "template" || query === "templates") return "templates"
-  if (query === "cards" || query === "notes") return "notes"
-  if (query === "settings") return "settings"
-  if (query === "study") return query
-  if (query === "edit") return readLegacyEditView()
-  if (query === "decks") return "study"
-  const stored = window.localStorage.getItem(VIEW_KEY)
-  if (stored === "edit") return readLegacyEditView()
-  if (stored === "study" || stored === "notes" || stored === "templates" || stored === "settings") return stored
-  return "study"
-}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -105,6 +89,9 @@ async function shareOrDownload(blob: Blob, filename: string): Promise<"shared" |
 }
 
 export function Studio() {
+  const pathname = usePathname() ?? PATHS.home
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [ready, setReady] = useState(false)
   const [library, setLibrary] = useState<Library>({
     version: 1,
@@ -112,11 +99,12 @@ export function Studio() {
     decks: [],
   })
   const [deck, setDeck] = useState<Deck>(createDefaultDeck)
-  const [view, setView] = useState<StudioView>(readView)
-  const [studyActive, setStudyActive] = useState(false)
   const [studyImmersive, setStudyImmersive] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
   const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
+  const editorNoteId = noteIdFromPath(pathname)
+  const createdInSession = searchParams.get("new") === "1"
   const [status, setStatus] = useState<string>("")
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -143,16 +131,20 @@ export function Studio() {
     deckRef.current = deck
   }, [library, deck])
 
+  const discardRef = useRef<{ id: string; created: boolean } | null>(null)
   useEffect(() => {
-    localStorage.setItem(VIEW_KEY, view)
-    const url = new URL(window.location.href)
-    if (!url.searchParams.has("tab")) return
-    url.searchParams.delete("tab")
-    const next = `${url.pathname}${url.search}${url.hash}`
-    window.history.replaceState(null, "", next)
-  }, [view])
+    const prev = discardRef.current
+    discardRef.current = editorNoteId ? { id: editorNoteId, created: createdInSession } : null
+    if (!prev?.created) return
+    const card = deckRef.current.cards.find((item) => item.id === prev.id)
+    if (!shouldDiscardNoteOnLeave(card, deckRef.current.fields, true)) return
+    setDeck((current) => ({
+      ...current,
+      cards: withoutDiscardedNote(current.cards, prev.id),
+    }))
+  }, [createdInSession, editorNoteId])
 
-  const previewCard = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
+  const previewCard = deck.cards.find((card) => card.id === (editorNoteId ?? selectedId)) ?? deck.cards[0]
 
   useEffect(() => () => window.clearTimeout(statusTimer.current), [])
 
@@ -493,11 +485,27 @@ export function Studio() {
   }
 
   const studyQueueCount = getStudyQueue(deck).length
-  const pageTitle: Record<StudioView, string> = {
-    study: "学习",
-    notes: "笔记",
-    templates: "模板",
-    settings: "设置",
+  const settingsSection =
+    pathname === PATHS.settingsDeck
+      ? "deck"
+      : pathname === PATHS.settingsStudy
+        ? "study"
+        : pathname === PATHS.settingsAi
+          ? "ai"
+          : pathname === PATHS.settingsSync
+            ? "sync"
+            : null
+
+  const addNote = () => {
+    const card = createCard(deck.fields)
+    setDeck((current) => ({ ...current, cards: [...current.cards, card] }))
+    setSelectedId(card.id)
+    router.push(`${notePath(card.id)}?new=1`)
+  }
+
+  const openNote = (id: string) => {
+    setSelectedId(id)
+    router.push(notePath(id))
   }
 
   const switchDeck = (id: string, close = false) => {
@@ -537,7 +545,7 @@ export function Studio() {
 
   if (!ready) {
     return (
-      <div className="min-h-[100dvh] bg-background p-5 lg:pl-64">
+      <div className="min-h-[100dvh] bg-background p-5">
         <div className="mx-auto mt-20 h-48 max-w-5xl animate-pulse rounded-3xl bg-muted" />
       </div>
     )
@@ -548,13 +556,28 @@ export function Studio() {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => undefined)
     }
+    router.push(PATHS.home)
   }
 
-  const changeView = (next: StudioView) => {
-    leaveStudy()
-    setStudyActive(false)
-    setView(next)
-  }
+  const deckTools = (
+    <DeckToolsPanel
+      deckName={deck.name.trim() || "未命名卡包"}
+      cardCount={deck.cards.length}
+      deckCount={libraryView.decks.length}
+      busy={busy}
+      exporting={exporting}
+      exportProgress={exportProgress}
+      pushLabel={pushButtonLabel(pushPlan)}
+      hasTts={Object.keys(ttsOf(deck)).length > 0}
+      onOpenLibrary={() => setLibraryOpen(true)}
+      onImport={() => fileRef.current?.click()}
+      onExportJson={onExportJson}
+      onExportCsv={onExportCsv}
+      onExportApkg={onExportApkg}
+      onPushAnki={onPushAnki}
+      onCancelExport={cancelExport}
+    />
+  )
 
   return (
     <>
@@ -569,55 +592,53 @@ export function Studio() {
           void onImport(file)
         }}
       />
-      <StudioShell
-        view={view}
+      <AppShell
         dueCount={studyQueueCount}
         dirtyCount={dirty}
         syncing={syncing}
         syncUnavailable={syncUnavailable}
-        studySessionActive={studyActive}
-        studyImmersive={studyImmersive}
-        title={pageTitle[view]}
+        deckName={deck.name}
         status={status}
-        onViewChange={changeView}
         onSync={() => void runSync("manual")}
+        onDeckClick={() => setSwitcherOpen(true)}
       >
-        {view === "study" && !studyActive ? (
+        {pathname === PATHS.home ? (
           <StudyOverview
             deck={deck}
-            onStart={() => setStudyActive(true)}
+            onStart={() => router.push(PATHS.studySession)}
+            onAddNote={addNote}
           />
         ) : null}
 
-        {view === "study" && studyActive ? (
+        {pathname === PATHS.studySession ? (
           <StudySession
             key={library.activeId}
             deck={deck}
             onChange={setDeck}
             immersive={studyImmersive}
             onImmersiveChange={setStudyImmersive}
-            onExit={() => {
-              leaveStudy()
-              setStudyActive(false)
-            }}
+            onExit={leaveStudy}
           />
         ) : null}
 
-        {view === "notes" ? (
+        {pathname === PATHS.notes || editorNoteId ? (
           <div className="mx-auto w-full max-w-7xl">
             <CardEditor
               deck={deck}
               deckId={library.activeId}
-              selectedId={selectedId}
+              selectedId={editorNoteId ?? selectedId}
               previewSide={previewSide}
+              layout={editorNoteId ? "detail" : "list"}
               onChange={setDeck}
               onSelect={setSelectedId}
+              onOpenNote={openNote}
+              onAddNote={addNote}
               onPreviewSideChange={setPreviewSide}
             />
           </div>
         ) : null}
 
-        {view === "templates" ? (
+        {pathname === PATHS.settingsTemplates ? (
           <div className="mx-auto w-full max-w-7xl">
             <TemplateEditor
               key={library.activeId}
@@ -630,28 +651,13 @@ export function Studio() {
           </div>
         ) : null}
 
-        {view === "settings" ? (
+        {pathname === PATHS.settings ? <SettingsOverview /> : null}
+
+        {settingsSection ? (
           <div className="mx-auto w-full max-w-7xl pb-8">
             <SettingsForm
-              deckTools={(
-                <DeckToolsPanel
-                  deckName={deck.name.trim() || "未命名卡包"}
-                  cardCount={deck.cards.length}
-                  deckCount={libraryView.decks.length}
-                  busy={busy}
-                  exporting={exporting}
-                  exportProgress={exportProgress}
-                  pushLabel={pushButtonLabel(pushPlan)}
-                  hasTts={Object.keys(ttsOf(deck)).length > 0}
-                  onOpenLibrary={() => setLibraryOpen(true)}
-                  onImport={() => fileRef.current?.click()}
-                  onExportJson={onExportJson}
-                  onExportCsv={onExportCsv}
-                  onExportApkg={onExportApkg}
-                  onPushAnki={onPushAnki}
-                  onCancelExport={cancelExport}
-                />
-              )}
+              section={settingsSection}
+              deckTools={settingsSection === "deck" ? deckTools : undefined}
               deck={deck}
               onDeckChange={setDeck}
               sync={{
@@ -665,8 +671,15 @@ export function Studio() {
             />
           </div>
         ) : null}
-      </StudioShell>
+      </AppShell>
 
+      <DeckSwitcher
+        open={switcherOpen}
+        library={libraryView}
+        activeName={deck.name.trim() || "未命名卡包"}
+        onOpenChange={setSwitcherOpen}
+        onSwitch={(id) => switchDeck(id)}
+      />
       <DeckLibraryDialog
         open={libraryOpen}
         library={libraryView}

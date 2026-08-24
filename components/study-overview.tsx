@@ -10,9 +10,10 @@ import { formatDueDate, getStudyQueue, getStudyStats } from "@/lib/fsrs"
 type StudyOverviewProps = {
   deck: Deck
   onStart: () => void
+  onAddNote?: () => void
 }
 
-export function StudyOverview({ deck, onStart }: StudyOverviewProps) {
+export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) {
   const now = new Date()
   const queue = getStudyQueue(deck, now)
   const stats = getStudyStats(deck, now)
@@ -66,10 +67,15 @@ export function StudyOverview({ deck, onStart }: StudyOverviewProps) {
                 开始学习
                 <ArrowRight className="size-4" />
               </Button>
+              {onAddNote ? (
+                <Button size="lg" variant="outline" className="mt-3 h-12 w-full max-w-xs" onClick={onAddNote}>
+                  加一张
+                </Button>
+              ) : null}
             </>
           ) : (
             <>
-              <span className="mt-8 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <span className="mt-8 flex size-14 items-center justify-center rounded-2xl bg-muted text-foreground">
                 <CheckCircle2 className="size-7" />
               </span>
               <h2 id="study-overview-title" className="mt-5 text-2xl font-semibold tracking-tight">
@@ -78,6 +84,11 @@ export function StudyOverview({ deck, onStart }: StudyOverviewProps) {
               <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
                 {emptyDescription}
               </p>
+              {onAddNote ? (
+                <Button size="lg" className="mt-8 h-12 w-full max-w-xs" onClick={onAddNote}>
+                  加一张
+                </Button>
+              ) : null}
             </>
           )}
         </CardContent>

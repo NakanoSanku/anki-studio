@@ -76,8 +76,11 @@ type CardEditorProps = {
   deckId: string
   selectedId: string | null
   previewSide: "front" | "back"
+  layout?: "list" | "detail"
   onChange: (deck: DeckUpdater) => void
   onSelect: (id: string) => void
+  onOpenNote?: (id: string) => void
+  onAddNote?: () => void
   onPreviewSideChange: (side: "front" | "back") => void
 }
 
@@ -86,11 +89,14 @@ export function CardEditor({
   deckId,
   selectedId,
   previewSide,
+  layout = "list",
   onChange,
   onSelect,
+  onOpenNote,
+  onAddNote,
   onPreviewSideChange,
 }: CardEditorProps) {
-  const [mobilePane, setMobilePane] = useState<MobilePane>("list")
+  const [mobilePane, setMobilePane] = useState<MobilePane>(layout === "detail" ? "editor" : "list")
   const [busyKeys, setBusyKeys] = useState<string[]>([])
   const busyRef = useRef(new Set<string>())
   const deckRef = useRef(deck)
@@ -182,6 +188,10 @@ export function CardEditor({
   }
 
   const addCard = () => {
+    if (onAddNote) {
+      onAddNote()
+      return
+    }
     setMobilePane("editor")
     const current = deckRef.current
     const currentSelected = current.cards.find((card) => card.id === activeRef.current) ?? current.cards[0]
@@ -496,7 +506,7 @@ export function CardEditor({
   )
 
   const mobileListToolbar = (
-    <div className="space-y-2 lg:hidden">
+    <div className={cn("space-y-2", layout === "list" ? undefined : "lg:hidden")}>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -696,7 +706,8 @@ export function CardEditor({
         type="button"
         onClick={() => {
           onSelect(card.id)
-          setMobilePane("editor")
+          if (onOpenNote) onOpenNote(card.id)
+          else setMobilePane("editor")
         }}
         style={{ height: LIST_ROW }}
         className={cn(
@@ -736,19 +747,30 @@ export function CardEditor({
 
   const listSlice = visibleCards.slice(listStart, listEnd)
 
+  const listOnly = layout === "list"
+  const detail = layout === "detail"
+  const editorPane = detail ? (mobilePane === "preview" ? "preview" : "editor") : mobilePane
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {desktopToolbar}
-      <Tabs value={mobilePane} className="lg:hidden" onValueChange={(value) => setMobilePane(value as MobilePane)}>
-        <TabsList className="grid h-11 w-full grid-cols-3 rounded-xl p-1">
-          <TabsTrigger value="list">卡片</TabsTrigger>
-          <TabsTrigger value="editor">内容</TabsTrigger>
-          <TabsTrigger value="preview">预览</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      {mobilePane === "list" ? mobileListToolbar : mobilePager}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)_minmax(280px,0.9fr)]">
-      <section className={cn("flex-col gap-3 lg:flex", mobilePane === "list" ? "flex" : "hidden")}>
+      {listOnly ? null : desktopToolbar}
+      {detail ? (
+        <Tabs value={editorPane === "preview" ? "preview" : "editor"} className="lg:hidden" onValueChange={(value) => setMobilePane(value as MobilePane)}>
+          <TabsList className="grid h-11 w-full grid-cols-2 rounded-xl p-1">
+            <TabsTrigger value="editor">编辑</TabsTrigger>
+            <TabsTrigger value="preview">预览</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      ) : null}
+      {listOnly ? mobileListToolbar : detail ? null : mobilePane === "list" ? mobileListToolbar : mobilePager}
+      <div className={cn(
+        "grid min-w-0 gap-6",
+        listOnly ? "grid-cols-1" : "lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)]"
+      )}>
+      <section className={cn(
+        "flex-col gap-3",
+        listOnly ? "flex" : detail ? "hidden lg:flex" : cn("lg:flex", mobilePane === "list" ? "flex" : "hidden")
+      )}>
         <div
           ref={listRef}
           className="h-[min(58vh,520px)] overflow-auto rounded-2xl border border-border/70 bg-card/70 lg:h-[min(calc(100vh-16rem),720px)]"
@@ -771,8 +793,8 @@ export function CardEditor({
 
       <section
         className={cn(
-          "min-h-0 flex-col gap-4 lg:flex",
-          mobilePane === "editor" ? "flex" : "hidden"
+          "min-h-0 flex-col gap-4",
+          listOnly ? "hidden" : detail ? (editorPane === "editor" ? "flex" : "hidden lg:flex") : cn("lg:flex", mobilePane === "editor" ? "flex" : "hidden")
         )}
       >
         {selected ? (
@@ -868,7 +890,9 @@ export function CardEditor({
         )}
       </section>
 
-      <section className={cn("lg:block", mobilePane === "preview" ? "block" : "hidden")}>
+      <section className={cn(
+        listOnly ? "hidden" : detail ? (editorPane === "preview" ? "block" : "hidden lg:block") : cn("lg:block", mobilePane === "preview" ? "block" : "hidden")
+      )}>
         {preview}
       </section>
       </div>

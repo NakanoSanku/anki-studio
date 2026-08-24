@@ -19,7 +19,7 @@ export default function GoogleAuthErrorPage() {
         </CardHeader>
         <CardContent>
           <Button asChild className="w-full">
-            <Link href="/?tab=settings">返回同步设置</Link>
+            <Link href="/settings/sync">返回同步设置</Link>
           </Button>
         </CardContent>
       </Card>

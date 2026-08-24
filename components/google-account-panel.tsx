@@ -78,7 +78,7 @@ export function GoogleAccountPanel({
   const connect = async () => {
     setBusy(true)
     try {
-      await signIn("google", { callbackUrl: "/?tab=settings" })
+      await signIn("google", { callbackUrl: "/settings/sync" })
     } catch {
       setAccount({ phase: "error", issue: "无法启动 Google 登录" })
     } finally {
@@ -89,7 +89,7 @@ export function GoogleAccountPanel({
   const disconnect = async () => {
     setBusy(true)
     try {
-      await signOut({ callbackUrl: "/?tab=settings" })
+      await signOut({ callbackUrl: "/settings/sync" })
     } catch {
       setAccount({ phase: "error", issue: "无法退出 Google 帐号" })
     } finally {

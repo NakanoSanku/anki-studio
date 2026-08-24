@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useState, type ReactNode } from "react"
+
+import { cn } from "@/lib/utils"
 import { BrainCircuit, FolderCog, Gauge, RefreshCw, Save, Server, Table2 } from "lucide-react"
 
 import {
@@ -36,10 +38,12 @@ export type SyncPanelState = {
 
 const SETTINGS_SECTIONS = [
   { value: "deck", shortLabel: "卡包", label: "卡包与 Anki", hint: "管理、导入与导出", icon: FolderCog },
-  { value: "study", shortLabel: "学习", label: "学习计划", hint: "FSRS 与每日负担", icon: Gauge },
+  { value: "study", shortLabel: "复习参数", label: "复习参数", hint: "FSRS 与每日负担", icon: Gauge },
   { value: "ai", shortLabel: "AI", label: "AI 与提示词", hint: "接口、模型与生成规则", icon: BrainCircuit },
   { value: "sync", shortLabel: "同步", label: "Google Sheets", hint: "状态与手动同步", icon: Table2 },
 ] as const
+
+export type SettingsSection = "deck" | "study" | "ai" | "sync"
 
 function useDesktopSettingsLayout() {
   const [desktop, setDesktop] = useState(false)
@@ -56,12 +60,14 @@ function useDesktopSettingsLayout() {
 }
 
 export function SettingsForm({
+  section,
   deckTools,
   deck,
   onDeckChange,
   sync,
   onSyncNow,
 }: {
+  section?: SettingsSection
   deckTools?: ReactNode
   deck?: Deck
   onDeckChange?: (deck: Deck) => void
@@ -150,10 +156,12 @@ export function SettingsForm({
 
   return (
     <Tabs
-      defaultValue={deckTools ? "deck" : fsrsSettings ? "study" : "ai"}
-      orientation={desktopLayout ? "vertical" : "horizontal"}
-      className="min-w-0 gap-4 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-start lg:gap-6"
+      defaultValue={section ?? (deckTools ? "deck" : fsrsSettings ? "study" : "ai")}
+      value={section}
+      orientation={desktopLayout && !section ? "vertical" : "horizontal"}
+      className={cn("min-w-0 gap-4", !section && "lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-start lg:gap-6")}
     >
+      {section ? null : (
       <div className="sticky top-14 z-20 -mx-4 border-b border-border/70 bg-background/95 px-4 py-2 backdrop-blur-xl sm:top-16 sm:-mx-6 sm:px-6 lg:top-24 lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
         <TabsList className="grid h-11 w-full grid-cols-4 p-1 shadow-sm group-data-horizontal/tabs:h-11 lg:h-auto lg:grid-cols-1 lg:gap-1 lg:rounded-xl lg:bg-card lg:p-2 lg:ring-1 lg:ring-foreground/10 lg:shadow-none">
           {SETTINGS_SECTIONS.map((section) => {
@@ -177,6 +185,7 @@ export function SettingsForm({
           })}
         </TabsList>
       </div>
+      )}
 
       <div className="min-w-0">
         <TabsContent value="deck" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
@@ -196,7 +205,7 @@ export function SettingsForm({
                     <Gauge className="size-4" />
                   </span>
                   <div>
-                    <CardTitle>FSRS 学习计划</CardTitle>
+                    <CardTitle>复习参数</CardTitle>
                     <CardDescription className="mt-1 leading-5">
                       调整记忆保留率和每日负担。更改会自动保存到当前卡包。
                     </CardDescription>
