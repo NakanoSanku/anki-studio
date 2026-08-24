@@ -576,6 +576,7 @@ export function Studio() {
       onExportApkg={onExportApkg}
       onPushAnki={onPushAnki}
       onCancelExport={cancelExport}
+      onSwitchDeck={() => setSwitcherOpen(true)}
     />
   )
 

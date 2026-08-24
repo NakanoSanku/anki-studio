@@ -256,9 +256,7 @@ export function GoogleSheetPickerPanel({
               {connection ? "已选择" : "未选择"}
             </Badge>
           </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            一个表格文件可同步多个卡包，每个卡包对应一个工作表；Picker 只授权你选中的文件。
-          </p>
+
         </div>
       </div>
 

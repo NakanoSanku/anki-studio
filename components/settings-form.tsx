@@ -18,7 +18,7 @@ import { fsrsOf, type Deck } from "@/lib/deck"
 import { updateFsrsSettings } from "@/lib/fsrs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -37,10 +37,10 @@ export type SyncPanelState = {
 }
 
 const SETTINGS_SECTIONS = [
-  { value: "deck", shortLabel: "卡包", label: "卡包与 Anki", hint: "管理、导入与导出", icon: FolderCog },
-  { value: "study", shortLabel: "复习参数", label: "复习参数", hint: "FSRS 与每日负担", icon: Gauge },
-  { value: "ai", shortLabel: "AI", label: "AI 与提示词", hint: "接口、模型与生成规则", icon: BrainCircuit },
-  { value: "sync", shortLabel: "同步", label: "Google Sheets", hint: "状态与手动同步", icon: Table2 },
+  { value: "deck", shortLabel: "卡包", label: "卡包", icon: FolderCog },
+  { value: "study", shortLabel: "复习参数", label: "复习参数", icon: Gauge },
+  { value: "ai", shortLabel: "AI", label: "AI", icon: BrainCircuit },
+  { value: "sync", shortLabel: "同步", label: "同步", icon: Table2 },
 ] as const
 
 export type SettingsSection = "deck" | "study" | "ai" | "sync"
@@ -173,13 +173,7 @@ export function SettingsForm({
                 className="h-9 min-w-0 px-1 text-xs text-foreground/75 dark:text-foreground/75 lg:h-auto lg:justify-start lg:gap-3 lg:px-3 lg:py-3 lg:text-sm"
               >
                 <Icon className="size-4" />
-                <span className="min-w-0 text-left">
-                  <span className="lg:hidden">{section.shortLabel}</span>
-                  <span className="hidden truncate lg:block">{section.label}</span>
-                  <span className="mt-0.5 hidden truncate text-[11px] font-normal text-muted-foreground lg:block">
-                    {section.hint}
-                  </span>
-                </span>
+                <span className="min-w-0 truncate text-left">{section.shortLabel}</span>
               </TabsTrigger>
             )
           })}
@@ -200,17 +194,7 @@ export function SettingsForm({
           {fsrsSettings && deck && onDeckChange ? (
             <Card className="max-w-3xl border-border/70 bg-card shadow-none">
               <CardHeader className="pb-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Gauge className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle>复习参数</CardTitle>
-                    <CardDescription className="mt-1 leading-5">
-                      调整记忆保留率和每日负担。更改会自动保存到当前卡包。
-                    </CardDescription>
-                  </div>
-                </div>
+                <CardTitle>复习参数</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -270,17 +254,7 @@ export function SettingsForm({
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(19rem,0.72fr)_minmax(0,1.28fr)]">
             <Card className="border-border/70 bg-card shadow-none">
               <CardHeader className="pb-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Server className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle>OpenAI 兼容接口</CardTitle>
-                    <CardDescription className="mt-1 leading-5">
-                      API Key 只保存在当前设备；浏览器直连需要接口允许 CORS。
-                    </CardDescription>
-                  </div>
-                </div>
+                <CardTitle>接口</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -322,15 +296,7 @@ export function SettingsForm({
 
             <Card className="min-w-0 border-border/70 bg-card shadow-none">
               <CardHeader className="pb-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <BrainCircuit className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle>提示词工作台</CardTitle>
-                    <CardDescription className="mt-1 leading-5">切换生成场景、插入变量，并使用 CodeMirror 编辑。</CardDescription>
-                  </div>
-                </div>
+                <CardTitle>提示词</CardTitle>
               </CardHeader>
               <CardContent>
                 <PromptEditor settings={settings} onChange={(key, value) => patch({ [key]: value })} />
@@ -343,17 +309,7 @@ export function SettingsForm({
           {sync ? (
             <Card className="max-w-3xl border-border/70 bg-card shadow-none">
               <CardHeader className="pb-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Table2 className="size-4" />
-                  </span>
-                  <div>
-                    <CardTitle>Google Sheets 同步</CardTitle>
-                    <CardDescription className="mt-1 leading-5">
-                      一个 Google Sheet 可保存多个卡包，每个卡包使用独立工作表；语音缓存与 API Key 留在本机。
-                    </CardDescription>
-                  </div>
-                </div>
+                <CardTitle>同步</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <GoogleAccountPanel onReadyChange={setGoogleReady} />
@@ -377,7 +333,7 @@ export function SettingsForm({
                     <p className="mt-2 text-xs text-muted-foreground">上次同步 {new Date(sync.lastSyncAt).toLocaleString()}</p>
                   ) : null}
                   {sync.unavailable ? (
-                    <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{sync.unavailable}。离线改动会保留，恢复连接后自动同步。</p>
+                    <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{sync.unavailable}</p>
                   ) : null}
                 </div>
                 <Button

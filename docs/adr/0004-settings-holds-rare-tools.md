@@ -1,3 +1,3 @@
-# 设置 holds rare tools, including 模板
+# 设置 holds rare tools; 模板 is not a 设置 row
 
-Primary tabs are 学习, 笔记, and 设置. 模板 is not a tab. `/settings` is a grouped overview; subpages are `/settings/deck`, `/settings/templates`, `/settings/study`, `/settings/ai`, and `/settings/sync`. `/templates` redirects to `/settings/templates`. The `/settings/study` row is labeled 复习参数, never 学习.
+Primary tabs are 学习, 笔记, and 设置. `/settings` is a grouped overview of 卡包, 复习参数, AI, and 云同步. 模板 belongs to the active 卡包 at `/settings/deck/templates` (see ADR 0007). The `/settings/study` row is labeled 复习参数, never 学习.

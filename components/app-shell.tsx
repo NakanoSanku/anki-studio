@@ -57,6 +57,9 @@ function headerMeta(pathname: string): { backHref?: string; title: string; showD
   if (pathname === PATHS.settings) {
     return { title: "设置", showDeck: false }
   }
+  if (pathname === PATHS.settingsTemplates) {
+    return { backHref: PATHS.settingsDeck, title: "模板", showDeck: true }
+  }
   const row = SETTINGS_ROWS.find((item) => item.href === pathname)
   if (row) {
     return { backHref: PATHS.settings, title: row.label, showDeck: false }
@@ -111,19 +114,25 @@ export function AppShell({
               </button>
             ) : null}
 
+            {header.title ? (
+              <h1 className="min-w-0 shrink-0 text-base font-semibold tracking-tight">{header.title}</h1>
+            ) : null}
             {header.showDeck ? (
               <button
                 type="button"
-                className="min-w-0 flex-1 truncate text-left text-base font-semibold tracking-tight"
+                className={cn(
+                  "min-w-0 truncate text-left",
+                  header.title ? "flex-1 text-sm text-muted-foreground" : "flex-1 text-base font-semibold tracking-tight"
+                )}
                 onClick={onDeckClick}
               >
                 {name}
               </button>
-            ) : (
-              <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight">{header.title}</h1>
-            )}
+            ) : header.title ? (
+              <span className="min-w-0 flex-1" />
+            ) : null}
 
-            {header.showDeck || pathname === PATHS.notes || pathname === PATHS.home ? (
+            {pathname === PATHS.notes || pathname === PATHS.home ? (
               <button
                 type="button"
                 className="relative flex size-10 shrink-0 items-center justify-center rounded-full"

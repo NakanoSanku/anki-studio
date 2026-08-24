@@ -4,7 +4,8 @@ export const PATHS = {
   notes: "/notes",
   settings: "/settings",
   settingsDeck: "/settings/deck",
-  settingsTemplates: "/settings/templates",
+  settingsTemplates: "/settings/deck/templates",
+  settingsTemplatesLegacy: "/settings/templates",
   settingsStudy: "/settings/study",
   settingsAi: "/settings/ai",
   settingsSync: "/settings/sync",
@@ -12,6 +13,7 @@ export const PATHS = {
 } as const
 
 export const SETTINGS_STUDY_LABEL = "复习参数"
+export const DECK_TEMPLATES_LABEL = "模板"
 
 export const PRIMARY_NAV = [
   { href: PATHS.home, id: "study", label: "学习" },
@@ -20,11 +22,10 @@ export const PRIMARY_NAV = [
 ] as const
 
 export const SETTINGS_ROWS = [
-  { href: PATHS.settingsDeck, label: "卡包", hint: "管理、导入与导出" },
-  { href: PATHS.settingsTemplates, label: "模板", hint: "字段、HTML 与 CSS" },
-  { href: PATHS.settingsStudy, label: SETTINGS_STUDY_LABEL, hint: "FSRS 与每日负担" },
-  { href: PATHS.settingsAi, label: "AI", hint: "接口、模型与生成规则" },
-  { href: PATHS.settingsSync, label: "同步", hint: "Google Sheets" },
+  { href: PATHS.settingsDeck, label: "卡包" },
+  { href: PATHS.settingsStudy, label: SETTINGS_STUDY_LABEL },
+  { href: PATHS.settingsAi, label: "AI" },
+  { href: PATHS.settingsSync, label: "同步" },
 ] as const
 
 const LEGACY_TAB_PATHS: Record<string, string> = {
@@ -66,6 +67,7 @@ export function homeTabRedirect(tab: string | null | undefined): string | null {
 export function resolveLegacyPathname(pathname: string): string | null {
   const normalized = pathname.replace(/\/+$/, "") || "/"
   if (normalized === PATHS.templatesLegacy) return PATHS.settingsTemplates
+  if (normalized === PATHS.settingsTemplatesLegacy) return PATHS.settingsTemplates
   return null
 }
 

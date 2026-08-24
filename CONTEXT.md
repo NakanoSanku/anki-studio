@@ -45,7 +45,7 @@ The full-screen 学习 in progress, at `/study`. Leaving 会话 returns to the �
 _Avoid_: 学习 as the name of this layer only (学习 is the whole activity, including the home queue)
 
 **设置**:
-The drawer for tools that are not daily. It has an overview plus subpages: 卡包, 模板, 复习参数, AI, and 云同步.
+The drawer for tools that are not daily. Overview rows are 卡包, 复习参数, AI, and 云同步. 模板 is not a 设置 row; it belongs to the active 卡包.
 _Avoid_: 更多, 工具
 
 **复习参数**:

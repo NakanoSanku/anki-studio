@@ -529,7 +529,7 @@ export function StudySession({
             type="button"
             className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 focus-visible:ring-inset"
             onClick={reveal}
-            aria-label="显示答案" aria-keyshortcuts="Space"
+            aria-label="显示答案"
             aria-keyshortcuts="Space"
           />
         ) : null}

@@ -162,9 +162,6 @@ export function GoogleAccountPanel({
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">连接 Google 帐号</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          登录并授权后，可从 Google Picker 选择自己的表格；本机编辑和学习不受影响。
-        </p>
       </div>
       <Button type="button" disabled={busy} onClick={() => void connect()}>
         {busy ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}
