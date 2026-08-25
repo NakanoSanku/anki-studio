@@ -666,7 +666,13 @@ export function CardEditor({
   )
 
   const batchDialog = (
-    <Dialog open={batchOpen} onOpenChange={setBatchOpen}>
+    <Dialog
+      open={batchOpen && !referencePickerOpen}
+      onOpenChange={(open) => {
+        if (!open && referencePickerOpen) return
+        setBatchOpen(open)
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>批量生成笔记</DialogTitle>

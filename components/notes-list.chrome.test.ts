@@ -30,4 +30,8 @@ describe("笔记列表 chrome", () => {
     expect(editor).toContain("referenceValuesForComplete")
     expect(editor).toContain("references")
   })
+
+  it("hides the batch dialog while the 参考笔记 sheet is open", () => {
+    expect(editor).toContain("batchOpen && !referencePickerOpen")
+  })
 })
