@@ -339,6 +339,16 @@ function createSheetsApi(options: {
       if (!sheet) throw new Error("fake sheet missing")
       sheet.values = structuredClone(values)
     },
+    removePreviewMetadata: (sheetId: number) => {
+      for (let index = developerMetadata.length - 1; index >= 0; index -= 1) {
+        if (
+          developerMetadata[index]?.metadataKey === "anki_studio_preview_deck_id"
+          && developerMetadata[index]?.location.sheetId === sheetId
+        ) {
+          developerMetadata.splice(index, 1)
+        }
+      }
+    },
     state: () => ({
       sheets: [...sheets.values()].map((sheet) => structuredClone(sheet)),
       developerMetadata: structuredClone(developerMetadata),
@@ -518,6 +528,30 @@ describe("Google Sheets API sync", () => {
       rev: deletedRevision,
       deck: { cards: [{ id: deck.cards[0]!.id }] },
     })
+  })
+
+  it("reuses an existing titled preview when its metadata is missing", async () => {
+    const api = createSheetsApi()
+    const deck = { ...createDefaultDeck(), name: "原有卡包" }
+    const saved = await putGoogleSheetsDeck(client, "metadata-deck", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+    const preview = previewSheets(api)[0]
+    if (!preview) throw new Error("expected preview sheet")
+    api.removePreviewMetadata(preview.sheetId)
+
+    const next = await putGoogleSheetsDeck(client, "metadata-deck", {
+      expectedRev: saved.ok ? saved.rev : 0,
+      deck: { ...deck, cards: deck.cards.map((card) => ({
+        ...card,
+        values: { ...card.values, Word: "从网站更新" },
+      })) },
+    }, api.fetchImpl)
+    expect(next.ok).toBe(true)
+    expect(previewSheets(api)).toHaveLength(1)
+    expect(previewSheets(api)[0]?.title).toBe("原有卡包")
   })
 
   it("renames the existing mapped sheet and preserves optimistic conflicts", async () => {

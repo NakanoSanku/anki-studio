@@ -654,6 +654,40 @@ function uniqueSheetTitle(
   throw new Error("Google Sheet 中可用的卡包标签名已耗尽")
 }
 
+function previewTitleMatches(title: string, deckName: string): boolean {
+  const base = sanitizedSheetTitle(deckName).normalize("NFKC").toLocaleLowerCase()
+  const normalized = title.normalize("NFKC").toLocaleLowerCase()
+  if (normalized === base) return true
+  const suffix = normalized.slice(base.length)
+  return normalized.startsWith(`${base} (`) && /^ \([2-9][0-9]*\)$/.test(suffix)
+}
+
+function previewSheetCandidates(
+  metadata: SpreadsheetMetadata,
+  deckId: string,
+  deckName: string
+): SheetProperties[] {
+  const tagged = findTaggedDeckPreviewSheet(metadata, deckId)
+  const titled = sheetProperties(metadata).filter((properties) => {
+    const taggedDeckId = typeof properties.sheetId === "number"
+      ? previewDeckIdForSheet(metadata, properties.sheetId)
+      : null
+    return Boolean(
+      properties.title
+      && properties.hidden !== true
+      && previewTitleMatches(properties.title, deckName)
+      && (!taggedDeckId || taggedDeckId === deckId)
+    )
+  })
+  const candidates: SheetProperties[] = []
+  for (const properties of [...titled, tagged]) {
+    if (!properties || typeof properties.sheetId !== "number" || !properties.title) continue
+    if (candidates.some((candidate) => candidate.sheetId === properties.sheetId)) continue
+    candidates.push(properties)
+  }
+  return candidates
+}
+
 function columnName(column: number): string {
   let current = Math.max(1, Math.floor(column))
   let result = ""
@@ -1042,16 +1076,6 @@ async function createDeckPreviewSheet(
       },
     },
     {
-      createDeveloperMetadata: {
-        developerMetadata: {
-          location: { sheetId },
-          metadataKey: PREVIEW_SHEET_METADATA_KEY,
-          metadataValue: deckId,
-          visibility: "DOCUMENT",
-        },
-      },
-    },
-    {
       updateDimensionProperties: {
         range: {
           sheetId,
@@ -1070,7 +1094,8 @@ async function createDeckPreviewSheet(
     hidden: false,
     gridProperties: { frozenRowCount: 1 },
   }
-  addLocalPreviewSheetMetadata(metadata, properties, deckId)
+  addLocalPreviewSheetMetadata(metadata, properties)
+  await tagDeckPreviewSheet(client, metadata, sheetId, deckId, fetchImpl)
   return { sheetId, title }
 }
 
@@ -1098,9 +1123,12 @@ async function replaceDeckPreview(
   metadata: SpreadsheetMetadata,
   deckId: string,
   deck: Deck,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  preferredSheetId?: number
 ): Promise<DeckPreviewSheet> {
-  const properties = findTaggedDeckPreviewSheet(metadata, deckId)
+  const properties = (typeof preferredSheetId === "number"
+    ? findSheetById(metadata, preferredSheetId)
+    : undefined) ?? previewSheetCandidates(metadata, deckId, deck.name)[0]
   if (!properties) {
     return createDeckPreviewSheet(client, metadata, deckId, deck, fetchImpl)
   }
@@ -1150,9 +1178,45 @@ async function writeDeckPreview(
   metadata: SpreadsheetMetadata,
   deckId: string,
   deck: Deck,
+  fetchImpl: typeof fetch,
+  preferredSheetId?: number
+): Promise<void> {
+  const previewSheet = await replaceDeckPreview(
+    client,
+    metadata,
+    deckId,
+    deck,
+    fetchImpl,
+    preferredSheetId
+  )
+  await writeDeckPreviewValues(client, previewSheet, deck, fetchImpl)
+
+  const mirrors = previewSheetCandidates(metadata, deckId, deck.name)
+    .filter((properties) => properties.sheetId !== previewSheet.sheetId)
+  for (const properties of mirrors) {
+    if (typeof properties.sheetId !== "number" || !properties.title) continue
+    try {
+      await writeDeckPreviewValues(
+        client,
+        { sheetId: properties.sheetId, title: properties.title },
+        deck,
+        fetchImpl
+      )
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: "Google Sheets duplicate deck preview update failed",
+        error: String(error),
+      }))
+    }
+  }
+}
+
+async function writeDeckPreviewValues(
+  client: GoogleSheetsClient,
+  previewSheet: DeckPreviewSheet,
+  deck: Deck,
   fetchImpl: typeof fetch
 ): Promise<void> {
-  const previewSheet = await replaceDeckPreview(client, metadata, deckId, deck, fetchImpl)
   const rows = previewValues(deck)
   const existing = await readValues(client, previewSheet.title, PREVIEW_READ_RANGE, fetchImpl)
   const width = Math.max(
@@ -1171,6 +1235,7 @@ async function writeDeckPreview(
     values,
     fetchImpl
   )
+  await hidePreviewIdColumn(client, previewSheet.sheetId, fetchImpl)
 }
 
 async function readDeckPreview(
@@ -1179,17 +1244,61 @@ async function readDeckPreview(
   deckId: string,
   deck: Deck,
   fetchImpl: typeof fetch
-): Promise<Deck | null> {
-  const properties = findTaggedDeckPreviewSheet(metadata, deckId)
-  if (typeof properties?.sheetId !== "number" || !properties.title) return null
-  const values = await readValues(client, properties.title, PREVIEW_READ_RANGE, fetchImpl)
-  const header = values[0] ?? []
-  if (!headerMatches(header, previewHeaders(deck))) {
-    throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
+): Promise<{ deck: Deck | null; sheetId: number | null }> {
+  const candidates = previewSheetCandidates(metadata, deckId, deck.name)
+  if (candidates.length === 0) return { deck: null, sheetId: null }
+  const parsed: Array<{ properties: SheetProperties; deck: Deck }> = []
+  let firstError: unknown = null
+
+  for (const properties of candidates) {
+    if (typeof properties.sheetId !== "number" || !properties.title) continue
+    try {
+      const values = await readValues(client, properties.title, PREVIEW_READ_RANGE, fetchImpl)
+      const header = values[0] ?? []
+      const currentHeader = previewHeaders(deck)
+      const legacyHeader = ["序号", ...deck.fields]
+      if (headerMatches(header, currentHeader)) {
+        parsed.push({
+          properties,
+          deck: deckFromPreviewRows(deck, values.slice(1).filter(rowHasValue)),
+        })
+        continue
+      }
+      if (headerMatches(header, legacyHeader)) {
+        const rows = values.slice(1)
+          .filter(rowHasValue)
+          .map((row, index) => [deck.cards[index]?.id ?? "", ...row.slice(1)])
+        parsed.push({ properties, deck: deckFromPreviewRows(deck, rows) })
+        continue
+      }
+      throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
+    } catch (error) {
+      firstError ??= error
+    }
   }
-  const rows = values.slice(1).filter(rowHasValue)
-  const candidate = deckFromPreviewRows(deck, rows)
-  return samePreviewRows(previewRows(deck), previewRows(candidate)) ? null : candidate
+
+  if (parsed.length === 0) {
+    throw firstError instanceof Error
+      ? firstError
+      : new Error("找不到可用的卡包预览工作表")
+  }
+
+  const taggedId = findTaggedDeckPreviewSheet(metadata, deckId)?.sheetId
+  const tagged = typeof taggedId === "number"
+    ? parsed.find((item) => item.properties.sheetId === taggedId)
+    : undefined
+  const changed = parsed.find((item) => !samePreviewRows(previewRows(deck), previewRows(item.deck)))
+  const exact = parsed.find((item) => item.properties.title === sanitizedSheetTitle(deck.name))
+  const selected = tagged && !samePreviewRows(previewRows(deck), previewRows(tagged.deck))
+    ? tagged
+    : changed ?? exact ?? tagged ?? parsed[0]!
+  if (typeof selected.properties.sheetId === "number") {
+    await tagDeckPreviewSheet(client, metadata, selected.properties.sheetId, deckId, fetchImpl)
+  }
+  return {
+    deck: samePreviewRows(previewRows(deck), previewRows(selected.deck)) ? null : selected.deck,
+    sheetId: selected.properties.sheetId ?? null,
+  }
 }
 
 async function replaceSheetData(
@@ -1398,21 +1507,35 @@ async function materializePreviewEdits(
     if (!current || current.row.deletedAt || current.row.sheetId == null) continue
     const payload = await payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
     if (!payload.deck) continue
-    const candidate = await readDeckPreview(
+    const preview = await readDeckPreview(
       client,
       storage.metadata,
       id,
       payload.deck,
       fetchImpl
     )
-    if (!candidate) continue
+    if (!preview.deck) {
+      if (preview.sheetId == null) {
+        await writeDeckPreview(client, storage.metadata, id, payload.deck, fetchImpl)
+      }
+      continue
+    }
 
     const result = await putGoogleSheetsDeck(client, id, {
       expectedRev: current.revision,
-      deck: candidate,
+      deck: preview.deck,
       editorState: payload.editorState,
     }, fetchImpl)
-    if (!result.ok) continue
+    if (result.ok && preview.sheetId != null) {
+      await writeDeckPreview(
+        client,
+        storage.metadata,
+        id,
+        preview.deck,
+        fetchImpl,
+        preview.sheetId
+      )
+    }
   }
 }
 
@@ -1426,14 +1549,17 @@ async function payloadForIndexVersion(
   if (current.row.sheetId == null) {
     throw new Error("Google Sheet 同步目录缺少卡包工作表")
   }
-  const properties = findSheetById(metadata, current.row.sheetId)
-  if (typeof properties?.sheetId !== "number" || !properties.title) {
-    throw new Error(`卡包「${current.row.name}」对应的工作表已被删除，请先从备份恢复`)
-  }
-  const dataSheet = { sheetId: properties.sheetId, title: properties.title }
+  const dataSheet = await ensureDeckSheet(
+    client,
+    metadata,
+    current.row.id,
+    current.row.name,
+    current.row.sheetId,
+    fetchImpl
+  )
   const rows = await readDeckRows(client, dataSheet, fetchImpl)
   const version = findExactVersion(rows, current.row.id, current.revision, current.versionId)
-  if (!version) throw new Error(`卡包工作表「${properties.title}」缺少目录指定的版本`)
+  if (!version) throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
   return decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
 }
 
