@@ -256,7 +256,9 @@ export function GoogleSheetPickerPanel({
               {connection ? "已选择" : "未选择"}
             </Badge>
           </div>
-
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            可见工作表按“字段列、笔记行”展示预览；同步数据保存在隐藏工作表中，直接编辑表格不会回写应用。
+          </p>
         </div>
       </div>
 

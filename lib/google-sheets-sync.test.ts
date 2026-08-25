@@ -30,6 +30,19 @@ const DATA_HEADERS = [
   "version_id",
 ]
 
+const INDEX_HEADERS = [
+  "deck_id",
+  "revision",
+  "updated_at",
+  "deleted_at",
+  "name",
+  "card_count",
+  "sheet_id",
+  "sheet_title",
+  "schema_version",
+  "version_id",
+]
+
 type FakeSheet = {
   sheetId: number
   title: string
@@ -102,6 +115,7 @@ function parseValuesPath(pathname: string): {
 function createSheetsApi(options: {
   legacyRows?: unknown[][]
   hasWritten?: boolean
+  v3Deck?: { id: string; name: string }
 } = {}) {
   const sheets = new Map<number, FakeSheet>()
   sheets.set(0, {
@@ -120,6 +134,55 @@ function createSheetsApi(options: {
       values: [[...DATA_HEADERS], ...options.legacyRows],
     })
   }
+  if (options.v3Deck) {
+    const deck = { ...createDefaultDeck(), name: options.v3Deck.name }
+    const versionId = "v3-version-0000001"
+    const payload = {
+      rev: 42,
+      updatedAt: 1_700_000_000_000,
+      deletedAt: null,
+      deck,
+      editorState: null,
+    }
+    const dataSheetId = 8
+    sheets.set(7, {
+      sheetId: 7,
+      title: "_anki_studio_sync",
+      hidden: true,
+      frozenRowCount: 1,
+      values: [[...INDEX_HEADERS], [
+        options.v3Deck.id,
+        payload.rev,
+        payload.updatedAt,
+        "",
+        deck.name,
+        deck.cards.length,
+        dataSheetId,
+        deck.name,
+        3,
+        versionId,
+      ]],
+    })
+    sheets.set(dataSheetId, {
+      sheetId: dataSheetId,
+      title: deck.name,
+      hidden: false,
+      frozenRowCount: 1,
+      values: [[...DATA_HEADERS], [
+        options.v3Deck.id,
+        payload.rev,
+        payload.updatedAt,
+        "",
+        deck.name,
+        deck.cards.length,
+        0,
+        1,
+        Buffer.from(JSON.stringify(payload), "utf8").toString("base64url"),
+        3,
+        versionId,
+      ]],
+    })
+  }
   const developerMetadata: FakeDeveloperMetadata[] = options.hasWritten
     ? [{
         metadataKey: "anki_studio_has_data",
@@ -127,6 +190,20 @@ function createSheetsApi(options: {
         location: { spreadsheet: true },
       }]
     : []
+  if (options.v3Deck) {
+    developerMetadata.push(
+      {
+        metadataKey: "anki_studio_has_data",
+        metadataValue: "1",
+        location: { spreadsheet: true },
+      },
+      {
+        metadataKey: "anki_studio_deck_id",
+        metadataValue: options.v3Deck.id,
+        location: { sheetId: 8 },
+      }
+    )
+  }
   const requests: Array<{ url: URL; init?: RequestInit }> = []
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
@@ -273,6 +350,14 @@ function deckSheets(api: ReturnType<typeof createSheetsApi>): FakeSheet[] {
   return state.sheets.filter((sheet) => ids.has(sheet.sheetId))
 }
 
+function previewSheets(api: ReturnType<typeof createSheetsApi>): FakeSheet[] {
+  const state = api.state()
+  const ids = new Set(state.developerMetadata
+    .filter((item) => item.metadataKey === "anki_studio_preview_deck_id")
+    .map((item) => item.location.sheetId))
+  return state.sheets.filter((sheet) => ids.has(sheet.sheetId))
+}
+
 function legacyRow(id: string, name: string): unknown[] {
   const deck = { ...createDefaultDeck(), name }
   const payload = {
@@ -312,6 +397,27 @@ describe("Google Sheets API sync", () => {
     expect(index?.values[0]).toContain("sheet_id")
   })
 
+  it("backfills a readable preview for an existing v3 deck sheet", async () => {
+    const api = createSheetsApi({ v3Deck: { id: "existing-deck", name: "单词本" } })
+
+    await connectGoogleSheet(client, api.fetchImpl)
+
+    expect(deckSheets(api)).toMatchObject([{
+      sheetId: 8,
+      title: "_anki_studio_data_existingdeck",
+      hidden: true,
+    }])
+    expect(previewSheets(api)).toMatchObject([{
+      title: "单词本",
+      hidden: false,
+    }])
+    expect(previewSheets(api)[0]?.values[0]).toEqual([
+      "序号",
+      ...createDefaultDeck().fields,
+    ])
+    expect(previewSheets(api)[0]?.values[1]?.[0]).toBe(1)
+  })
+
   it("stores multiple decks in separate, stably mapped sheets", async () => {
     const api = createSheetsApi()
     const firstDeck = { ...createDefaultDeck(), name: "泰语/日常" }
@@ -329,9 +435,15 @@ describe("Google Sheets API sync", () => {
     expect(second.ok).toBe(true)
 
     expect(deckSheets(api).map((sheet) => sheet.title).sort()).toEqual([
+      "_anki_studio_data_remotedecka",
+      "_anki_studio_data_remotedeckb",
+    ])
+    expect(previewSheets(api).map((sheet) => sheet.title).sort()).toEqual([
       "泰语 日常",
       "泰语 日常 (2)",
     ])
+    expect(previewSheets(api)[0]?.values[0]).toEqual(["序号", ...firstDeck.fields])
+    expect(previewSheets(api)[0]?.values[1]?.[0]).toBe(1)
     await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
       { id: "remote-deck-a", name: "泰语/日常", cardCount: 1 },
       { id: "remote-deck-b", name: "泰语/日常", cardCount: 1 },
@@ -360,7 +472,11 @@ describe("Google Sheets API sync", () => {
       deck: { ...deck, name: "泰语进阶" },
     }, api.fetchImpl)
     expect(renamed.ok).toBe(true)
-    expect(deckSheets(api)).toMatchObject([{ sheetId: originalSheetId, title: "泰语进阶" }])
+    expect(deckSheets(api)).toMatchObject([{
+      sheetId: originalSheetId,
+      title: "_anki_studio_data_remotedeck",
+    }])
+    expect(previewSheets(api)).toMatchObject([{ title: "泰语进阶" }])
 
     const conflict = await putGoogleSheetsDeck(client, "remote-deck", {
       expectedRev: saved.rev,
@@ -411,7 +527,8 @@ describe("Google Sheets API sync", () => {
     })
     const index = api.state().sheets.find((sheet) => sheet.title === "_anki_studio_sync")
     expect(index?.values[0]?.slice(0, 10)).toContain("sheet_id")
-    expect(deckSheets(api)).toMatchObject([{ title: "旧卡包" }])
+    expect(deckSheets(api)).toMatchObject([{ title: "_anki_studio_data_legacydeck" }])
+    expect(previewSheets(api)).toMatchObject([{ title: "旧卡包" }])
     await expect(getGoogleSheetsDeck(client, "legacy-deck", api.fetchImpl)).resolves.toMatchObject({
       rev: 42,
       deck: { name: "旧卡包" },
