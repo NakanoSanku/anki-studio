@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer"
 
 import { describe, expect, it } from "vitest"
 
-import { createDefaultDeck } from "./deck"
+import { createCard, createDefaultDeck } from "./deck"
 import {
   connectGoogleSheet,
   createGoogleSheetsClient,
@@ -334,6 +334,11 @@ function createSheetsApi(options: {
 
   return {
     fetchImpl: fetchImpl as typeof fetch,
+    setValues: (sheetId: number, values: unknown[][]) => {
+      const sheet = sheets.get(sheetId)
+      if (!sheet) throw new Error("fake sheet missing")
+      sheet.values = structuredClone(values)
+    },
     state: () => ({
       sheets: [...sheets.values()].map((sheet) => structuredClone(sheet)),
       developerMetadata: structuredClone(developerMetadata),
@@ -412,10 +417,10 @@ describe("Google Sheets API sync", () => {
       hidden: false,
     }])
     expect(previewSheets(api)[0]?.values[0]).toEqual([
-      "序号",
+      "__anki_studio_card_id",
       ...createDefaultDeck().fields,
     ])
-    expect(previewSheets(api)[0]?.values[1]?.[0]).toBe(1)
+    expect(previewSheets(api)[0]?.values[1]?.[0]).toEqual(expect.any(String))
   })
 
   it("stores multiple decks in separate, stably mapped sheets", async () => {
@@ -442,8 +447,8 @@ describe("Google Sheets API sync", () => {
       "泰语 日常",
       "泰语 日常 (2)",
     ])
-    expect(previewSheets(api)[0]?.values[0]).toEqual(["序号", ...firstDeck.fields])
-    expect(previewSheets(api)[0]?.values[1]?.[0]).toBe(1)
+    expect(previewSheets(api)[0]?.values[0]).toEqual(["__anki_studio_card_id", ...firstDeck.fields])
+    expect(previewSheets(api)[0]?.values[1]?.[0]).toBe(firstDeck.cards[0]?.id)
     await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
       { id: "remote-deck-a", name: "泰语/日常", cardCount: 1 },
       { id: "remote-deck-b", name: "泰语/日常", cardCount: 1 },
@@ -453,6 +458,65 @@ describe("Google Sheets API sync", () => {
     })
     await expect(getGoogleSheetsDeck(client, "remote-deck-b", api.fetchImpl)).resolves.toMatchObject({
       deck: { name: "泰语/日常" },
+    })
+  })
+
+  it("pulls edited, added, and deleted rows from an editable preview", async () => {
+    const api = createSheetsApi()
+    const source = createDefaultDeck()
+    const second = createCard(source.fields, {
+      Word: "second",
+      Translation: "第二个",
+    })
+    const deck = { ...source, cards: [...source.cards, second] }
+    const saved = await putGoogleSheetsDeck(client, "editable-deck", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) throw new Error("expected save to succeed")
+
+    const preview = previewSheets(api)[0]
+    if (!preview) throw new Error("expected preview sheet")
+    api.setValues(preview.sheetId, [
+      ["__anki_studio_card_id", ...deck.fields],
+      [
+        deck.cards[0]!.id,
+        "edited from Sheets",
+        ...deck.fields.slice(1).map((field) => deck.cards[0]!.values[field] ?? ""),
+      ],
+      ["", "new from Sheets", "", "新增", "", "", ""],
+    ])
+
+    const editedIndex = await listGoogleSheetsIndex(client, api.fetchImpl)
+    expect(editedIndex).toMatchObject([{ id: "editable-deck", cardCount: 2 }])
+    const editedRevision = editedIndex[0]?.rev ?? 0
+    expect(editedRevision).toBeGreaterThan(saved.rev)
+    await expect(getGoogleSheetsDeck(client, "editable-deck", api.fetchImpl)).resolves.toMatchObject({
+      rev: editedRevision,
+      deck: {
+        cards: [
+          { id: deck.cards[0]!.id, values: { Word: "edited from Sheets" } },
+          { values: { Word: "new from Sheets", Translation: "新增" } },
+        ],
+      },
+    })
+
+    api.setValues(preview.sheetId, [
+      ["__anki_studio_card_id", ...deck.fields],
+      [
+        deck.cards[0]!.id,
+        "edited from Sheets",
+        ...deck.fields.slice(1).map((field) => deck.cards[0]!.values[field] ?? ""),
+      ],
+    ])
+    const deletedIndex = await listGoogleSheetsIndex(client, api.fetchImpl)
+    expect(deletedIndex).toMatchObject([{ id: "editable-deck", cardCount: 1 }])
+    const deletedRevision = deletedIndex[0]?.rev ?? 0
+    expect(deletedRevision).toBeGreaterThan(editedRevision)
+    await expect(getGoogleSheetsDeck(client, "editable-deck", api.fetchImpl)).resolves.toMatchObject({
+      rev: deletedRevision,
+      deck: { cards: [{ id: deck.cards[0]!.id }] },
     })
   })
 

@@ -1,6 +1,13 @@
 import { Buffer } from "node:buffer"
 
-import type { Deck } from "./deck"
+import {
+  createCard,
+  cardKeyValue,
+  fsrsOf,
+  isTtsField,
+  type Card,
+  type Deck,
+} from "./deck"
 import { googleSpreadsheetUrl, isGoogleSpreadsheetId } from "./google-sheet-id"
 import { parseRemoteDeckPayload, parseRemoteIndex } from "./sync-payload"
 import type {
@@ -16,11 +23,12 @@ const HAS_WRITTEN_METADATA_KEY = "anki_studio_has_data"
 const DECK_SHEET_METADATA_KEY = "anki_studio_deck_id"
 const PREVIEW_SHEET_METADATA_KEY = "anki_studio_preview_deck_id"
 const PREVIEW_SCHEMA_METADATA_KEY = "anki_studio_preview_schema"
-const PREVIEW_SCHEMA_VERSION = "1"
+const PREVIEW_SCHEMA_VERSION = "2"
 const LEGACY_SCHEMA_VERSION = 2
 const CHUNK_SIZE = 40_000
 const PREVIEW_READ_RANGE = "A1:ZZ"
 const PREVIEW_CELL_LIMIT = 50_000
+const PREVIEW_ID_HEADER = "__anki_studio_card_id"
 const DATA_HEADERS = [
   "deck_id",
   "revision",
@@ -663,7 +671,7 @@ function internalDeckSheetTitle(deckId: string): string {
 }
 
 function previewHeaders(deck: Pick<Deck, "fields">): string[] {
-  return ["序号", ...deck.fields]
+  return [PREVIEW_ID_HEADER, ...deck.fields]
 }
 
 function previewCell(value: string): string {
@@ -677,11 +685,76 @@ function previewValues(deck: Deck): unknown[][] {
   const headers = previewHeaders(deck)
   return [
     headers,
-    ...deck.cards.map((card, index) => [
-      index + 1,
+    ...deck.cards.map((card) => [
+      card.id,
       ...deck.fields.map((field) => previewCell(card.values[field] ?? "")),
     ]),
   ]
+}
+
+function previewText(value: unknown): string {
+  if (typeof value === "string") return value
+  if (value == null) return ""
+  return String(value)
+}
+
+function previewRows(deck: Deck): unknown[][] {
+  return previewValues(deck).slice(1)
+}
+
+function samePreviewRows(left: unknown[][], right: unknown[][]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((row, rowIndex) => {
+    const other = right[rowIndex]
+    if (!other || row.length !== other.length) return false
+    return row.every((value, columnIndex) => value === other[columnIndex])
+  })
+}
+
+function deckFromPreviewRows(deck: Deck, rows: unknown[][]): Deck {
+  const existing = new Map(deck.cards.map((card) => [card.id, card]))
+  const usedIds = new Set<string>()
+  const usedKeys = new Set<string>()
+  const cards: Card[] = []
+
+  for (const row of rows) {
+    const id = previewText(row[0]).trim()
+    const rowValues = row.slice(1)
+    const hasFieldValue = rowValues.some((value) => previewText(value) !== "")
+    if (!id && !hasFieldValue) continue
+
+    const current = id && !usedIds.has(id) ? existing.get(id) : undefined
+    const card = current ?? createCard(deck.fields)
+    const values = { ...card.values }
+    for (const [index, field] of deck.fields.entries()) {
+      if (isTtsField(deck, field)) {
+        values[field] = ""
+        continue
+      }
+      values[field] = previewText(rowValues[index])
+    }
+    const nextCard = { ...card, values }
+    const key = cardKeyValue(nextCard, deck.fields)
+    if (key && usedKeys.has(key)) {
+      throw new Error(`卡片预览包含重复的首字段「${values[deck.fields[0] ?? ""] ?? ""}」`)
+    }
+    if (key) usedKeys.add(key)
+    cards.push(nextCard)
+    usedIds.add(card.id)
+  }
+
+  const validIds = new Set(cards.map((card) => card.id))
+  const fsrs = fsrsOf(deck)
+  return {
+    ...deck,
+    cards,
+    fsrs: {
+      ...fsrs,
+      cards: Object.fromEntries(
+        Object.entries(fsrs.cards).filter(([, item]) => validIds.has(item.noteId))
+      ),
+    },
+  }
 }
 
 function randomSheetId(metadata: SpreadsheetMetadata): number {
@@ -978,6 +1051,18 @@ async function createDeckPreviewSheet(
         },
       },
     },
+    {
+      updateDimensionProperties: {
+        range: {
+          sheetId,
+          dimension: "COLUMNS",
+          startIndex: 0,
+          endIndex: 1,
+        },
+        properties: { hiddenByUser: true },
+        fields: "hiddenByUser",
+      },
+    },
   ], fetchImpl)
   const properties: SheetProperties = {
     sheetId,
@@ -987,6 +1072,25 @@ async function createDeckPreviewSheet(
   }
   addLocalPreviewSheetMetadata(metadata, properties, deckId)
   return { sheetId, title }
+}
+
+async function hidePreviewIdColumn(
+  client: GoogleSheetsClient,
+  sheetId: number,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  await batchUpdate(client, [{
+    updateDimensionProperties: {
+      range: {
+        sheetId,
+        dimension: "COLUMNS",
+        startIndex: 0,
+        endIndex: 1,
+      },
+      properties: { hiddenByUser: true },
+      fields: "hiddenByUser",
+    },
+  }], fetchImpl)
 }
 
 async function replaceDeckPreview(
@@ -1036,6 +1140,7 @@ async function replaceDeckPreview(
     properties.hidden = false
     properties.gridProperties = { ...properties.gridProperties, frozenRowCount: 1 }
   }
+  await hidePreviewIdColumn(client, properties.sheetId, fetchImpl)
 
   return { sheetId: properties.sheetId, title: properties.title }
 }
@@ -1066,6 +1171,25 @@ async function writeDeckPreview(
     values,
     fetchImpl
   )
+}
+
+async function readDeckPreview(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  deckId: string,
+  deck: Deck,
+  fetchImpl: typeof fetch
+): Promise<Deck | null> {
+  const properties = findTaggedDeckPreviewSheet(metadata, deckId)
+  if (typeof properties?.sheetId !== "number" || !properties.title) return null
+  const values = await readValues(client, properties.title, PREVIEW_READ_RANGE, fetchImpl)
+  const header = values[0] ?? []
+  if (!headerMatches(header, previewHeaders(deck))) {
+    throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
+  }
+  const rows = values.slice(1).filter(rowHasValue)
+  const candidate = deckFromPreviewRows(deck, rows)
+  return samePreviewRows(previewRows(deck), previewRows(candidate)) ? null : candidate
 }
 
 async function replaceSheetData(
@@ -1259,6 +1383,39 @@ async function ensureExistingDeckPreviews(
   await markPreviewSchema(client, storage.metadata, fetchImpl)
 }
 
+async function materializePreviewEdits(
+  client: GoogleSheetsClient,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  const storage = await ensureSyncStorage(client, fetchImpl)
+  await ensureExistingDeckPreviews(client, storage, fetchImpl)
+  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
+  const rows = parseIndexRows(values)
+  const ids = [...new Set(rows.map((row) => row.id))]
+
+  for (const id of ids) {
+    const current = findCurrentIndexVersion(rows, id)
+    if (!current || current.row.deletedAt || current.row.sheetId == null) continue
+    const payload = await payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
+    if (!payload.deck) continue
+    const candidate = await readDeckPreview(
+      client,
+      storage.metadata,
+      id,
+      payload.deck,
+      fetchImpl
+    )
+    if (!candidate) continue
+
+    const result = await putGoogleSheetsDeck(client, id, {
+      expectedRev: current.revision,
+      deck: candidate,
+      editorState: payload.editorState,
+    }, fetchImpl)
+    if (!result.ok) continue
+  }
+}
+
 async function payloadForIndexVersion(
   client: GoogleSheetsClient,
   metadata: SpreadsheetMetadata,
@@ -1328,6 +1485,7 @@ export async function listGoogleSheetsIndex(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteIndexEntry[]> {
+  await materializePreviewEdits(client, fetchImpl)
   const { rows } = await readIndexState(client, fetchImpl)
   const ids = [...new Set(rows.map((row) => row.id))]
   return parseRemoteIndex(ids.map((id) => {

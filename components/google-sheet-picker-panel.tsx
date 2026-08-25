@@ -257,7 +257,7 @@ export function GoogleSheetPickerPanel({
             </Badge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            可见工作表按“字段列、笔记行”展示预览；同步数据保存在隐藏工作表中，直接编辑表格不会回写应用。
+            可见工作表按“字段列、笔记行”展示；可直接修改文本字段、增加或删除行，网站同步时会回写。TTS 字段由应用管理，版本和 FSRS 数据保存在隐藏工作表中。
           </p>
         </div>
       </div>
