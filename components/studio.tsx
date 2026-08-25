@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { hasAnkiPush, markNotesPushed, planAnkiPush, withAnkiIdentity, type AnkiPushPlan } from "@/lib/anki-sync"
 import { exportApkg, importDeckFile } from "@/lib/apkg"
 import { PATHS, noteIdFromPath, notePath } from "@/lib/app-paths"
+import { studyPairTransitionTypes } from "@/lib/study-transition"
 import { deckToCsv } from "@/lib/csv"
 import {
   addLibraryDeck,
@@ -561,7 +562,9 @@ export function Studio() {
   }
 
   const leaveStudy = () => {
-    router.push(PATHS.home)
+    router.push(PATHS.home, {
+      transitionTypes: studyPairTransitionTypes(PATHS.studySession, PATHS.home),
+    })
   }
 
   const deckTools = (
@@ -611,7 +614,11 @@ export function Studio() {
         {pathname === PATHS.home ? (
           <StudyOverview
             deck={deck}
-            onStart={() => router.push(PATHS.studySession)}
+            onStart={() =>
+              router.push(PATHS.studySession, {
+                transitionTypes: studyPairTransitionTypes(PATHS.home, PATHS.studySession),
+              })
+            }
             onAddNote={addNote}
           />
         ) : null}

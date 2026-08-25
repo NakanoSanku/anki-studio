@@ -23,4 +23,11 @@ describe("会话 header chrome", () => {
     expect(source).not.toContain("sm:hidden")
     expect(source).not.toContain("查看本轮详情")
   })
+
+  it("drives card faces with motion/react instead of tw-animate utilities", () => {
+    expect(source).toContain('from "motion/react"')
+    expect(source).toContain("cardMotionPose")
+    expect(source).toContain("data-card-motion")
+    expect(source).not.toContain("motion-safe:animate-in")
+  })
 })

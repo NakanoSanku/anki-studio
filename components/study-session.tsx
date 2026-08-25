@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
 import {
   CheckCircle2,
   Pencil,
@@ -8,6 +9,7 @@ import {
   X,
 } from "lucide-react"
 
+import { StudyStage } from "@/components/study-stage"
 import { TtsPlayButton } from "@/components/tts-play-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +26,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { notesOf, previewValues, setCardField, textFields, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
+import { CARD_MOTION_DURATION_S, cardMotionPose, type CardMotionAction } from "@/lib/card-motion"
 import {
   Rating,
   formatDueDate,
@@ -217,6 +220,7 @@ export function StudySession({
   onExit,
 }: StudySessionProps) {
   const [revealed, setRevealed] = useState(false)
+  const [action, setAction] = useState<CardMotionAction>("advance")
   const [editOpen, setEditOpen] = useState(false)
   const [editValues, setEditValues] = useState<Record<string, string>>({})
   const [editError, setEditError] = useState("")
@@ -234,9 +238,17 @@ export function StudySession({
 
   useScreenWakeLock(Boolean(current))
 
+  const reducedMotion = useReducedMotion() ?? false
+
   const reveal = useCallback(() => {
+    setAction("reveal")
     setRevealed(true)
     touchFeedback(8)
+  }, [])
+
+  const conceal = useCallback(() => {
+    setAction("conceal")
+    setRevealed(false)
   }, [])
 
   useEffect(() => {
@@ -250,6 +262,7 @@ export function StudySession({
       onChange(reviewStudyItem(deck, current, rating, new Date()))
       touchFeedback([8, 24, 8])
       setCompleted((value) => value + 1)
+      setAction("advance")
       setRevealed(false)
       setClock(Date.now())
     },
@@ -291,6 +304,7 @@ export function StudySession({
         : "暂无计划中的复习。"
 
     return (
+      <StudyStage>
       <section
         className="flex h-[100dvh] items-center justify-center overflow-y-auto overscroll-none bg-background px-4 py-8 sm:px-8"
         aria-labelledby="study-complete-title"
@@ -310,14 +324,23 @@ export function StudySession({
           </Button>
         </div>
       </section>
+      </StudyStage>
     )
   }
 
   const side = revealed ? "back" : "front"
   const playable = ttsFieldsOnSide(deck, side, current.template.id)
   const configs = ttsOf(deck)
+  // `custom` on AnimatePresence lets the exiting face pick up the latest
+  // action (reveal/conceal/advance) so its exit direction matches the gesture.
+  const slideVariants: Variants = {
+    enter: (cardAction: CardMotionAction) => cardMotionPose(cardAction, reducedMotion).initial,
+    center: { x: 0, opacity: 1 },
+    exit: (cardAction: CardMotionAction) => cardMotionPose(cardAction, reducedMotion).exit,
+  }
 
   return (
+    <StudyStage>
     <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="学习会话">
       <FocusHeader
         completed={completed}
@@ -331,16 +354,27 @@ export function StudySession({
         }}
       />
 
-      <div
-        key={current.id}
-        className="relative min-h-0 flex-1 overflow-hidden bg-white motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300"
-      >
-        <div
-          key={side}
-          className="h-full w-full motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+        <AnimatePresence
+          initial={false}
+          mode="popLayout"
+          custom={action}
         >
-          <StudyCard deck={deck} item={current} revealed={revealed} />
-        </div>
+          <motion.div
+            key={`${current.id}:${side}`}
+            custom={action}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: CARD_MOTION_DURATION_S, ease: "easeOut" }}
+            data-card-motion=""
+            data-card-face={side}
+            className="absolute inset-0 h-full w-full"
+          >
+            <StudyCard deck={deck} item={current} revealed={revealed} />
+          </motion.div>
+        </AnimatePresence>
 
         {!revealed ? (
           <button
@@ -386,7 +420,7 @@ export function StudySession({
                     variant="ghost"
                     className="text-stone-700 hover:bg-stone-100"
                     aria-label="重看正面"
-                    onClick={() => setRevealed(false)}
+                    onClick={conceal}
                   >
                     <RotateCcw className="size-4" />
                   </Button>
@@ -462,5 +496,6 @@ export function StudySession({
         </SheetContent>
       </Sheet>
     </section>
+    </StudyStage>
   )
 }

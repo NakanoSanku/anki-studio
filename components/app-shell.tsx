@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { AnimatePresence, motion } from "motion/react"
 import {
   BookOpen,
   ChevronLeft,
@@ -42,10 +43,25 @@ type AppShellProps = {
   children: ReactNode
 }
 
+const SYNC_ICON_DURATION_S = 0.15
+
 function SyncIcon({ syncing, syncUnavailable }: { syncing: boolean; syncUnavailable?: string }) {
-  if (syncing) return <LoaderCircle className="size-4 animate-spin" />
-  if (syncUnavailable) return <CloudOff className="size-4 text-amber-600" />
-  return <Cloud className="size-4" />
+  // Crossfade the state swap; the spinner itself keeps its CSS rotation.
+  const state = syncing ? "syncing" : syncUnavailable ? "unavailable" : "idle"
+  return (
+    <AnimatePresence initial={false} mode="popLayout">
+      <motion.span
+        key={state}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: SYNC_ICON_DURATION_S }}
+        className="flex"
+      >
+        {syncing ? <LoaderCircle className="size-4 animate-spin" /> : syncUnavailable ? <CloudOff className="size-4 text-amber-600" /> : <Cloud className="size-4" />}
+      </motion.span>
+    </AnimatePresence>
+  )
 }
 
 function headerMeta(pathname: string): { backHref?: string; title: string; showDeck: boolean } {
@@ -118,15 +134,22 @@ export function AppShell({
           : "min-h-[100dvh]"
       )}
     >
-      {status ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed top-3 left-1/2 z-[70] max-w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-border/70 bg-popover/95 px-4 py-2 text-center text-xs text-popover-foreground shadow-lg"
-        >
-          {status}
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {status ? (
+          <motion.div
+            key="status-toast"
+            role="status"
+            aria-live="polite"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed inset-x-3 top-3 z-[70] mx-auto w-fit max-w-[min(28rem,calc(100vw-2rem))] rounded-full border border-border/70 bg-popover/95 px-4 py-2 text-center text-xs text-popover-foreground shadow-lg"
+          >
+            {status}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {!session ? (
         <header

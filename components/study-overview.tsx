@@ -2,6 +2,7 @@
 
 import { ArrowRight, BookOpen, CheckCircle2 } from "lucide-react"
 
+import { StudyStage } from "@/components/study-stage"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import type { Deck } from "@/lib/deck"
@@ -35,6 +36,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
       : "当前卡包还没有计划中的复习。"
 
   return (
+    <StudyStage>
     <section
       className="mx-auto flex min-h-[calc(100dvh-12.5rem)] w-full max-w-xl items-center justify-center sm:min-h-[calc(100dvh-13rem)] lg:min-h-[calc(100dvh-10rem)]"
       aria-labelledby="study-overview-title"
@@ -94,5 +96,6 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
         </CardContent>
       </Card>
     </section>
+    </StudyStage>
   )
 }

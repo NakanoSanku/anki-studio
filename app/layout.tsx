@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import type { Metadata, Viewport } from "next"
 
+import { MotionProvider } from "@/components/motion-provider"
 import { OfflineBanner } from "@/components/offline-banner"
 import { PwaRegister } from "@/components/pwa-register"
 import { SystemTheme } from "@/components/system-theme"
@@ -51,12 +52,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="flex min-h-full flex-col">
-        <TooltipProvider>
-          {children}
-          <OfflineBanner />
-          <PwaRegister />
-          <SystemTheme />
-        </TooltipProvider>
+        <MotionProvider>
+          <TooltipProvider>
+            {children}
+            <OfflineBanner />
+            <PwaRegister />
+            <SystemTheme />
+          </TooltipProvider>
+        </MotionProvider>
       </body>
     </html>
   )
