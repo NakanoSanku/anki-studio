@@ -23,4 +23,11 @@ describe("笔记列表 chrome", () => {
     expect(editor).toContain('listOnly && "h-full min-h-0 flex-1 overflow-hidden"')
     expect(editor).toContain('"min-h-0 flex-1"')
   })
+
+  it("pins 参考笔记 on the editor for AI complete and batch generate", () => {
+    expect(editor).toContain("ReferenceNotesBar")
+    expect(editor).toContain("ReferenceNotesPicker")
+    expect(editor).toContain("referenceValuesForComplete")
+    expect(editor).toContain("references")
+  })
 })

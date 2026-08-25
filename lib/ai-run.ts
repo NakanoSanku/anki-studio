@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
   formatCardContext,
   formatFieldNotes,
+  formatReferenceNotes,
   formatTemplateFields,
   formatTtsFields,
   type BatchAiInput,
@@ -11,7 +12,7 @@ import {
   type TemplateAiResult,
 } from "./ai"
 import { completeChat, completeJson, pickCardList, pickFieldValues } from "./ai-compat"
-import { parseAiSettings, renderPrompt } from "./ai-settings"
+import { applyPromptWithReferences, parseAiSettings, renderPrompt } from "./ai-settings"
 
 export class AiRequestError extends Error {
   readonly status = 400
@@ -55,12 +56,16 @@ export async function runCardAi(body: CardAiInput): Promise<Record<string, strin
   const notes = body.notes ?? {}
   const context = formatCardContext(uniqueFields, current, notes)
   const settings = parseAiSettings(body.settings)
-  const prompt = renderPrompt(settings.cardCompletePrompt, {
-    context,
-    key: uniqueFields[0] ?? "",
-    fields: uniqueFields.join("、"),
-    notes: formatFieldNotes(uniqueFields, notes),
-  })
+  const prompt = applyPromptWithReferences(
+    settings.cardCompletePrompt,
+    {
+      context,
+      key: uniqueFields[0] ?? "",
+      fields: uniqueFields.join("、"),
+      notes: formatFieldNotes(uniqueFields, notes),
+    },
+    formatReferenceNotes(uniqueFields, body.references ?? [])
+  )
 
   const parsed = await completeJson({
     settings,
@@ -93,18 +98,22 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
 
   const settings = parseAiSettings(body.settings)
   const notes = body.notes ?? {}
-  const prompt = renderPrompt(settings.batchPrompt, {
-    topic,
-    count: String(Math.floor(count)),
-    fields: fields.join("、"),
-    key: fields[0] ?? "",
-    existing: existingKeys.length > 0 ? existingKeys.join("、") : "（无）",
-    field: fields[0] ?? "",
-    current: "",
-    context: formatFieldNotes(fields, notes),
-    note: notes[fields[0] ?? ""]?.trim() || "（无）",
-    notes: formatFieldNotes(fields, notes),
-  })
+  const prompt = applyPromptWithReferences(
+    settings.batchPrompt,
+    {
+      topic,
+      count: String(Math.floor(count)),
+      fields: fields.join("、"),
+      key: fields[0] ?? "",
+      existing: existingKeys.length > 0 ? existingKeys.join("、") : "（无）",
+      field: fields[0] ?? "",
+      current: "",
+      context: formatFieldNotes(fields, notes),
+      note: notes[fields[0] ?? ""]?.trim() || "（无）",
+      notes: formatFieldNotes(fields, notes),
+    },
+    formatReferenceNotes(fields, body.references ?? [])
+  )
 
   const parsed = await completeJson({
     settings,
@@ -154,6 +163,7 @@ export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiRe
     topic: "",
     count: "",
     existing: "",
+    references: "",
   })
 
   const parsed = await completeJson({

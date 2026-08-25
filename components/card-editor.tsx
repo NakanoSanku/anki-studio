@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Check, ChevronLeft, ChevronRight, Plus, Search, Sparkles } from "lucide-react"
 
-import { requestBatchAi, requestCardAi } from "@/lib/ai"
+import { requestBatchAi, requestCardAi, referenceValuesForComplete } from "@/lib/ai"
 import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
 import { removeNoteSchedule } from "@/lib/fsrs"
 import {
@@ -33,6 +33,7 @@ import {
   type EditorState,
   type ReviewFilter,
 } from "@/lib/editor-state"
+import { ReferenceNotesBar, ReferenceNotesPicker } from "@/components/reference-notes-bar"
 import { TtsPlayButton } from "@/components/tts-play-button"
 import {
   AlertDialog,
@@ -103,6 +104,7 @@ export function CardEditor({
   const pendingDecks = useRef(new Set<Deck>())
   const [alert, setAlert] = useState("")
   const [batchOpen, setBatchOpen] = useState(false)
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
   const [batchCount, setBatchCount] = useState("10")
   const [query, setQuery] = useState("")
@@ -336,6 +338,9 @@ export function CardEditor({
       .map((card) => (keyField ? card.values[keyField] ?? "" : ""))
       .map((value) => value.trim())
       .filter(Boolean)
+    const references = review.referenceIds
+      .map((id) => deck.cards.find((card) => card.id === id)?.values)
+      .filter((values): values is Record<string, string> => Boolean(values))
     const anchorId = selected?.id ?? ""
     void runAi("batch", async () => {
       const generated = await requestBatchAi({
@@ -344,6 +349,7 @@ export function CardEditor({
         fields,
         existingKeys,
         notes,
+        references,
       })
       const incoming = generated.map((values) => createCard(fields, values))
       const beforeLen = deckRef.current.cards.length
@@ -364,11 +370,19 @@ export function CardEditor({
     if (!selected) return
     const cardId = selected.id
     const values = selected.values
+    const references = referenceValuesForComplete(
+      review.referenceIds.flatMap((id) => {
+        const card = deck.cards.find((item) => item.id === id)
+        return card ? [{ id: card.id, values: card.values }] : []
+      }),
+      cardId
+    )
     void runAi("card:complete", async () => {
       const generated = await requestCardAi({
         fields: editableFields,
         values,
         notes: notesOf(deck),
+        references,
       })
       const result = commitChange((current) => mergeCardAiValues(current, cardId, generated))
       if (!result.ok) throw new Error(result.error)
@@ -655,13 +669,20 @@ export function CardEditor({
     <Dialog open={batchOpen} onOpenChange={setBatchOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>批量生成卡片</DialogTitle>
+          <DialogTitle>批量生成笔记</DialogTitle>
           <DialogDescription>
-            按主题或粘贴词表一次生成多张卡片。与现有首字段相同的不会写入。新卡片插在当前卡片后面。
+            按主题或粘贴词表一次生成多条笔记。与现有首字段相同的不会写入。新笔记插在当前笔记后面。
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-2">
+        <div className="flex flex-col gap-3">
+          <ReferenceNotesBar
+            cards={deck.cards}
+            fields={editableFields}
+            referenceIds={review.referenceIds}
+            onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))}
+            onOpenPicker={() => setReferencePickerOpen(true)}
+          />
+          <div className="flex flex-col gap-2">
             <Label htmlFor="batch-topic">主题或词表</Label>
             <Textarea
               id="batch-topic"
@@ -671,7 +692,7 @@ export function CardEditor({
               onChange={(event) => setBatchTopic(event.target.value)}
             />
           </div>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="batch-count">数量</Label>
             <Input
               id="batch-count"
@@ -807,6 +828,7 @@ export function CardEditor({
       >
         {selected ? (
           <>
+            <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <p className="shrink-0 text-sm font-medium">编辑卡片</p>
               <div className="flex min-w-0 shrink-0 items-center gap-1">
@@ -841,6 +863,14 @@ export function CardEditor({
                   删除
                 </Button>
               </div>
+            </div>
+            <ReferenceNotesBar
+              cards={deck.cards}
+              fields={editableFields}
+              referenceIds={review.referenceIds}
+              onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))}
+              onOpenPicker={() => setReferencePickerOpen(true)}
+            />
             </div>
             <div className="flex flex-col gap-4">
               {deck.fields.map((field) => {
@@ -907,6 +937,14 @@ export function CardEditor({
       )}
       {aiDialog}
       {batchDialog}
+      <ReferenceNotesPicker
+        cards={deck.cards}
+        fields={editableFields}
+        referenceIds={review.referenceIds}
+        onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))}
+        open={referencePickerOpen}
+        onOpenChange={setReferencePickerOpen}
+      />
     </div>
   )
 }

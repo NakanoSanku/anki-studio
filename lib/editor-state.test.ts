@@ -8,6 +8,7 @@ import {
   matchesReviewFilter,
   parseEditorState,
   pruneEditorState,
+  toggleReference,
 } from "./editor-state"
 
 const fields = ["Word", "Translation"]
@@ -49,7 +50,28 @@ describe("pruneEditorState", () => {
     expect(state).toEqual({
       selectedId: cards[1]!.id,
       reviewed: [],
+      referenceIds: [],
     })
+  })
+})
+
+describe("reference notes", () => {
+  it("keeps pinned ids in selection order and drops missing notes", () => {
+    const pinned = toggleReference(
+      toggleReference(defaultEditorState({ cards }), cards[2]!.id),
+      cards[0]!.id
+    )
+    expect(pinned.referenceIds).toEqual([cards[2]!.id, cards[0]!.id])
+    const pruned = pruneEditorState(pinned, [cards[0]!])
+    expect(pruned.referenceIds).toEqual([cards[0]!.id])
+  })
+
+  it("restores reference ids from saved editor state", () => {
+    const state = parseEditorState(
+      JSON.stringify({ selectedId: cards[0]!.id, reviewed: [], referenceIds: [cards[1]!.id, "gone"] }),
+      { cards }
+    )
+    expect(state.referenceIds).toEqual([cards[1]!.id])
   })
 })
 

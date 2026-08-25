@@ -6,6 +6,7 @@ export type CardAiInput = {
   fields: string[]
   values: Record<string, string>
   notes?: Record<string, string>
+  references?: Record<string, string>[]
   settings?: AiSettings
 }
 
@@ -37,6 +38,31 @@ export function formatCardContext(
     .join("\n")
 }
 
+export function formatReferenceNotes(
+  fields: string[],
+  notes: Array<Record<string, string>>
+): string {
+  if (notes.length === 0) return ""
+  return notes
+    .map((values, index) => {
+      const lines = fields
+        .map((field) => {
+          const value = values[field]?.trim()
+          return value ? `${field}: ${value}` : ""
+        })
+        .filter(Boolean)
+      return `【${index + 1}】\n${lines.join("\n") || "（空）"}`
+    })
+    .join("\n\n")
+}
+
+export function referenceValuesForComplete(
+  notes: Array<{ id: string; values: Record<string, string> }>,
+  currentId: string
+): Array<Record<string, string>> {
+  return notes.filter((note) => note.id !== currentId).map((note) => note.values)
+}
+
 export function formatTtsFields(fieldTts: Record<string, TtsField> = {}): string {
   const lines = Object.entries(fieldTts).map(([name, tts]) => {
     const lang = tts.lang === "th" ? "泰语" : "英语"
@@ -58,6 +84,7 @@ export type BatchAiInput = {
   fields: string[]
   existingKeys: string[]
   notes?: Record<string, string>
+  references?: Record<string, string>[]
   settings?: AiSettings
 }
 

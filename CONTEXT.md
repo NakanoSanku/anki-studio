@@ -51,3 +51,7 @@ _Avoid_: 更多, 工具
 **复习参数**:
 The 设置 subpage for FSRS retention, daily limits, and max interval. It is not the 学习 tab.
 _Avoid_: 学习 as this page's name; FSRS as the only on-screen label
+
+**参考笔记**:
+Existing notes in the active 卡包 that the user pins as writing examples for AI 补全 and 批量生成.
+_Avoid_: 范例卡片, few-shot, 上下文

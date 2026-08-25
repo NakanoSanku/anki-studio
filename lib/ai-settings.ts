@@ -18,7 +18,9 @@ export const DEFAULT_CARD_COMPLETE_PROMPT = `只补全这张卡片里仍然为�
 字段备注：
 {{notes}}
 当前内容：
-{{context}}`
+{{context}}
+参考笔记（学写法，不要照抄词条）：
+{{references}}`
 
 export const DEFAULT_BATCH_PROMPT = `请生成 {{count}} 张互不重复的单词卡片。
 主题或词表：
@@ -27,7 +29,9 @@ export const DEFAULT_BATCH_PROMPT = `请生成 {{count}} 张互不重复的单�
 字段备注：
 {{notes}}
 不要使用这些已有单词：{{existing}}
-每张卡片的「{{key}}」必须不同。`
+每张卡片的「{{key}}」必须不同。
+参考笔记（学写法，不要照抄词条）：
+{{references}}`
 
 export const DEFAULT_TEMPLATE_EDIT_PROMPT = `按用户说明修改 Anki 卡片模板。
 用户说明：
@@ -147,6 +151,19 @@ export function renderPrompt(template: string, vars: Record<string, string>): st
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? "")
 }
 
+const REFERENCES_PLACEHOLDER = /\{\{references\}\}/
+
+export function applyPromptWithReferences(
+  template: string,
+  vars: Record<string, string>,
+  references: string
+): string {
+  const filled = references.trim() ? references : "（无）"
+  const rendered = renderPrompt(template, { ...vars, references: filled })
+  if (REFERENCES_PLACEHOLDER.test(template) || filled === "（无）") return rendered
+  return `${rendered}\n\n参考笔记（学写法，不要照抄词条）：\n${filled}`
+}
+
 export type PromptKey =
   | "systemPrompt"
   | "cardCompletePrompt"
@@ -170,6 +187,7 @@ const CARD_VARS: PromptVariable[] = [
   { id: "fields", label: "字段列表" },
   { id: "notes", label: "全部备注" },
   { id: "context", label: "整卡内容" },
+  { id: "references", label: "参考笔记" },
 ]
 
 export const PROMPT_SPECS: PromptSpec[] = [
@@ -196,6 +214,7 @@ export const PROMPT_SPECS: PromptSpec[] = [
       { id: "fields", label: "字段列表" },
       { id: "notes", label: "全部备注" },
       { id: "existing", label: "已有单词" },
+      { id: "references", label: "参考笔记" },
     ],
   },
   {

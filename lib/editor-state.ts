@@ -7,6 +7,7 @@ export type ReviewFilter = "all" | "unreviewed"
 export type EditorState = {
   selectedId: string
   reviewed: string[]
+  referenceIds: string[]
 }
 
 export function editorStateKey(deckId: string): string {
@@ -29,16 +30,18 @@ export function defaultEditorState(deck: Pick<Deck, "cards">): EditorState {
   return {
     selectedId: deck.cards[0]?.id ?? "",
     reviewed: [],
+    referenceIds: [],
   }
 }
 
 export function pruneEditorState(state: EditorState, cards: Card[]): EditorState {
   const allowed = new Set(cards.map((card) => card.id))
-  const reviewed = uniqueIds(state.reviewed, allowed)
+  const reviewed = uniqueIds(state.reviewed ?? [], allowed)
+  const referenceIds = uniqueIds(state.referenceIds ?? [], allowed)
   const selectedId = allowed.has(state.selectedId)
     ? state.selectedId
     : cards.find((card) => !reviewed.includes(card.id))?.id ?? cards[0]?.id ?? ""
-  return { selectedId, reviewed }
+  return { selectedId, reviewed, referenceIds }
 }
 
 export function parseEditorState(raw: string, deck: Pick<Deck, "cards">): EditorState {
@@ -50,7 +53,10 @@ export function parseEditorState(raw: string, deck: Pick<Deck, "cards">): Editor
     const reviewed = Array.isArray(record.reviewed)
       ? record.reviewed.filter((id): id is string => typeof id === "string")
       : []
-    return pruneEditorState({ selectedId, reviewed }, deck.cards)
+    const referenceIds = Array.isArray(record.referenceIds)
+      ? record.referenceIds.filter((id): id is string => typeof id === "string")
+      : []
+    return pruneEditorState({ selectedId, reviewed, referenceIds }, deck.cards)
   } catch {
     return defaultEditorState(deck)
   }
@@ -83,6 +89,14 @@ export function deleteEditorState(deckId: string): void {
   } catch {
     // ignore
   }
+}
+
+export function toggleReference(state: EditorState, id: string): EditorState {
+  if (!id) return state
+  if (state.referenceIds.includes(id)) {
+    return { ...state, referenceIds: state.referenceIds.filter((item) => item !== id) }
+  }
+  return { ...state, referenceIds: [...state.referenceIds, id] }
 }
 
 export function markReviewed(state: EditorState, id: string): EditorState {
