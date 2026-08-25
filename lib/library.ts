@@ -78,6 +78,10 @@ export function uniqueDeckName(names: string[], base = "新卡包"): string {
   return `${trimmed} ${n}`
 }
 
+export function nextCopyDeckName(names: string[], sourceName: string): string {
+  return uniqueDeckName(names, `${sourceName.trim() || "未命名卡包"} 副本`)
+}
+
 export function entryFromDeck(id: string, deck: Deck, updatedAt = Date.now()): LibraryEntry {
   return {
     id,
@@ -438,7 +442,8 @@ export function cloneDeckAsCopy(deck: Deck, name: string): Deck {
 export async function duplicateLibraryDeck(
   library: Library,
   current: Deck,
-  sourceId = library.activeId
+  sourceId = library.activeId,
+  name?: string
 ): Promise<LibrarySession> {
   await persistActiveDeck(library, current)
   const sourceDeck =
@@ -447,10 +452,11 @@ export async function duplicateLibraryDeck(
       : (await getStudioStore().getRecord(sourceId))?.deck
   if (!sourceDeck) throw new Error("卡包不存在")
   const names = [...library.decks.map((entry) => entry.name), current.name, sourceDeck.name]
+  const requested = name?.trim() || `${sourceDeck.name} 副本`
   return addLibraryDeck(
     library,
     current,
-    cloneDeckAsCopy(sourceDeck, uniqueDeckName(names, `${sourceDeck.name} 副本`))
+    cloneDeckAsCopy(sourceDeck, uniqueDeckName(names, requested))
   )
 }
 

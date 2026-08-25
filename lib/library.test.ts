@@ -10,8 +10,10 @@ import {
   isDeckNameReady,
   LIBRARY_KEY,
   loadLibrarySession,
+  nextCopyDeckName,
   persistActiveDeck,
   switchLibraryDeck,
+  uniqueDeckName,
 } from "./library"
 import { createMemoryStore, getStudioStore, setStudioStore } from "./studio-store"
 
@@ -88,7 +90,35 @@ describe("isDeckNameReady", () => {
   })
 })
 
+describe("uniqueDeckName", () => {
+  it("keeps a free 副本 name", () => {
+    expect(uniqueDeckName(["旅行"], "旅行 副本")).toBe("旅行 副本")
+  })
+
+  it("appends 2 when 旅行 副本 already exists", () => {
+    expect(uniqueDeckName(["旅行", "旅行 副本"], "旅行 副本")).toBe("旅行 副本 2")
+  })
+})
+
+describe("nextCopyDeckName", () => {
+  it("prefills 旅行 副本 and uniquifies against existing names", () => {
+    expect(nextCopyDeckName(["旅行"], "旅行")).toBe("旅行 副本")
+    expect(nextCopyDeckName(["旅行", "旅行 副本"], "旅行")).toBe("旅行 副本 2")
+  })
+})
+
 describe("library operations", () => {
+  it("duplicates a 卡包 under the submitted name and makes it active", async () => {
+    const first = await loadLibrarySession()
+    await persistActiveDeck(first.library, first.deck)
+    const created = await createLibraryDeck(first.library, first.deck, "二号")
+    const originalId = first.library.activeId
+    const copied = await duplicateLibraryDeck(created.library, created.deck, originalId, "旅行备份")
+    expect(copied.library.activeId).not.toBe(originalId)
+    expect(copied.deck.name).toBe("旅行备份")
+    expect(copied.library.decks.some((entry) => entry.name === "旅行备份")).toBe(true)
+  })
+
   it("duplicates a non-active 卡包 into a new library entry", async () => {
     const first = await loadLibrarySession()
     await persistActiveDeck(first.library, first.deck)

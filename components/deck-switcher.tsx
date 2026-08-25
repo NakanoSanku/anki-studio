@@ -1,10 +1,32 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Check, MoreHorizontal } from "lucide-react"
 
-import { isDeckNameReady, type Library, type LibraryEntry } from "@/lib/library"
+import {
+  isDeckNameReady,
+  nextCopyDeckName,
+  type Library,
+  type LibraryEntry,
+} from "@/lib/library"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,15 +49,23 @@ type DeckSwitcherProps = {
   onOpenChange: (open: boolean) => void
   onSwitch: (id: string) => void
   onCreate: (name: string) => void
-  onDuplicate: (id: string) => void
+  onDuplicate: (id: string, name: string) => void
   onDelete: (id: string) => void
   onRename: (id: string, name: string) => void
 }
 
-type NestedStep =
+type DeckStep =
   | { kind: "create" }
   | { kind: "rename"; entry: LibraryEntry }
+  | { kind: "duplicate"; entry: LibraryEntry }
   | { kind: "delete"; entry: LibraryEntry }
+
+function nameTitle(kind: DeckStep["kind"]): string {
+  if (kind === "create") return "新建"
+  if (kind === "rename") return "改名"
+  if (kind === "duplicate") return "复制"
+  return "删除"
+}
 
 export function DeckSwitcher({
   open,
@@ -48,162 +78,219 @@ export function DeckSwitcher({
   onDelete,
   onRename,
 }: DeckSwitcherProps) {
-  const [step, setStep] = useState<NestedStep | null>(null)
+  const [step, setStep] = useState<DeckStep | null>(null)
   const [nameValue, setNameValue] = useState("")
+  const stepRef = useRef<DeckStep | null>(null)
+  stepRef.current = step
   const canDelete = library.decks.length > 1
   const nameReady = isDeckNameReady(nameValue)
+  const nameOpen =
+    open && (step?.kind === "create" || step?.kind === "rename" || step?.kind === "duplicate")
+  const deleteOpen = open && step?.kind === "delete"
 
   const displayName = (entry: LibraryEntry) =>
     entry.id === library.activeId ? activeName : entry.name
 
-  const closeNested = () => {
+  const visibleNames = () => library.decks.map((entry) => displayName(entry))
+
+  const closeStep = () => {
     setStep(null)
     setNameValue("")
   }
 
-  const nestedTitle = step?.kind === "create" ? "新建" : step?.kind === "rename" ? "改名" : "删除"
+  const startNameStep = (next: Exclude<DeckStep, { kind: "delete" }>, value: string) => {
+    setNameValue(value)
+    setStep(next)
+  }
+
+  useEffect(() => {
+    if (open) return
+    setStep(null)
+    setNameValue("")
+  }, [open])
+
+  useEffect(() => {
+    if (step?.kind !== "duplicate") return
+    setNameValue(
+      nextCopyDeckName(
+        library.decks.map((item) => (item.id === library.activeId ? activeName : item.name)),
+        step.entry.id === library.activeId ? activeName : step.entry.name
+      )
+    )
+  }, [step]) // prefill once per 复制 step; library/activeName are read from the opening render
+
+  const submitName = () => {
+    if (!nameReady || !step) return
+    const name = nameValue.trim()
+    if (step.kind === "create") onCreate(name)
+    else if (step.kind === "rename") onRename(step.entry.id, name)
+    else if (step.kind === "duplicate") onDuplicate(step.entry.id, name)
+    closeStep()
+  }
+
+  const blockSheetDismiss = (event: { preventDefault: () => void }) => {
+    if (stepRef.current) event.preventDefault()
+  }
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) closeNested()
-        onOpenChange(next)
-      }}
-    >
-      <SheetContent side="bottom" className="rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <SheetHeader>
-          <SheetTitle>卡包</SheetTitle>
-        </SheetHeader>
-        <ul className="grid gap-1 px-2 pb-2">
-          {library.decks.map((entry) => {
-            const active = entry.id === library.activeId
-            return (
-              <li key={entry.id} className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className={cn(
-                    "flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-3 text-left",
-                    active && "bg-muted"
-                  )}
-                  onClick={() => {
-                    if (active) onOpenChange(false)
-                    else onSwitch(entry.id)
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayName(entry)}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{entry.cardCount}</span>
-                  {active ? <Check className="size-4 shrink-0" /> : null}
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" size="icon-sm" variant="ghost" aria-label="更多">
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setNameValue(displayName(entry))
-                        setStep({ kind: "rename", entry })
-                      }}
-                    >
-                      改名
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onDuplicate(entry.id)}>复制</DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={!canDelete}
-                      onClick={() => setStep({ kind: "delete", entry })}
-                    >
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </li>
-            )
-          })}
-        </ul>
-        <div className="px-4 pb-2">
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => {
-              setNameValue("")
-              setStep({ kind: "create" })
-            }}
-          >
-            新建
-          </Button>
-        </div>
-
-        {step ? (
-          <div
-            data-slot="deck-nested-sheet"
-            className="fixed inset-0 z-[80] flex flex-col justify-end bg-black/20"
-          >
-            <div className="rounded-t-2xl border-t border-border/70 bg-popover pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg">
-              <SheetHeader>
-                <SheetTitle>{nestedTitle}</SheetTitle>
-              </SheetHeader>
-              {step.kind === "delete" ? (
-                <div className="space-y-4 px-4 pb-4">
-                  <p className="text-sm">确定删除「{displayName(step.entry)}」？本机数据无法恢复。</p>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={closeNested}>
-                      取消
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={() => {
-                        onDelete(step.entry.id)
-                        closeNested()
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4 px-4 pb-4">
-                  <Input
-                    value={nameValue}
-                    autoFocus
-                    aria-label={nestedTitle}
-                    onChange={(event) => setNameValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" || !nameReady) return
-                      if (step.kind === "create") onCreate(nameValue.trim())
-                      if (step.kind === "rename") onRename(step.entry.id, nameValue.trim())
-                      closeNested()
+    <>
+      <Sheet
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && stepRef.current) return
+          if (!next) closeStep()
+          onOpenChange(next)
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]"
+          onPointerDownOutside={blockSheetDismiss}
+          onInteractOutside={blockSheetDismiss}
+          onFocusOutside={blockSheetDismiss}
+          onEscapeKeyDown={blockSheetDismiss}
+        >
+          <SheetHeader>
+            <SheetTitle>卡包</SheetTitle>
+          </SheetHeader>
+          <ul className="grid gap-1 px-2 pb-2">
+            {library.decks.map((entry) => {
+              const active = entry.id === library.activeId
+              return (
+                <li key={entry.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-3 text-left",
+                      active && "bg-muted"
+                    )}
+                    onClick={() => {
+                      if (active) onOpenChange(false)
+                      else onSwitch(entry.id)
                     }}
-                  />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={closeNested}>
-                      取消
-                    </Button>
-                    <Button
-                      type="button"
-                      className="flex-1"
-                      disabled={!nameReady}
-                      onClick={() => {
-                        if (!nameReady) return
-                        if (step.kind === "create") onCreate(nameValue.trim())
-                        if (step.kind === "rename") onRename(step.entry.id, nameValue.trim())
-                        closeNested()
-                      }}
-                    >
-                      确定
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayName(entry)}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{entry.cardCount}</span>
+                    {active ? <Check className="size-4 shrink-0" /> : null}
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" size="icon-sm" variant="ghost" aria-label="更多">
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          startNameStep({ kind: "rename", entry }, displayName(entry))
+                        }}
+                      >
+                        改名
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          startNameStep(
+                            { kind: "duplicate", entry },
+                            nextCopyDeckName(visibleNames(), displayName(entry))
+                          )
+                        }}
+                      >
+                        复制
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={!canDelete}
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          setStep({ kind: "delete", entry })
+                        }}
+                      >
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="px-4 pb-2">
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => startNameStep({ kind: "create" }, "")}
+            >
+              新建
+            </Button>
           </div>
-        ) : null}
-      </SheetContent>
-    </Sheet>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog
+        open={nameOpen}
+        onOpenChange={(next) => {
+          if (!next) closeStep()
+        }}
+      >
+        <DialogContent showCloseButton={false} aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{step ? nameTitle(step.kind) : ""}</DialogTitle>
+          </DialogHeader>
+          <Input
+            key={step?.kind === "duplicate" || step?.kind === "rename" ? `${step.kind}:${step.entry.id}` : step?.kind}
+            value={nameValue}
+            autoFocus
+            data-testid="deck-name-input"
+            aria-label={step ? nameTitle(step.kind) : "名称"}
+            onChange={(event) => setNameValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !nameReady) return
+              submitName()
+            }}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeStep}>
+              取消
+            </Button>
+            <Button type="button" disabled={!nameReady} onClick={submitName}>
+              确定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(next) => {
+          if (!next) closeStep()
+        }}
+      >
+        <AlertDialogContent
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              {step?.kind === "delete"
+                ? `确定删除「${displayName(step.entry)}」？本机数据无法恢复。`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (step?.kind === "delete") onDelete(step.entry.id)
+              }}
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

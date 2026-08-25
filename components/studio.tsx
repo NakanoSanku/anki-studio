@@ -525,8 +525,8 @@ export function Studio() {
       })
   }
 
-  const duplicateDeck = (id: string) => {
-    void duplicateLibraryDeck(library, deck, id)
+  const duplicateDeck = (id: string, name: string) => {
+    void duplicateLibraryDeck(library, deck, id, name)
       .then((session) => applySession(session, "已复制卡包"))
       .catch((error: unknown) => {
         showStatus(error instanceof Error ? error.message : "复制失败")
