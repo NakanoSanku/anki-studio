@@ -1,9 +1,15 @@
 import NextAuth from "next-auth"
 
-import { authOptions } from "@/lib/google-auth"
+import { createGoogleAuthOptions } from "@/lib/google-auth"
 
 export const dynamic = "force-dynamic"
 
-const handler = NextAuth(authOptions)
+type RouteContext = {
+  params: Promise<{ nextauth: string[] }>
+}
+
+const handler = (request: Request, context: RouteContext) => (
+  NextAuth(createGoogleAuthOptions())(request, context)
+)
 
 export { handler as GET, handler as POST }

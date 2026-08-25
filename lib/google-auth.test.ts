@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  createGoogleAuthOptions,
   hasGoogleSheetsScope,
   isAllowedGoogleProfile,
   isAllowedGoogleSession,
@@ -10,6 +11,19 @@ import {
 } from "./google-auth"
 
 describe("Google OAuth configuration", () => {
+  it("builds the Google provider from runtime secrets", () => {
+    const options = createGoogleAuthOptions({
+      GOOGLE_CLIENT_ID: "client-id",
+      GOOGLE_CLIENT_SECRET: "client-secret",
+      GOOGLE_ALLOWED_EMAILS: "kate@example.com",
+      AUTH_SECRET: "session-secret",
+    })
+
+    expect(options.secret).toBe("session-secret")
+    expect(options.providers).toHaveLength(1)
+    expect(options.providers[0]).toMatchObject({ id: "google", name: "Google" })
+  })
+
   it("stays disabled when no OAuth setting is present", () => {
     expect(readGoogleOAuthConfiguration({})).toEqual({
       state: "disabled",

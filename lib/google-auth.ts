@@ -145,81 +145,85 @@ export async function refreshGoogleAccessToken(
   }
 }
 
-const startupConfiguration = readGoogleOAuthConfiguration()
+export function createGoogleAuthOptions(
+  environment: Environment = process.env
+): NextAuthOptions {
+  const configuration = readGoogleOAuthConfiguration(environment)
 
-export const authOptions: NextAuthOptions = {
-  secret: startupConfiguration.state === "ready" ? startupConfiguration.authSecret : undefined,
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60,
-  },
-  providers: startupConfiguration.state === "ready"
-    ? [
-        GoogleProvider({
-          clientId: startupConfiguration.clientId,
-          clientSecret: startupConfiguration.clientSecret,
-          authorization: {
-            params: {
-              access_type: "offline",
-              include_granted_scopes: "true",
-              prompt: "consent",
-              scope: `openid email profile ${GOOGLE_SHEETS_SCOPE}`,
+  return {
+    secret: configuration.state === "ready" ? configuration.authSecret : undefined,
+    session: {
+      strategy: "jwt",
+      maxAge: 30 * 24 * 60 * 60,
+    },
+    providers: configuration.state === "ready"
+      ? [
+          GoogleProvider({
+            clientId: configuration.clientId,
+            clientSecret: configuration.clientSecret,
+            authorization: {
+              params: {
+                access_type: "offline",
+                include_granted_scopes: "true",
+                prompt: "consent",
+                scope: `openid email profile ${GOOGLE_SHEETS_SCOPE}`,
+              },
             },
-          },
-        }),
-      ]
-    : [],
-  pages: {
-    error: "/auth/error",
-  },
-  callbacks: {
-    async signIn({ account, profile }) {
-      if (account?.provider !== "google") return false
-      const configuration = readGoogleOAuthConfiguration()
-      return configuration.state === "ready"
-        && isAllowedGoogleProfile(profile, configuration.allowedEmails)
+          }),
+        ]
+      : [],
+    pages: {
+      error: "/auth/error",
     },
-    async jwt({ token, account }) {
-      const googleToken = token as GoogleToken
-      if (account?.provider === "google") {
-        return {
-          ...googleToken,
-          googleAccessToken: account.access_token,
-          googleRefreshToken: account.refresh_token ?? googleToken.googleRefreshToken,
-          googleAccessTokenExpires: typeof account.expires_at === "number"
-            ? account.expires_at * 1000
-            : Date.now() + 3600 * 1000,
-          googleScope: account.scope,
-          googleAccessError: undefined,
+    callbacks: {
+      async signIn({ account, profile }) {
+        if (account?.provider !== "google") return false
+        const currentConfiguration = readGoogleOAuthConfiguration(environment)
+        return currentConfiguration.state === "ready"
+          && isAllowedGoogleProfile(profile, currentConfiguration.allowedEmails)
+      },
+      async jwt({ token, account }) {
+        const googleToken = token as GoogleToken
+        if (account?.provider === "google") {
+          return {
+            ...googleToken,
+            googleAccessToken: account.access_token,
+            googleRefreshToken: account.refresh_token ?? googleToken.googleRefreshToken,
+            googleAccessTokenExpires: typeof account.expires_at === "number"
+              ? account.expires_at * 1000
+              : Date.now() + 3600 * 1000,
+            googleScope: account.scope,
+            googleAccessError: undefined,
+          }
         }
-      }
 
-      if (
-        googleToken.googleAccessToken
-        && googleToken.googleAccessTokenExpires
-        && Date.now() < googleToken.googleAccessTokenExpires - ACCESS_TOKEN_REFRESH_MARGIN_MS
-      ) {
-        return googleToken
-      }
+        if (
+          googleToken.googleAccessToken
+          && googleToken.googleAccessTokenExpires
+          && Date.now() < googleToken.googleAccessTokenExpires - ACCESS_TOKEN_REFRESH_MARGIN_MS
+        ) {
+          return googleToken
+        }
 
-      if (googleToken.googleRefreshToken) {
-        return refreshGoogleAccessToken(googleToken)
-      }
-      return googleToken.googleAccessToken
-        ? { ...googleToken, googleAccessError: "RefreshAccessTokenError" }
-        : googleToken
+        if (googleToken.googleRefreshToken) {
+          return refreshGoogleAccessToken(googleToken)
+        }
+        return googleToken.googleAccessToken
+          ? { ...googleToken, googleAccessError: "RefreshAccessTokenError" }
+          : googleToken
+      },
+      async session({ session, token }) {
+        const googleSession = session as GoogleSession
+        const googleToken = token as GoogleToken
+        googleSession.googleAccessToken = googleToken.googleAccessToken
+        googleSession.googleScope = googleToken.googleScope
+        googleSession.googleAccessError = googleToken.googleAccessError
+        return googleSession
+      },
     },
-    async session({ session, token }) {
-      const googleSession = session as GoogleSession
-      const googleToken = token as GoogleToken
-      googleSession.googleAccessToken = googleToken.googleAccessToken
-      googleSession.googleScope = googleToken.googleScope
-      googleSession.googleAccessError = googleToken.googleAccessError
-      return googleSession
-    },
-  },
+  }
 }
 
 export async function getGoogleSession(): Promise<GoogleSession | null> {
-  return getServerSession(authOptions) as Promise<GoogleSession | null>
+  return getServerSession(createGoogleAuthOptions()) as Promise<GoogleSession | null>
 }
