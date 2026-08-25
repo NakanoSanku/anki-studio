@@ -44,6 +44,7 @@ describe("pruneEditorState", () => {
       {
         selectedId: cards[0]!.id,
         reviewed: [cards[0]!.id, "gone"],
+        referenceIds: [],
       },
       [cards[1]!]
     )

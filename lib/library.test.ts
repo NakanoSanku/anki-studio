@@ -170,6 +170,7 @@ describe("library operations", () => {
     writeEditorState(copied.library.activeId, {
       selectedId: copied.deck.cards[0]?.id ?? "",
       reviewed: [copied.deck.cards[0]?.id ?? ""],
+      referenceIds: [],
     })
     expect(memory.get(editorStateKey(copied.library.activeId))).toBeTruthy()
     const deleted = await deleteLibraryDeck(copied.library, copied.deck, copied.library.activeId)
