@@ -22,7 +22,6 @@ type DeckToolsPanelProps = {
   exportProgress: { done: number; total: number } | null
   pushLabel: string
   hasTts: boolean
-  onOpenLibrary: () => void
   onImport: () => void
   onExportJson: () => void
   onExportCsv: () => void
@@ -63,7 +62,6 @@ export function DeckToolsPanel({
   exportProgress,
   pushLabel,
   hasTts,
-  onOpenLibrary,
   onImport,
   onExportJson,
   onExportCsv,
@@ -91,11 +89,6 @@ export function DeckToolsPanel({
             </span>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </button>
-        </li>
-        <li className="border-t border-border/70">
-          <RowButton disabled={actionsDisabled} onClick={onOpenLibrary}>
-            管理卡包
-          </RowButton>
         </li>
         <li className="border-t border-border/70">
           <Link

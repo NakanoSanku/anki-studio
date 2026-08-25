@@ -7,6 +7,7 @@ import {
   createLibraryDeck,
   deleteLibraryDeck,
   duplicateLibraryDeck,
+  isDeckNameReady,
   LIBRARY_KEY,
   loadLibrarySession,
   persistActiveDeck,
@@ -78,7 +79,39 @@ describe("loadLibrarySession", () => {
   })
 })
 
+describe("isDeckNameReady", () => {
+  it("rejects whitespace-only names and accepts a trimmed name", () => {
+    expect(isDeckNameReady("")).toBe(false)
+    expect(isDeckNameReady("   ")).toBe(false)
+    expect(isDeckNameReady("旅行")).toBe(true)
+    expect(isDeckNameReady("  单词本  ")).toBe(true)
+  })
+})
+
 describe("library operations", () => {
+  it("duplicates a non-active 卡包 into a new library entry", async () => {
+    const first = await loadLibrarySession()
+    await persistActiveDeck(first.library, first.deck)
+    const created = await createLibraryDeck(first.library, first.deck, "二号")
+    const originalId = first.library.activeId
+    const copied = await duplicateLibraryDeck(created.library, created.deck, originalId)
+    expect(copied.library.decks).toHaveLength(3)
+    const source = copied.library.decks.find((entry) => entry.id === originalId)
+    const clone = copied.library.decks.find((entry) => entry.id === copied.library.activeId)
+    expect(source?.name).toBe(first.deck.name)
+    expect(clone?.name).toContain("副本")
+    expect(clone?.id).not.toBe(originalId)
+    expect(copied.deck.cards[0]?.id).not.toBe(first.deck.cards[0]?.id)
+  })
+
+  it("creates a 卡包 with the explicit name instead of 新卡包", async () => {
+    const first = await loadLibrarySession()
+    await persistActiveDeck(first.library, first.deck)
+    const created = await createLibraryDeck(first.library, first.deck, "旅行")
+    expect(created.deck.name).toBe("旅行")
+    expect(created.library.decks.some((entry) => entry.name === "新卡包")).toBe(false)
+  })
+
   it("creates, switches, duplicates, and refuses to delete the last deck", async () => {
     const first = await loadLibrarySession()
     await persistActiveDeck(first.library, first.deck)

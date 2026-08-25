@@ -2,15 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  BarChart3,
   CheckCircle2,
-  Flame,
-  Gauge,
-  Maximize2,
-  Minimize2,
   Pencil,
   RotateCcw,
-  Sparkles,
   X,
 } from "lucide-react"
 
@@ -26,7 +20,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -39,7 +32,6 @@ import {
   previewRatingOptions,
   reviewStudyItem,
   type StudyItem,
-  type StudyStats,
 } from "@/lib/fsrs"
 import { previewDocument, renderCard } from "@/lib/template"
 import { ttsFieldsOnSide } from "@/lib/tts"
@@ -49,8 +41,6 @@ type StudySessionProps = {
   deck: Deck
   onChange: (deck: Deck) => void
   onExit: () => void
-  immersive: boolean
-  onImmersiveChange: (immersive: boolean) => void
 }
 
 const ratingStyle = {
@@ -129,125 +119,21 @@ function StudyCard({ deck, item, revealed }: { deck: Deck; item: StudyItem; reve
   )
 }
 
-function SessionStat({ label, value, hint }: { label: string; value: string | number; hint: string }) {
-  return (
-    <div className="rounded-xl border border-border/70 bg-muted/25 p-3.5">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 font-mono text-xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{hint}</p>
-    </div>
-  )
-}
-
-function SessionDetails({
-  completed,
-  total,
-  progress,
-  stats,
-  now,
-}: {
-  completed: number
-  total: number
-  progress: number
-  stats: StudyStats
-  now: Date
-}) {
-  return (
-    <Sheet>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <SheetTrigger asChild>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="查看本轮详情">
-              <BarChart3 className="size-4" />
-            </Button>
-          </SheetTrigger>
-        </TooltipTrigger>
-        <TooltipContent>本轮详情</TooltipContent>
-      </Tooltip>
-      <SheetContent className="gap-0 data-[side=right]:w-[min(92vw,24rem)] sm:max-w-sm">
-        <SheetHeader className="border-b border-border/70 px-5 py-5">
-          <SheetTitle>本轮学习</SheetTitle>
-          <SheetDescription>FSRS 会根据每次真实感受安排下一次复习。</SheetDescription>
-        </SheetHeader>
-
-        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6">
-          <section aria-labelledby="session-progress-title">
-            <div className="flex items-center justify-between gap-3">
-              <h2 id="session-progress-title" className="text-sm font-medium">本轮进度</h2>
-              <span className="font-mono text-xs text-muted-foreground">{completed} / {total}</span>
-            </div>
-            <Progress className="mt-3 h-1.5" value={progress} />
-          </section>
-
-          <div className="grid grid-cols-2 gap-3">
-            <SessionStat label="现在到期" value={stats.dueNow} hint="可立即复习" />
-            <SessionStat label="仍是新卡" value={stats.newCount} hint="受每日上限控制" />
-            <SessionStat label="今日已复习" value={stats.reviewedToday} hint="今天的评分次数" />
-            <SessionStat label="连续学习" value={`${stats.streak} 天`} hint="保持稳定节奏" />
-          </div>
-
-          <div className="rounded-xl border border-border/70 p-4">
-            <div className="flex items-start gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Sparkles className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">下一张到期</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {stats.nextDue ? formatDueDate(stats.nextDue, now) : "完成评分后由 FSRS 自动安排"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 border-t border-border/70 pt-5 text-xs leading-5 text-muted-foreground">
-            <p className="flex items-start gap-2">
-              <Gauge className="mt-0.5 size-4 shrink-0" />
-              先回忆，再显示答案；按真实难度评分，而不只是判断对错。
-            </p>
-            <p className="flex items-start gap-2">
-              <Flame className="mt-0.5 size-4 shrink-0" />
-              键盘按 Space 显示答案，答案出现后按 1–4 完成评分。
-            </p>
-            <p className="flex items-start gap-2">
-              <Maximize2 className="mt-0.5 size-4 shrink-0" />
-              按 F 进入沉浸模式；支持时会全屏并在学习期间保持屏幕唤醒。
-            </p>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
 function FocusHeader({
   completed,
   total,
   progress,
-  stats,
-  now,
   onExit,
   onEdit,
-  immersive,
-  onToggleImmersive,
 }: {
   completed: number
   total: number
   progress: number
-  stats: StudyStats
-  now: Date
   onExit: () => void
   onEdit: () => void
-  immersive: boolean
-  onToggleImmersive: () => void
 }) {
   return (
-    <header
-      className={cn(
-        "relative z-20 shrink-0 border-b border-border/65 bg-background/92 pt-[env(safe-area-inset-top)]",
-        immersive && "border-transparent bg-background/72"
-      )}
-    >
+    <header className="relative z-20 shrink-0 border-b border-border/65 bg-background/92 pt-[env(safe-area-inset-top)]">
       <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 sm:min-h-16 sm:px-5">
         <Button type="button" size="icon-sm" variant="ghost" aria-label="退出学习" onClick={onExit}>
           <X className="size-4" />
@@ -260,41 +146,9 @@ function FocusHeader({
           </span>
         </div>
 
-        <div className="flex items-center justify-end gap-1">
-          <Button type="button" size="sm" variant="ghost" aria-label="改这条笔记" onClick={onEdit}>
-            <Pencil className="size-4" />
-            改
-          </Button>
-          <SessionDetails
-            completed={completed}
-            total={total}
-            progress={progress}
-            stats={stats}
-            now={now}
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label={immersive ? "退出全屏" : "全屏"}
-                aria-pressed={immersive}
-                onClick={onToggleImmersive}
-              >
-                {immersive ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{immersive ? "退出全屏" : "全屏"}</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 px-4 pb-3 sm:hidden">
-        <Progress value={progress} aria-label={`本轮已完成 ${completed}，共 ${total} 张`} />
-        <span className="w-12 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
-          {completed} / {total}
-        </span>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="改这条笔记" onClick={onEdit}>
+          <Pencil className="size-4" />
+        </Button>
       </div>
     </header>
   )
@@ -303,23 +157,16 @@ function FocusHeader({
 function RatingDock({
   revealed,
   options,
-  immersive,
   onReveal,
   onRate,
 }: {
   revealed: boolean
   options: ReturnType<typeof previewRatingOptions>
-  immersive: boolean
   onReveal: () => void
   onRate: (rating: (typeof options)[number]["rating"]) => void
 }) {
   return (
-    <div
-      className={cn(
-        "relative z-20 shrink-0 border-t border-border/70 bg-background/94 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-18px_42px_-38px_rgba(28,25,23,0.8)] backdrop-blur-xl transition-colors duration-300 sm:px-5 sm:py-4 lg:px-7 motion-reduce:transition-none",
-        immersive && "border-transparent bg-background/78 shadow-none"
-      )}
-    >
+    <div className="relative z-20 shrink-0 border-t border-border/70 bg-background/94 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4 lg:px-7">
       <div className="mx-auto h-16 w-full max-w-5xl sm:h-18">
         {!revealed ? (
           <Button
@@ -368,8 +215,6 @@ export function StudySession({
   deck,
   onChange,
   onExit,
-  immersive,
-  onImmersiveChange,
 }: StudySessionProps) {
   const [revealed, setRevealed] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -393,29 +238,6 @@ export function StudySession({
     setRevealed(true)
     touchFeedback(8)
   }, [])
-
-  const toggleImmersive = useCallback(() => {
-    if (immersive) {
-      onImmersiveChange(false)
-      if (document.fullscreenElement) {
-        void document.exitFullscreen().catch(() => undefined)
-      }
-      return
-    }
-
-    onImmersiveChange(true)
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => undefined)
-    }
-  }, [immersive, onImmersiveChange])
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement) onImmersiveChange(false)
-    }
-    document.addEventListener("fullscreenchange", onFullscreenChange)
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange)
-  }, [onImmersiveChange])
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 30_000)
@@ -501,16 +323,12 @@ export function StudySession({
         completed={completed}
         total={total}
         progress={progress}
-        stats={stats}
-        now={now}
         onExit={onExit}
         onEdit={() => {
           setEditValues({ ...current.note.values })
           setEditError("")
           setEditOpen(true)
         }}
-        immersive={immersive}
-        onToggleImmersive={toggleImmersive}
       />
 
       <div
@@ -583,7 +401,6 @@ export function StudySession({
       <RatingDock
         revealed={revealed}
         options={options}
-        immersive={immersive}
         onReveal={reveal}
         onRate={rate}
       />

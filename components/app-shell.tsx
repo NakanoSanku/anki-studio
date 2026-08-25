@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -36,6 +36,7 @@ type AppShellProps = {
   syncUnavailable?: string
   deckName: string
   status?: string
+  lockViewport?: boolean
   onSync: () => void
   onDeckClick: () => void
   children: ReactNode
@@ -60,6 +61,9 @@ function headerMeta(pathname: string): { backHref?: string; title: string; showD
   if (pathname === PATHS.settingsTemplates) {
     return { backHref: PATHS.settingsDeck, title: "模板", showDeck: true }
   }
+  if (pathname === PATHS.settingsDeck) {
+    return { backHref: PATHS.settings, title: "卡包", showDeck: true }
+  }
   const row = SETTINGS_ROWS.find((item) => item.href === pathname)
   if (row) {
     return { backHref: PATHS.settings, title: row.label, showDeck: false }
@@ -74,6 +78,7 @@ export function AppShell({
   syncUnavailable,
   deckName,
   status,
+  lockViewport = false,
   onSync,
   onDeckClick,
   children,
@@ -82,11 +87,37 @@ export function AppShell({
   const router = useRouter()
   const showTabBar = tabBarVisible(pathname)
   const session = pathname === PATHS.studySession
+  const lock = lockViewport || pathname === PATHS.notes
   const header = headerMeta(pathname)
   const name = deckName.trim() || "未命名卡包"
 
+  useEffect(() => {
+    if (!lock) return
+    const html = document.documentElement
+    const { body } = document
+    const previousHtmlOverflow = html.style.overflow
+    const previousBodyOverflow = body.style.overflow
+    const previousOverscroll = body.style.overscrollBehavior
+    html.style.overflow = "hidden"
+    body.style.overflow = "hidden"
+    body.style.overscrollBehavior = "none"
+    return () => {
+      html.style.overflow = previousHtmlOverflow
+      body.style.overflow = previousBodyOverflow
+      body.style.overscrollBehavior = previousOverscroll
+    }
+  }, [lock])
+
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground">
+    <div
+      data-testid={lock ? "notes-shell" : undefined}
+      className={cn(
+        "flex flex-col bg-background text-foreground",
+        lock
+          ? "fixed inset-0 overflow-hidden overscroll-none"
+          : "min-h-[100dvh]"
+      )}
+    >
       {status ? (
         <div
           role="status"
@@ -99,7 +130,10 @@ export function AppShell({
 
       {!session ? (
         <header
-          className="sticky top-0 z-30 border-b border-border/80 bg-background/95 pt-[env(safe-area-inset-top)]"
+          className={cn(
+            "z-30 border-b border-border/80 bg-background/95 pt-[env(safe-area-inset-top)]",
+            lock ? "shrink-0" : "sticky top-0"
+          )}
           aria-label="应用顶栏"
         >
           <div className="flex h-14 items-center gap-2 px-3 sm:h-16 sm:px-4">
@@ -150,13 +184,28 @@ export function AppShell({
         </header>
       ) : null}
 
-      <main className={cn(session ? "p-0" : showTabBar ? "px-4 py-5 pb-28 sm:px-6" : "px-4 py-5 sm:px-6")}>
+      <main
+        className={cn(
+          "flex min-h-0 flex-1 flex-col",
+          lock && "overflow-hidden",
+          session
+            ? "p-0"
+            : lock
+              ? "px-4 pt-4 pb-3 sm:px-6"
+              : showTabBar
+                ? "px-4 pt-4 pb-24 sm:px-6"
+                : "px-4 py-5 sm:px-6"
+        )}
+      >
         {children}
       </main>
 
       {showTabBar ? (
         <nav
-          className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-3 border-t border-border/80 bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5"
+          className={cn(
+            "z-50 grid grid-cols-3 border-t border-border/80 bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5",
+            lock ? "shrink-0" : "fixed inset-x-0 bottom-0"
+          )}
           aria-label="主要导航"
         >
           {PRIMARY_NAV.map((item) => {

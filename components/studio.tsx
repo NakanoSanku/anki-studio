@@ -12,6 +12,7 @@ import {
   createLibraryDeck,
   deleteLibraryDeck,
   duplicateLibraryDeck,
+  renameLibraryDeck,
   loadLibrarySession,
   persistActiveDeck,
   readLibrary,
@@ -46,7 +47,6 @@ import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 import { AppShell } from "@/components/app-shell"
 import { CardEditor } from "@/components/card-editor"
-import { DeckLibraryDialog } from "@/components/deck-library-dialog"
 import { DeckSwitcher } from "@/components/deck-switcher"
 import { DeckToolsPanel } from "@/components/deck-tools-panel"
 import { ImportPreviewDialog } from "@/components/import-preview-dialog"
@@ -99,7 +99,6 @@ export function Studio() {
     decks: [],
   })
   const [deck, setDeck] = useState<Deck>(createDefaultDeck)
-  const [studyImmersive, setStudyImmersive] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
@@ -109,7 +108,7 @@ export function Studio() {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null)
-  const [libraryOpen, setLibraryOpen] = useState(false)
+
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
   const [importMode, setImportMode] = useState<ImportMode>("merge")
   const [syncing, setSyncing] = useState(false)
@@ -508,30 +507,40 @@ export function Studio() {
     router.push(notePath(id))
   }
 
-  const switchDeck = (id: string, close = false) => {
+  const switchDeck = (id: string) => {
     void switchLibraryDeck(library, deck, id)
       .then((session) => {
         applySession(session, "已切换卡包")
-        if (close) setLibraryOpen(false)
       })
       .catch((error: unknown) => {
         showStatus(error instanceof Error ? error.message : "切换失败")
       })
   }
 
-  const createDeck = () => {
-    void createLibraryDeck(library, deck)
+  const createDeck = (name: string) => {
+    void createLibraryDeck(library, deck, name)
       .then((session) => applySession(session, "已新建卡包"))
       .catch((error: unknown) => {
         showStatus(error instanceof Error ? error.message : "新建失败")
       })
   }
 
-  const duplicateDeck = () => {
-    void duplicateLibraryDeck(library, deck)
-      .then((session) => applySession(session, "已复制当前卡包"))
+  const duplicateDeck = (id: string) => {
+    void duplicateLibraryDeck(library, deck, id)
+      .then((session) => applySession(session, "已复制卡包"))
       .catch((error: unknown) => {
         showStatus(error instanceof Error ? error.message : "复制失败")
+      })
+  }
+
+  const renameDeck = (id: string, name: string) => {
+    void renameLibraryDeck(library, deck, id, name)
+      .then((session) => {
+        setLibrary(session.library)
+        setDeck(session.deck)
+      })
+      .catch((error: unknown) => {
+        showStatus(error instanceof Error ? error.message : "改名失败")
       })
   }
 
@@ -552,10 +561,6 @@ export function Studio() {
   }
 
   const leaveStudy = () => {
-    setStudyImmersive(false)
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined)
-    }
     router.push(PATHS.home)
   }
 
@@ -569,7 +574,6 @@ export function Studio() {
       exportProgress={exportProgress}
       pushLabel={pushButtonLabel(pushPlan)}
       hasTts={Object.keys(ttsOf(deck)).length > 0}
-      onOpenLibrary={() => setLibraryOpen(true)}
       onImport={() => fileRef.current?.click()}
       onExportJson={onExportJson}
       onExportCsv={onExportCsv}
@@ -600,6 +604,7 @@ export function Studio() {
         syncUnavailable={syncUnavailable}
         deckName={deck.name}
         status={status}
+        lockViewport={pathname === PATHS.notes}
         onSync={() => void runSync("manual")}
         onDeckClick={() => setSwitcherOpen(true)}
       >
@@ -616,14 +621,12 @@ export function Studio() {
             key={library.activeId}
             deck={deck}
             onChange={setDeck}
-            immersive={studyImmersive}
-            onImmersiveChange={setStudyImmersive}
             onExit={leaveStudy}
           />
         ) : null}
 
         {pathname === PATHS.notes || editorNoteId ? (
-          <div className="mx-auto w-full max-w-7xl">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col overflow-hidden">
             <CardEditor
               deck={deck}
               deckId={library.activeId}
@@ -679,18 +682,11 @@ export function Studio() {
         library={libraryView}
         activeName={deck.name.trim() || "未命名卡包"}
         onOpenChange={setSwitcherOpen}
-        onSwitch={(id) => switchDeck(id)}
-      />
-      <DeckLibraryDialog
-        open={libraryOpen}
-        library={libraryView}
-        activeName={deck.name}
-        onOpenChange={setLibraryOpen}
-        onSwitch={(id) => switchDeck(id, true)}
+        onSwitch={switchDeck}
         onCreate={createDeck}
         onDuplicate={duplicateDeck}
         onDelete={removeDeck}
-        onRename={(name) => setDeck({ ...deck, name })}
+        onRename={renameDeck}
       />
       <ImportPreviewDialog
         preview={importPreview}

@@ -751,8 +751,35 @@ export function CardEditor({
   const detail = layout === "detail"
   const editorPane = detail ? (mobilePane === "preview" ? "preview" : "editor") : mobilePane
 
+  const listBox = (
+    <div
+      ref={listRef}
+      data-testid="notes-card-list"
+      className={cn(
+        "overflow-y-auto overscroll-contain rounded-2xl border border-border/70 bg-card/70",
+        listOnly
+          ? "min-h-0 flex-1"
+          : "h-[min(58vh,520px)] lg:h-[min(calc(100vh-16rem),720px)]"
+      )}
+    >
+      <div className="flex flex-col p-1.5">
+        {deck.cards.length === 0 ? (
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground">还没有卡片</p>
+        ) : visibleCards.length === 0 ? (
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
+        ) : (
+          <>
+            {listPadTop > 0 ? <div style={{ height: listPadTop }} /> : null}
+            {listSlice.map((card, offset) => renderListItem(card, listStart + offset))}
+            {listPadBottom > 0 ? <div style={{ height: listPadBottom }} /> : null}
+          </>
+        )}
+      </div>
+    </div>
+  )
+
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className={cn("flex min-w-0 flex-col gap-4", listOnly && "h-full min-h-0 flex-1 overflow-hidden")}>
       {listOnly ? null : desktopToolbar}
       {detail ? (
         <Tabs value={editorPane === "preview" ? "preview" : "editor"} className="lg:hidden" onValueChange={(value) => setMobilePane(value as MobilePane)}>
@@ -762,39 +789,20 @@ export function CardEditor({
           </TabsList>
         </Tabs>
       ) : null}
-      {listOnly ? mobileListToolbar : detail ? null : mobilePane === "list" ? mobileListToolbar : mobilePager}
-      <div className={cn(
-        "grid min-w-0 gap-6",
-        listOnly ? "grid-cols-1" : "lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)]"
-      )}>
+      {listOnly ? <div className="shrink-0">{mobileListToolbar}</div> : detail ? null : mobilePane === "list" ? mobileListToolbar : mobilePager}
+      {listOnly ? listBox : (
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)]">
       <section className={cn(
         "flex-col gap-3",
-        listOnly ? "flex" : detail ? "hidden lg:flex" : cn("lg:flex", mobilePane === "list" ? "flex" : "hidden")
+        detail ? "hidden lg:flex" : cn("lg:flex", mobilePane === "list" ? "flex" : "hidden")
       )}>
-        <div
-          ref={listRef}
-          className="h-[min(58vh,520px)] overflow-auto rounded-2xl border border-border/70 bg-card/70 lg:h-[min(calc(100vh-16rem),720px)]"
-        >
-          <div className="flex flex-col p-1.5">
-            {deck.cards.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-muted-foreground">还没有卡片</p>
-            ) : visibleCards.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
-            ) : (
-              <>
-                {listPadTop > 0 ? <div style={{ height: listPadTop }} /> : null}
-                {listSlice.map((card, offset) => renderListItem(card, listStart + offset))}
-                {listPadBottom > 0 ? <div style={{ height: listPadBottom }} /> : null}
-              </>
-            )}
-          </div>
-        </div>
+        {listBox}
       </section>
 
       <section
         className={cn(
           "min-h-0 flex-col gap-4",
-          listOnly ? "hidden" : detail ? (editorPane === "editor" ? "flex" : "hidden lg:flex") : cn("lg:flex", mobilePane === "editor" ? "flex" : "hidden")
+          detail ? (editorPane === "editor" ? "flex" : "hidden lg:flex") : cn("lg:flex", mobilePane === "editor" ? "flex" : "hidden")
         )}
       >
         {selected ? (
@@ -891,11 +899,12 @@ export function CardEditor({
       </section>
 
       <section className={cn(
-        listOnly ? "hidden" : detail ? (editorPane === "preview" ? "block" : "hidden lg:block") : cn("lg:block", mobilePane === "preview" ? "block" : "hidden")
+        detail ? (editorPane === "preview" ? "block" : "hidden lg:block") : cn("lg:block", mobilePane === "preview" ? "block" : "hidden")
       )}>
         {preview}
       </section>
       </div>
+      )}
       {aiDialog}
       {batchDialog}
     </div>

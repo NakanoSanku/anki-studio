@@ -66,6 +66,10 @@ export function deckStorageKey(id: string): string {
   return `anki-studio.deck.${id}`
 }
 
+export function isDeckNameReady(name: string): boolean {
+  return name.trim().length > 0
+}
+
 export function uniqueDeckName(names: string[], base = "新卡包"): string {
   const trimmed = base.trim() || "新卡包"
   if (!names.includes(trimmed)) return trimmed
@@ -431,13 +435,51 @@ export function cloneDeckAsCopy(deck: Deck, name: string): Deck {
   }
 }
 
-export async function duplicateLibraryDeck(library: Library, current: Deck): Promise<LibrarySession> {
-  const names = [...library.decks.map((entry) => entry.name), current.name]
+export async function duplicateLibraryDeck(
+  library: Library,
+  current: Deck,
+  sourceId = library.activeId
+): Promise<LibrarySession> {
+  await persistActiveDeck(library, current)
+  const sourceDeck =
+    sourceId === library.activeId
+      ? current
+      : (await getStudioStore().getRecord(sourceId))?.deck
+  if (!sourceDeck) throw new Error("卡包不存在")
+  const names = [...library.decks.map((entry) => entry.name), current.name, sourceDeck.name]
   return addLibraryDeck(
     library,
     current,
-    cloneDeckAsCopy(current, uniqueDeckName(names, `${current.name} 副本`))
+    cloneDeckAsCopy(sourceDeck, uniqueDeckName(names, `${sourceDeck.name} 副本`))
   )
+}
+
+export async function renameLibraryDeck(
+  library: Library,
+  current: Deck,
+  id: string,
+  name: string
+): Promise<LibrarySession> {
+  const trimmed = name.trim() || "未命名卡包"
+  if (id === library.activeId) {
+    const next = { ...current, name: trimmed }
+    const nextLibrary = await persistActiveDeck(library, next)
+    return { library: nextLibrary, deck: next }
+  }
+  await persistActiveDeck(library, current)
+  const store = getStudioStore()
+  const record = await store.getRecord(id)
+  if (!record || record.deletedAt) throw new Error("卡包不存在")
+  const others = library.decks.filter((entry) => entry.id !== id).map((entry) => entry.name)
+  const nextName = uniqueDeckName(others, trimmed)
+  await store.setRecord({
+    ...record,
+    deck: { ...record.deck, name: nextName },
+    dirty: true,
+    updatedAt: Date.now(),
+  })
+  await markLocalEdits(store)
+  return { library: await readLibrary(), deck: current }
 }
 
 export async function deleteLibraryDeck(
