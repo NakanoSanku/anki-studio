@@ -22,7 +22,8 @@ import {
   writeGoogleSheetConnection,
   type GoogleSheetConnection,
 } from "@/lib/google-sheet-connection"
-import { parseGoogleSpreadsheetId } from "@/lib/google-sheet-id"
+import { GOOGLE_SHEET_ID_HEADER, parseGoogleSpreadsheetId } from "@/lib/google-sheet-id"
+import type { SpreadsheetInventory, SpreadsheetSheetKind } from "@/lib/sync-types"
 
 type PickerConfig = {
   accessToken: string
@@ -98,14 +99,23 @@ async function loadPickerApi(): Promise<PickerNamespace> {
   })
 }
 
+const SHEET_KIND_LABEL: Record<SpreadsheetSheetKind, string> = {
+  index: "同步目录",
+  data: "数据",
+  preview: "预览",
+  other: "其他",
+}
+
 export function GoogleSheetPickerPanel({
   enabled,
   onConnectionChange,
   onConnected,
+  inventoryKey,
 }: {
   enabled: boolean
   onConnectionChange?: (connected: boolean) => void
   onConnected?: () => void
+  inventoryKey?: number | string
 }) {
   const connectionSnapshot = useSyncExternalStore(
     subscribeGoogleSheetConnection,
@@ -119,10 +129,46 @@ export function GoogleSheetPickerPanel({
   const [scriptReady, setScriptReady] = useState(false)
   const [busy, setBusy] = useState<"picker" | "connect" | null>(null)
   const [message, setMessage] = useState("")
+  const [inventory, setInventory] = useState<SpreadsheetInventory | null>(null)
+  const [inventoryError, setInventoryError] = useState("")
 
   useEffect(() => {
     onConnectionChange?.(Boolean(connection))
   }, [connection, onConnectionChange])
+
+  useEffect(() => {
+    if (!connection || !enabled) return
+    const spreadsheetId = connection.id
+    let cancelled = false
+    void (async () => {
+      try {
+        const response = await fetch("/api/sync/sheets", {
+          cache: "no-store",
+          headers: { [GOOGLE_SHEET_ID_HEADER]: spreadsheetId },
+        })
+        const data = await response.json().catch(() => null) as unknown
+        if (!response.ok) {
+          const issue = data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "无法读取表格工作表"
+          throw new Error(issue)
+        }
+        if (cancelled) return
+        setInventory(data as SpreadsheetInventory)
+        setInventoryError("")
+      } catch (error) {
+        if (cancelled) return
+        setInventoryError(error instanceof Error ? error.message : "无法读取表格工作表")
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [connection, enabled, inventoryKey])
+
+  const visibleInventory = connection && inventory?.spreadsheetId === connection.id
+    ? inventory
+    : null
 
   const connect = async (spreadsheetId: string) => {
     setBusy("connect")
@@ -281,6 +327,49 @@ export function GoogleSheetPickerPanel({
             移除
           </Button>
         </div>
+      ) : null}
+
+      {connection && visibleInventory ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+          <p className="text-sm font-medium">
+            {visibleInventory.sheetCount} 张工作表
+            {visibleInventory.decks.length > 0 ? ` · ${visibleInventory.decks.length} 个卡包` : ""}
+          </p>
+          {visibleInventory.decks.length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {visibleInventory.decks.map((deck) => (
+                <li key={deck.deckId} className="min-w-0">
+                  <p className="truncate text-sm">{deck.name}</p>
+                  <ul className="mt-1 flex flex-col gap-0.5">
+                    {deck.sheets.map((sheet) => (
+                      <li key={sheet.sheetId} className="truncate text-xs text-muted-foreground">
+                        {SHEET_KIND_LABEL[sheet.kind]}
+                        {" · "}
+                        {sheet.title}
+                        {sheet.hidden ? "（隐藏）" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {visibleInventory.unassigned.length > 0 ? (
+            <ul className="flex flex-col gap-0.5">
+              {visibleInventory.unassigned.map((sheet) => (
+                <li key={sheet.sheetId} className="truncate text-xs text-muted-foreground">
+                  {SHEET_KIND_LABEL[sheet.kind]}
+                  {" · "}
+                  {sheet.title}
+                  {sheet.hidden ? "（隐藏）" : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {connection && inventoryError ? (
+        <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">{inventoryError}</p>
       ) : null}
 
       <Button

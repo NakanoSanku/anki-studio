@@ -317,6 +317,7 @@ export function SettingsForm({
                   enabled={googleReady === true}
                   onConnectionChange={setSheetConnected}
                   onConnected={onSyncNow}
+                  inventoryKey={sync.lastSyncAt}
                 />
                 <div className="rounded-xl border border-border/70 bg-muted/35 p-4">
                   <div className="flex items-center justify-between gap-3">

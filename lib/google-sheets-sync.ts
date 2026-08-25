@@ -15,6 +15,16 @@ import type {
   PutDeckResult,
   RemoteDeckPayload,
   RemoteIndexEntry,
+  SpreadsheetInventory,
+  SpreadsheetSheetKind,
+  SpreadsheetSheetPreview,
+} from "./sync-types"
+
+export type {
+  SpreadsheetDeckGroup,
+  SpreadsheetInventory,
+  SpreadsheetSheetKind,
+  SpreadsheetSheetPreview,
 } from "./sync-types"
 
 const SHEETS_API_ROOT = "https://sheets.googleapis.com/v4/spreadsheets"
@@ -463,6 +473,62 @@ function findTaggedDeckSheet(metadata: SpreadsheetMetadata, deckId: string): She
     item.metadataKey === DECK_SHEET_METADATA_KEY && item.metadataValue === deckId
   ))?.location?.sheetId
   return typeof sheetId === "number" ? findSheetById(metadata, sheetId) : undefined
+}
+
+function sheetKind(
+  metadata: SpreadsheetMetadata,
+  properties: SheetProperties
+): { kind: SpreadsheetSheetKind; deckId: string | null } {
+  if (properties.title === INDEX_SHEET_NAME) return { kind: "index", deckId: null }
+  if (typeof properties.sheetId !== "number") return { kind: "other", deckId: null }
+  const dataDeckId = deckIdForSheet(metadata, properties.sheetId)
+  if (dataDeckId) return { kind: "data", deckId: dataDeckId }
+  const previewDeckId = previewDeckIdForSheet(metadata, properties.sheetId)
+  if (previewDeckId) return { kind: "preview", deckId: previewDeckId }
+  return { kind: "other", deckId: null }
+}
+
+function spreadsheetInventoryFromMetadata(
+  metadata: SpreadsheetMetadata,
+  spreadsheetId: string
+): SpreadsheetInventory {
+  const sheets: SpreadsheetSheetPreview[] = []
+  for (const properties of sheetProperties(metadata)) {
+    if (typeof properties.sheetId !== "number" || !properties.title) continue
+    const { kind, deckId } = sheetKind(metadata, properties)
+    sheets.push({
+      sheetId: properties.sheetId,
+      title: properties.title,
+      hidden: properties.hidden === true,
+      kind,
+      deckId,
+    })
+  }
+
+  const names = new Map<string, string>()
+  for (const sheet of sheets) {
+    if (sheet.kind === "preview" && sheet.deckId && sheet.title.trim()) {
+      names.set(sheet.deckId, sheet.title.trim())
+    }
+  }
+
+  const deckIds = [...new Set(sheets.flatMap((sheet) => (sheet.deckId ? [sheet.deckId] : [])))]
+  const decks = deckIds
+    .map((deckId) => ({
+      deckId,
+      name: names.get(deckId) || "未命名卡包",
+      sheets: sheets.filter((sheet) => sheet.deckId === deckId),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"))
+
+  return {
+    spreadsheetId,
+    title: metadata.properties?.title?.trim() || "Google Sheet",
+    url: googleSpreadsheetUrl(spreadsheetId),
+    sheetCount: sheets.length,
+    decks,
+    unassigned: sheets.filter((sheet) => !sheet.deckId),
+  }
 }
 
 function findTaggedDeckPreviewSheet(
@@ -1909,6 +1975,14 @@ export async function getGoogleSheetsStatus(
     title: "Google Sheet",
     url: googleSpreadsheetUrl(client.spreadsheetId),
   }
+}
+
+export async function listSpreadsheetInventory(
+  client: GoogleSheetsClient,
+  fetchImpl: typeof fetch = fetch
+): Promise<SpreadsheetInventory> {
+  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
+  return spreadsheetInventoryFromMetadata(metadata, client.spreadsheetId)
 }
 
 export async function listGoogleSheetsIndex(

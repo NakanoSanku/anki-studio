@@ -35,6 +35,31 @@ export type SyncStatus = {
   provider?: "google-sheets"
 }
 
+export type SpreadsheetSheetKind = "index" | "data" | "preview" | "other"
+
+export type SpreadsheetSheetPreview = {
+  sheetId: number
+  title: string
+  hidden: boolean
+  kind: SpreadsheetSheetKind
+  deckId: string | null
+}
+
+export type SpreadsheetDeckGroup = {
+  deckId: string
+  name: string
+  sheets: SpreadsheetSheetPreview[]
+}
+
+export type SpreadsheetInventory = {
+  spreadsheetId: string
+  title: string
+  url: string
+  sheetCount: number
+  decks: SpreadsheetDeckGroup[]
+  unassigned: SpreadsheetSheetPreview[]
+}
+
 export type ConflictChoice = "local" | "remote" | "copy" | "defer"
 
 export type SyncConflict = {

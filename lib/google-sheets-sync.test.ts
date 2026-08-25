@@ -10,6 +10,7 @@ import {
   getGoogleSheetsStatus,
   isSheetsQuotaError,
   listGoogleSheetsIndex,
+  listSpreadsheetInventory,
   putGoogleSheetsDeck,
   SHEETS_QUOTA_RETRY_DELAYS_MS,
   SHEETS_QUOTA_USER_MESSAGE,
@@ -693,6 +694,31 @@ describe("Google Sheets API sync", () => {
       rev: 42,
       deck: { name: "旧卡包" },
     })
+  })
+
+  it("lists worksheets and the 卡包 they belong to from metadata only", async () => {
+    const api = createSheetsApi()
+    await putGoogleSheetsDeck(client, "deck-a", {
+      expectedRev: 0,
+      deck: { ...createDefaultDeck(), name: "卡包甲" },
+    }, api.fetchImpl)
+    await putGoogleSheetsDeck(client, "deck-b", {
+      expectedRev: 0,
+      deck: { ...createDefaultDeck(), name: "卡包乙" },
+    }, api.fetchImpl)
+    const before = api.state().requests.length
+
+    const inventory = await listSpreadsheetInventory(client, api.fetchImpl)
+    const added = api.state().requests.slice(before)
+    const valueReads = added.filter((item) => (
+      (item.init?.method ?? "GET") === "GET" && item.url.pathname.includes("/values")
+    ))
+    expect(valueReads).toHaveLength(0)
+    expect(inventory.sheetCount).toBeGreaterThanOrEqual(5)
+    expect(inventory.decks.map((item) => item.name).sort()).toEqual(["卡包乙", "卡包甲"])
+    expect(inventory.decks.every((item) => item.sheets.some((sheet) => sheet.kind === "preview"))).toBe(true)
+    expect(inventory.decks.every((item) => item.sheets.some((sheet) => sheet.kind === "data"))).toBe(true)
+    expect(inventory.unassigned.some((sheet) => sheet.kind === "index")).toBe(true)
   })
 
   it("does not read the spreadsheet to report sync status", async () => {
