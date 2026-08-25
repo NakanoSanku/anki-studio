@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
-import { BrainCircuit, FolderCog, Gauge, RefreshCw, Save, Server, Table2 } from "lucide-react"
+import { BrainCircuit, FolderCog, Gauge, RefreshCw, Save, Table2 } from "lucide-react"
 
 import {
   DEFAULT_AI_SETTINGS,

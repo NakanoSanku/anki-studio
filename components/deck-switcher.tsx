@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { Check, MoreHorizontal } from "lucide-react"
 
 import {
@@ -80,8 +80,6 @@ export function DeckSwitcher({
 }: DeckSwitcherProps) {
   const [step, setStep] = useState<DeckStep | null>(null)
   const [nameValue, setNameValue] = useState("")
-  const stepRef = useRef<DeckStep | null>(null)
-  stepRef.current = step
   const canDelete = library.decks.length > 1
   const nameReady = isDeckNameReady(nameValue)
   const nameOpen =
@@ -103,22 +101,6 @@ export function DeckSwitcher({
     setStep(next)
   }
 
-  useEffect(() => {
-    if (open) return
-    setStep(null)
-    setNameValue("")
-  }, [open])
-
-  useEffect(() => {
-    if (step?.kind !== "duplicate") return
-    setNameValue(
-      nextCopyDeckName(
-        library.decks.map((item) => (item.id === library.activeId ? activeName : item.name)),
-        step.entry.id === library.activeId ? activeName : step.entry.name
-      )
-    )
-  }, [step]) // prefill once per 复制 step; library/activeName are read from the opening render
-
   const submitName = () => {
     if (!nameReady || !step) return
     const name = nameValue.trim()
@@ -129,7 +111,7 @@ export function DeckSwitcher({
   }
 
   const blockSheetDismiss = (event: { preventDefault: () => void }) => {
-    if (stepRef.current) event.preventDefault()
+    if (step) event.preventDefault()
   }
 
   return (
@@ -137,7 +119,7 @@ export function DeckSwitcher({
       <Sheet
         open={open}
         onOpenChange={(next) => {
-          if (!next && stepRef.current) return
+          if (!next && step) return
           if (!next) closeStep()
           onOpenChange(next)
         }}
@@ -145,7 +127,6 @@ export function DeckSwitcher({
         <SheetContent
           side="bottom"
           className="rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]"
-          onPointerDownOutside={blockSheetDismiss}
           onInteractOutside={blockSheetDismiss}
           onFocusOutside={blockSheetDismiss}
           onEscapeKeyDown={blockSheetDismiss}
@@ -268,7 +249,6 @@ export function DeckSwitcher({
       >
         <AlertDialogContent
           onEscapeKeyDown={(event) => event.preventDefault()}
-          onPointerDownOutside={(event) => event.preventDefault()}
         >
           <AlertDialogHeader>
             <AlertDialogTitle>删除</AlertDialogTitle>
