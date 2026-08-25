@@ -170,6 +170,38 @@ export class GoogleSheetsApiError extends Error {
   }
 }
 
+export const SHEETS_QUOTA_USER_MESSAGE = "表格读取过于频繁，请稍后再试"
+export const SHEETS_QUOTA_RETRY_DELAYS_MS = [400, 800]
+
+type SheetsSession = {
+  metadata: SpreadsheetMetadata | null
+  sleep: (ms: number) => Promise<void>
+  indexGrid: unknown[][] | null
+}
+
+export function isSheetsQuotaError(status: number, payload: unknown): boolean {
+  if (status === 429) return true
+  if (status !== 403) return false
+  const message = payload && typeof payload === "object"
+    ? (payload as GoogleErrorPayload).error?.message
+    : undefined
+  return typeof message === "string" && /quota exceeded|rate limit exceeded/i.test(message)
+}
+
+function googleErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined
+  const message = (payload as GoogleErrorPayload).error?.message
+  return typeof message === "string" && message.trim() ? message : undefined
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function createSheetsSession(sleep: (ms: number) => Promise<void> = defaultSleep): SheetsSession {
+  return { metadata: null, sleep, indexGrid: null }
+}
+
 export function createGoogleSheetsClient(input: {
   spreadsheetId: string
   accessToken: string
@@ -185,49 +217,59 @@ export function createGoogleSheetsClient(input: {
 }
 
 function apiMessage(status: number, payload: unknown): string {
-  const message = payload && typeof payload === "object"
-    ? (payload as GoogleErrorPayload).error?.message
-    : undefined
+  if (isSheetsQuotaError(status, payload)) return SHEETS_QUOTA_USER_MESSAGE
+  const message = googleErrorMessage(payload)
   if (status === 401) return "Google 授权已失效，请重新连接帐号"
   if (status === 403) {
-    return typeof message === "string" && message.trim()
+    return message
       ? `当前帐号无权访问这个 Google Sheet：${message.slice(0, 180)}`
       : "当前帐号无权访问这个 Google Sheet"
   }
   if (status === 404) return "找不到这个 Google Sheet"
-  return typeof message === "string" && message.trim()
-    ? message.slice(0, 240)
-    : `Google Sheets API 响应 ${status}`
+  return message ? message.slice(0, 240) : `Google Sheets API 响应 ${status}`
 }
 
 async function sheetsRequest<T>(
   client: GoogleSheetsClient,
   path: string,
   init: RequestInit = {},
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  session?: SheetsSession | null
 ): Promise<T> {
-  let response: Response
-  try {
-    response = await fetchImpl(
-      `${SHEETS_API_ROOT}/${encodeURIComponent(client.spreadsheetId)}${path}`,
-      {
-        ...init,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${client.accessToken}`,
-          ...(init.body ? { "Content-Type": "application/json" } : {}),
-          ...init.headers,
-        },
-        cache: "no-store",
-      }
-    )
-  } catch {
-    throw new GoogleSheetsApiError("无法连接 Google Sheets", 503)
+  const sleep = session?.sleep ?? defaultSleep
+  const attempts = SHEETS_QUOTA_RETRY_DELAYS_MS.length + 1
+  let lastError: GoogleSheetsApiError | null = null
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    let response: Response
+    try {
+      response = await fetchImpl(
+        `${SHEETS_API_ROOT}/${encodeURIComponent(client.spreadsheetId)}${path}`,
+        {
+          ...init,
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${client.accessToken}`,
+            ...(init.body ? { "Content-Type": "application/json" } : {}),
+            ...init.headers,
+          },
+          cache: "no-store",
+        }
+      )
+    } catch {
+      throw new GoogleSheetsApiError("无法连接 Google Sheets", 503)
+    }
+
+    const data = await response.json().catch(() => null) as unknown
+    if (response.ok) return (data ?? {}) as T
+
+    lastError = new GoogleSheetsApiError(apiMessage(response.status, data), response.status)
+    const retryDelay = SHEETS_QUOTA_RETRY_DELAYS_MS[attempt]
+    if (retryDelay == null || !isSheetsQuotaError(response.status, data)) throw lastError
+    await sleep(retryDelay)
   }
 
-  const data = await response.json().catch(() => null) as unknown
-  if (!response.ok) throw new GoogleSheetsApiError(apiMessage(response.status, data), response.status)
-  return (data ?? {}) as T
+  throw lastError ?? new GoogleSheetsApiError("无法连接 Google Sheets", 503)
 }
 
 function quotedRange(sheetTitle: string, range: string): string {
@@ -238,16 +280,52 @@ async function readValues(
   client: GoogleSheetsClient,
   sheetTitle: string,
   range: string,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<unknown[][]> {
   const query = new URLSearchParams({ valueRenderOption: "UNFORMATTED_VALUE" })
   const data = await sheetsRequest<ValuesResponse>(
     client,
     `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}?${query}`,
     {},
-    fetchImpl
+    fetchImpl,
+    session
   )
   return Array.isArray(data.values) ? data.values : []
+}
+
+const BATCH_GET_RANGE_LIMIT = 80
+
+async function readValuesMany(
+  client: GoogleSheetsClient,
+  queries: Array<{ sheetTitle: string; range: string }>,
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
+): Promise<unknown[][][]> {
+  if (queries.length === 0) return []
+  if (queries.length === 1) {
+    return [await readValues(client, queries[0]!.sheetTitle, queries[0]!.range, fetchImpl, session)]
+  }
+
+  const results: unknown[][][] = []
+  for (let offset = 0; offset < queries.length; offset += BATCH_GET_RANGE_LIMIT) {
+    const chunk = queries.slice(offset, offset + BATCH_GET_RANGE_LIMIT)
+    const params = new URLSearchParams({ valueRenderOption: "UNFORMATTED_VALUE" })
+    for (const query of chunk) params.append("ranges", quotedRange(query.sheetTitle, query.range))
+    const data = await sheetsRequest<{ valueRanges?: Array<{ values?: unknown[][] }> }>(
+      client,
+      `/values:batchGet?${params}`,
+      {},
+      fetchImpl,
+      session
+    )
+    const ranges = Array.isArray(data.valueRanges) ? data.valueRanges : []
+    for (let index = 0; index < chunk.length; index += 1) {
+      const values = ranges[index]?.values
+      results.push(Array.isArray(values) ? values : [])
+    }
+  }
+  return results
 }
 
 async function updateValues(
@@ -255,14 +333,16 @@ async function updateValues(
   sheetTitle: string,
   range: string,
   values: unknown[][],
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<void> {
   const query = new URLSearchParams({ valueInputOption: "RAW" })
   await sheetsRequest(
     client,
     `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}?${query}`,
     { method: "PUT", body: JSON.stringify({ values }) },
-    fetchImpl
+    fetchImpl,
+    session
   )
 }
 
@@ -271,7 +351,8 @@ async function appendValues(
   sheetTitle: string,
   range: string,
   values: unknown[][],
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<void> {
   const query = new URLSearchParams({
     insertDataOption: "INSERT_ROWS",
@@ -281,39 +362,47 @@ async function appendValues(
     client,
     `/values/${encodeURIComponent(quotedRange(sheetTitle, range))}:append?${query}`,
     { method: "POST", body: JSON.stringify({ values }) },
-    fetchImpl
+    fetchImpl,
+    session
   )
 }
 
 async function batchUpdate(
   client: GoogleSheetsClient,
   requests: unknown[],
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<BatchUpdateResponse> {
   return sheetsRequest<BatchUpdateResponse>(
     client,
     ":batchUpdate",
     { method: "POST", body: JSON.stringify({ requests }) },
-    fetchImpl
+    fetchImpl,
+    session
   )
 }
 
 async function readSpreadsheetMetadata(
   client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<SpreadsheetMetadata> {
+  if (session?.metadata) return session.metadata
   const fields = [
     "spreadsheetId",
     "properties(title)",
     "sheets(properties(sheetId,title,hidden,gridProperties(frozenRowCount)))",
     "developerMetadata(metadataId,metadataKey,metadataValue,location(sheetId,spreadsheet))",
   ].join(",")
-  return sheetsRequest<SpreadsheetMetadata>(
+  const metadata = await sheetsRequest<SpreadsheetMetadata>(
     client,
     `?${new URLSearchParams({ fields })}`,
     {},
-    fetchImpl
+    fetchImpl,
+    session
   )
+  if (session) session.metadata = metadata
+  return metadata
 }
 
 function hasWrittenData(metadata: SpreadsheetMetadata): boolean {
@@ -1277,67 +1366,53 @@ async function writeDeckPreviewValues(
   await hidePreviewIdColumn(client, previewSheet.sheetId, fetchImpl)
 }
 
-async function readDeckPreview(
-  client: GoogleSheetsClient,
+function parsePreviewValues(
+  deck: Deck,
+  properties: SheetProperties,
+  values: unknown[][]
+): Deck {
+  const header = values[0] ?? []
+  const currentHeader = previewHeaders(deck)
+  const legacyHeader = ["序号", ...deck.fields]
+  if (headerMatches(header, currentHeader)) {
+    return deckFromPreviewRows(deck, values.slice(1).filter(rowHasValue))
+  }
+  if (headerMatches(header, legacyHeader)) {
+    const rows = values
+      .slice(1)
+      .filter(rowHasValue)
+      .map((row, index) => [deck.cards[index]?.id ?? "", ...row.slice(1)])
+    return deckFromPreviewRows(deck, rows)
+  }
+  throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
+}
+
+function selectParsedPreview(
   metadata: SpreadsheetMetadata,
   deckId: string,
   deck: Deck,
-  fetchImpl: typeof fetch
-): Promise<{ deck: Deck | null; sheetId: number | null }> {
-  const candidates = previewSheetCandidates(metadata, deckId, deck.name)
-  if (candidates.length === 0) return { deck: null, sheetId: null }
-  const parsed: Array<{ properties: SheetProperties; deck: Deck }> = []
-  let firstError: unknown = null
-
-  for (const properties of candidates) {
-    if (typeof properties.sheetId !== "number" || !properties.title) continue
-    try {
-      const values = await readValues(client, properties.title, PREVIEW_READ_RANGE, fetchImpl)
-      const header = values[0] ?? []
-      const currentHeader = previewHeaders(deck)
-      const legacyHeader = ["序号", ...deck.fields]
-      if (headerMatches(header, currentHeader)) {
-        parsed.push({
-          properties,
-          deck: deckFromPreviewRows(deck, values.slice(1).filter(rowHasValue)),
-        })
-        continue
-      }
-      if (headerMatches(header, legacyHeader)) {
-        const rows = values.slice(1)
-          .filter(rowHasValue)
-          .map((row, index) => [deck.cards[index]?.id ?? "", ...row.slice(1)])
-        parsed.push({ properties, deck: deckFromPreviewRows(deck, rows) })
-        continue
-      }
-      throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
-    } catch (error) {
-      firstError ??= error
-    }
-  }
-
-  if (parsed.length === 0) {
-    throw firstError instanceof Error
-      ? firstError
-      : new Error("找不到可用的卡包预览工作表")
-  }
-
+  parsed: Array<{ properties: SheetProperties; deck: Deck }>
+): { properties: SheetProperties; deck: Deck } {
   const taggedId = findTaggedDeckPreviewSheet(metadata, deckId)?.sheetId
   const tagged = typeof taggedId === "number"
     ? parsed.find((item) => item.properties.sheetId === taggedId)
     : undefined
   const changed = parsed.find((item) => !samePreviewRows(previewRows(deck), previewRows(item.deck)))
   const exact = parsed.find((item) => item.properties.title === sanitizedSheetTitle(deck.name))
-  const selected = tagged && !samePreviewRows(previewRows(deck), previewRows(tagged.deck))
+  return tagged && !samePreviewRows(previewRows(deck), previewRows(tagged.deck))
     ? tagged
     : changed ?? exact ?? tagged ?? parsed[0]!
-  if (typeof selected.properties.sheetId === "number") {
-    await tagDeckPreviewSheet(client, metadata, selected.properties.sheetId, deckId, fetchImpl)
-  }
-  return {
-    deck: samePreviewRows(previewRows(deck), previewRows(selected.deck)) ? null : selected.deck,
-    sheetId: selected.properties.sheetId ?? null,
-  }
+}
+
+function dataSheetForIndex(
+  metadata: SpreadsheetMetadata,
+  current: IndexVersion
+): DeckDataSheet | null {
+  if (current.row.sheetId == null) return null
+  const properties = findSheetById(metadata, current.row.sheetId)
+    ?? findTaggedDeckSheet(metadata, current.row.id)
+  if (typeof properties?.sheetId !== "number" || !properties.title) return null
+  return { sheetId: properties.sheetId, title: properties.title }
 }
 
 async function replaceSheetData(
@@ -1367,11 +1442,12 @@ async function compactIndexSheet(
   client: GoogleSheetsClient,
   storage: SyncStorage,
   rows: IndexRow[],
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null,
+  knownRowCount?: number
 ): Promise<void> {
-  const existing = await readValues(client, storage.indexSheet.title, "A1:J", fetchImpl)
   const current = latestIndexRows(rows)
-  const rowCount = Math.max(existing.length, current.length + 1, 1)
+  const rowCount = Math.max(knownRowCount ?? rows.length + 1, current.length + 1, 1)
   const values: unknown[][] = [
     [...INDEX_HEADERS],
     ...current.map((row) => indexValues(row)),
@@ -1384,24 +1460,29 @@ async function compactIndexSheet(
     storage.indexSheet.title,
     `A1:J${rowCount}`,
     values,
-    fetchImpl
+    fetchImpl,
+    session
   )
 }
 
 async function compactSyncHistory(
   client: GoogleSheetsClient,
   storage: SyncStorage,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null,
+  knownRows?: IndexRow[]
 ): Promise<void> {
-  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
-  const rows = parseIndexRows(values)
+  const rows = knownRows ?? parseIndexRows(
+    await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl, session)
+  )
   const currentRows = latestIndexRows(rows)
 
   // The payload sheets only need a one-time migration, but the index receives
   // a new optimistic row on every write. Keep that directory compact on every
   // pass as well, including spreadsheets already carrying the marker.
   if (hasHistoryCompacted(storage.metadata)) {
-    await compactIndexSheet(client, storage, currentRows, fetchImpl)
+    if (rows.length === currentRows.length) return
+    await compactIndexSheet(client, storage, currentRows, fetchImpl, session, rows.length + 1)
     return
   }
 
@@ -1442,7 +1523,7 @@ async function compactSyncHistory(
     })
   }
 
-  await compactIndexSheet(client, storage, compactedRows, fetchImpl)
+  await compactIndexSheet(client, storage, compactedRows, fetchImpl, session, rows.length + 1)
   await markHistoryCompacted(client, storage.metadata, fetchImpl)
 }
 
@@ -1517,9 +1598,10 @@ async function migrateLegacyStorage(
 
 async function ensureSyncStorage(
   client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<SyncStorage> {
-  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
+  const metadata = await readSpreadsheetMetadata(client, fetchImpl, session)
   const alreadyWritten = hasWrittenData(metadata)
   let properties = sheetProperties(metadata).find((sheet) => sheet.title === INDEX_SHEET_NAME)
 
@@ -1539,7 +1621,7 @@ async function ensureSyncStorage(
           },
         },
       },
-    }], fetchImpl)
+    }], fetchImpl, session)
     properties = created.replies?.[0]?.addSheet?.properties
     if (properties) addLocalSheetMetadata(metadata, properties)
   }
@@ -1548,20 +1630,22 @@ async function ensureSyncStorage(
     throw new Error("Google Sheet 同步索引初始化失败")
   }
 
-  const preview = await readValues(client, properties.title, "A1:K2", fetchImpl)
-  const header = preview[0] ?? []
+  const grid = session?.indexGrid ?? await readValues(client, properties.title, "A1:K", fetchImpl, session)
+  if (session) session.indexGrid = grid
+  const header = grid[0] ?? []
   if (!rowHasValue(header)) {
     if (alreadyWritten) {
       throw new Error("Google Sheet 同步索引表头已被清空，请先从备份恢复")
     }
-    await updateValues(client, properties.title, "A1:J1", [[...INDEX_HEADERS]], fetchImpl)
+    await updateValues(client, properties.title, "A1:J1", [[...INDEX_HEADERS]], fetchImpl, session)
+    if (session) session.indexGrid = [[...INDEX_HEADERS]]
   } else if (headerMatches(header, DATA_HEADERS)) {
     return migrateLegacyStorage(client, metadata, properties, fetchImpl)
   } else if (!headerMatches(header, INDEX_HEADERS)) {
     throw new Error("Google Sheet 同步索引结构不兼容")
   }
 
-  if (alreadyWritten && !rowHasValue(preview[1])) {
+  if (alreadyWritten && !rowHasValue(grid[1])) {
     throw new Error("Google Sheet 同步目录已被清空，请先从备份恢复")
   }
   await ensureIndexProperties(client, properties, fetchImpl)
@@ -1573,30 +1657,34 @@ async function ensureSyncStorage(
 
 async function readIndexState(
   client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<{ storage: SyncStorage; rows: IndexRow[] }> {
-  const storage = await ensureSyncStorage(client, fetchImpl)
-  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
-  return { storage, rows: parseIndexRows(values) }
+  const storage = await ensureSyncStorage(client, fetchImpl, session)
+  const grid = session?.indexGrid ?? await readValues(client, storage.indexSheet.title, "A1:K", fetchImpl, session)
+  if (session) session.indexGrid = grid
+  return { storage, rows: parseIndexRows(grid.slice(1)) }
 }
 
 async function readDeckRows(
   client: GoogleSheetsClient,
   dataSheet: DeckDataSheet,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<SyncRow[]> {
-  const values = await readValues(client, dataSheet.title, "A2:K", fetchImpl)
+  const values = await readValues(client, dataSheet.title, "A2:K", fetchImpl, session)
   return parseSyncRows(values, GOOGLE_SHEETS_SCHEMA_VERSION)
 }
 
 async function ensureExistingDeckPreviews(
   client: GoogleSheetsClient,
   storage: SyncStorage,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<void> {
   if (hasPreviewSchema(storage.metadata)) return
 
-  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
+  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl, session)
   const rows = parseIndexRows(values)
   const ids = [...new Set(rows.map((row) => row.id))]
   for (const id of ids) {
@@ -1610,7 +1698,7 @@ async function ensureExistingDeckPreviews(
       current.row.sheetId,
       fetchImpl
     )
-    const dataRows = await readDeckRows(client, dataSheet, fetchImpl)
+    const dataRows = await readDeckRows(client, dataSheet, fetchImpl, session)
     const version = findExactVersion(dataRows, id, current.revision, current.versionId)
     if (!version) {
       throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
@@ -1623,46 +1711,116 @@ async function ensureExistingDeckPreviews(
 
 async function materializePreviewEdits(
   client: GoogleSheetsClient,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<void> {
-  const storage = await ensureSyncStorage(client, fetchImpl)
-  await ensureExistingDeckPreviews(client, storage, fetchImpl)
-  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
-  const rows = parseIndexRows(values)
-  const ids = [...new Set(rows.map((row) => row.id))]
+  const storage = await ensureSyncStorage(client, fetchImpl, session)
+  await ensureExistingDeckPreviews(client, storage, fetchImpl, session)
+  const { rows } = await readIndexState(client, fetchImpl, session)
+  const currents = [...new Set(rows.map((row) => row.id))]
+    .map((id) => findCurrentIndexVersion(rows, id))
+    .filter((current): current is IndexVersion => (
+      Boolean(current && !current.row.deletedAt && current.row.sheetId != null)
+    ))
 
-  for (const id of ids) {
-    const current = findCurrentIndexVersion(rows, id)
-    if (!current || current.row.deletedAt || current.row.sheetId == null) continue
-    const payload = await payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
-    if (!payload.deck) continue
-    const preview = await readDeckPreview(
-      client,
-      storage.metadata,
-      id,
-      payload.deck,
-      fetchImpl
+  const dataQueries = currents.map((current) => ({
+    current,
+    dataSheet: dataSheetForIndex(storage.metadata, current),
+  }))
+  const readable = dataQueries.filter((item): item is typeof item & { dataSheet: DeckDataSheet } => (
+    item.dataSheet != null
+  ))
+  const previewJobs = currents.flatMap((current) => (
+    previewSheetCandidates(storage.metadata, current.row.id, current.row.name)
+      .filter((properties) => properties.title)
+      .map((properties) => ({
+        current,
+        properties,
+        sheetTitle: properties.title!,
+        range: PREVIEW_READ_RANGE,
+      }))
+  ))
+  const batched = await readValuesMany(
+    client,
+    [
+      ...readable.map((item) => ({ sheetTitle: item.dataSheet.title, range: "A2:K" })),
+      ...previewJobs.map((job) => ({ sheetTitle: job.sheetTitle, range: job.range })),
+    ],
+    fetchImpl,
+    session
+  )
+  const dataValues = batched.slice(0, readable.length)
+  const previewValues = batched.slice(readable.length)
+
+  const loaded: Array<{
+    current: IndexVersion
+    payload: RemoteDeckPayload
+  }> = []
+  readable.forEach((item, index) => {
+    const dataRows = parseSyncRows(dataValues[index] ?? [], GOOGLE_SHEETS_SCHEMA_VERSION)
+    const version = findExactVersion(
+      dataRows,
+      item.current.row.id,
+      item.current.revision,
+      item.current.versionId
     )
-    if (!preview.deck) {
-      if (preview.sheetId == null) {
-        await writeDeckPreview(client, storage.metadata, id, payload.deck, fetchImpl)
+    if (!version) {
+      throw new Error(`卡包工作表「${item.dataSheet.title}」缺少目录指定的版本`)
+    }
+    loaded.push({
+      current: item.current,
+      payload: decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION),
+    })
+  })
+  for (const item of dataQueries) {
+    if (item.dataSheet) continue
+    const payload = await payloadForIndexVersion(client, storage.metadata, item.current, fetchImpl, session)
+    loaded.push({ current: item.current, payload })
+  }
+
+  const payloadById = new Map(loaded.map((item) => [item.current.row.id, item.payload]))
+  const parsedByDeck = new Map<string, Array<{ properties: SheetProperties; deck: Deck }>>()
+  previewJobs.forEach((job, index) => {
+    const deck = payloadById.get(job.current.row.id)?.deck
+    if (!deck) return
+    try {
+      const parsed = parsePreviewValues(deck, job.properties, previewValues[index] ?? [])
+      const list = parsedByDeck.get(job.current.row.id) ?? []
+      list.push({ properties: job.properties, deck: parsed })
+      parsedByDeck.set(job.current.row.id, list)
+    } catch {
+      // Keep scanning other candidates; readDeckPreview-equivalent throws only if none parse.
+    }
+  })
+
+  for (const item of loaded) {
+    if (!item.payload.deck) continue
+    const parsed = parsedByDeck.get(item.current.row.id) ?? []
+    if (parsed.length === 0) {
+      if (previewSheetCandidates(storage.metadata, item.current.row.id, item.payload.deck.name).length === 0) {
+        await writeDeckPreview(client, storage.metadata, item.current.row.id, item.payload.deck, fetchImpl)
       }
       continue
     }
+    const selected = selectParsedPreview(storage.metadata, item.current.row.id, item.payload.deck, parsed)
+    if (typeof selected.properties.sheetId === "number") {
+      await tagDeckPreviewSheet(client, storage.metadata, selected.properties.sheetId, item.current.row.id, fetchImpl)
+    }
+    if (samePreviewRows(previewRows(item.payload.deck), previewRows(selected.deck))) continue
 
-    const result = await putGoogleSheetsDeck(client, id, {
-      expectedRev: current.revision,
-      deck: preview.deck,
-      editorState: payload.editorState,
-    }, fetchImpl)
-    if (result.ok && preview.sheetId != null) {
+    const result = await putGoogleSheetsDeck(client, item.current.row.id, {
+      expectedRev: item.current.revision,
+      deck: selected.deck,
+      editorState: item.payload.editorState,
+    }, fetchImpl, session)
+    if (result.ok && selected.properties.sheetId != null) {
       await writeDeckPreview(
         client,
         storage.metadata,
-        id,
-        preview.deck,
+        item.current.row.id,
+        selected.deck,
         fetchImpl,
-        preview.sheetId
+        selected.properties.sheetId
       )
     }
   }
@@ -1672,7 +1830,8 @@ async function payloadForIndexVersion(
   client: GoogleSheetsClient,
   metadata: SpreadsheetMetadata,
   current: IndexVersion,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  session?: SheetsSession | null
 ): Promise<RemoteDeckPayload> {
   if (current.row.deletedAt) return tombstonePayload(current.row)
   if (current.row.sheetId == null) {
@@ -1686,7 +1845,7 @@ async function payloadForIndexVersion(
     current.row.sheetId,
     fetchImpl
   )
-  const rows = await readDeckRows(client, dataSheet, fetchImpl)
+  const rows = await readDeckRows(client, dataSheet, fetchImpl, session)
   const version = findExactVersion(rows, current.row.id, current.revision, current.versionId)
   if (!version) throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
   return decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
@@ -1720,12 +1879,13 @@ export async function connectGoogleSheet(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<GoogleSheetDetails> {
-  const storage = await ensureSyncStorage(client, fetchImpl)
-  await ensureExistingDeckPreviews(client, storage, fetchImpl)
+  const session = createSheetsSession()
+  const storage = await ensureSyncStorage(client, fetchImpl, session)
+  await ensureExistingDeckPreviews(client, storage, fetchImpl, session)
   // Older versions appended every revision forever. Compact that legacy data
   // once when the spreadsheet is connected; future writes compact themselves.
   try {
-    await compactSyncHistory(client, storage, fetchImpl)
+    await compactSyncHistory(client, storage, fetchImpl, session)
   } catch (error) {
     // A maintenance failure must not make an otherwise readable spreadsheet
     // impossible to connect. The next sync retries the cleanup.
@@ -1742,27 +1902,30 @@ export async function connectGoogleSheet(
 }
 
 export async function getGoogleSheetsStatus(
-  client: GoogleSheetsClient,
-  fetchImpl: typeof fetch = fetch
+  client: GoogleSheetsClient
 ): Promise<GoogleSheetDetails> {
-  return connectGoogleSheet(client, fetchImpl)
+  return {
+    id: client.spreadsheetId,
+    title: "Google Sheet",
+    url: googleSpreadsheetUrl(client.spreadsheetId),
+  }
 }
 
 export async function listGoogleSheetsIndex(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteIndexEntry[]> {
-  await materializePreviewEdits(client, fetchImpl)
-  const { storage } = await readIndexState(client, fetchImpl)
+  const session = createSheetsSession()
+  await materializePreviewEdits(client, fetchImpl, session)
+  const { storage, rows } = await readIndexState(client, fetchImpl, session)
   try {
-    await compactSyncHistory(client, storage, fetchImpl)
+    await compactSyncHistory(client, storage, fetchImpl, session, rows)
   } catch (error) {
     console.error(JSON.stringify({
       message: "Google Sheets sync history maintenance failed",
       error: String(error),
     }))
   }
-  const { rows } = await readIndexState(client, fetchImpl)
   const ids = [...new Set(rows.map((row) => row.id))]
   return parseRemoteIndex(ids.map((id) => {
     const current = findCurrentIndexVersion(rows, id)
@@ -1783,10 +1946,11 @@ export async function getGoogleSheetsDeck(
   id: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteDeckPayload | null> {
-  const { storage, rows } = await readIndexState(client, fetchImpl)
+  const session = createSheetsSession()
+  const { storage, rows } = await readIndexState(client, fetchImpl, session)
   const current = findCurrentIndexVersion(rows, id)
   return current
-    ? payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
+    ? payloadForIndexVersion(client, storage.metadata, current, fetchImpl, session)
     : null
 }
 
@@ -1794,12 +1958,14 @@ export async function putGoogleSheetsDeck(
   client: GoogleSheetsClient,
   id: string,
   body: PutDeckBody,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  session: SheetsSession | null = null
 ): Promise<PutDeckResult> {
-  const { storage, rows: indexRows } = await readIndexState(client, fetchImpl)
+  const active = session ?? createSheetsSession()
+  const { storage, rows: indexRows } = await readIndexState(client, fetchImpl, active)
   const current = findCurrentIndexVersion(indexRows, id)
   const currentPayload = current
-    ? await payloadForIndexVersion(client, storage.metadata, current, fetchImpl)
+    ? await payloadForIndexVersion(client, storage.metadata, current, fetchImpl, active)
     : null
   const currentRevision = currentPayload?.rev ?? 0
   if (currentRevision !== body.expectedRev) {
@@ -1847,6 +2013,7 @@ export async function putGoogleSheetsDeck(
     )
   }
 
+  if (active) active.indexGrid = null
   await appendValues(client, storage.indexSheet.title, "A:J", [[
     ...indexValues({
       id,
@@ -1867,7 +2034,8 @@ export async function putGoogleSheetsDeck(
     client,
     storage.indexSheet.title,
     "A2:J",
-    fetchImpl
+    fetchImpl,
+    active
   )
   const afterWriteRows = parseIndexRows(afterWriteValues)
   const winner = findCurrentIndexVersion(afterWriteRows, id)
@@ -1876,13 +2044,13 @@ export async function putGoogleSheetsDeck(
       ok: false,
       conflict: true,
       server: winner
-        ? await payloadForIndexVersion(client, storage.metadata, winner, fetchImpl)
+        ? await payloadForIndexVersion(client, storage.metadata, winner, fetchImpl, active)
         : { rev: 0, updatedAt: 0, deletedAt: null, deck: null, editorState: null },
     }
   }
 
   if (dataSheet) {
-    const writtenRows = await readDeckRows(client, dataSheet, fetchImpl)
+    const writtenRows = await readDeckRows(client, dataSheet, fetchImpl, active)
     const writtenVersion = findExactVersion(writtenRows, id, revision, versionId)
     if (!writtenVersion) throw new Error("Google Sheet 卡包数据写入不完整")
     decodePayload(writtenVersion, GOOGLE_SHEETS_SCHEMA_VERSION)
@@ -1945,7 +2113,7 @@ export async function putGoogleSheetsDeck(
   }
 
   try {
-    await compactSyncHistory(client, storage, fetchImpl)
+    await compactSyncHistory(client, storage, fetchImpl, active, afterWriteRows)
   } catch (error) {
     // Compaction is storage maintenance, not part of the optimistic write.
     // Keep the valid latest revision usable and retry maintenance next time.

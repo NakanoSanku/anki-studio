@@ -1,6 +1,7 @@
 import {
   createGoogleSheetsClient,
   GoogleSheetsApiError,
+  SHEETS_QUOTA_USER_MESSAGE,
   type GoogleSheetsClient,
 } from "./google-sheets-sync"
 import {
@@ -117,7 +118,10 @@ export function jsonError(message: string, status: number): Response {
 
 export function googleSheetsErrorResponse(error: unknown, fallback: string): Response {
   if (error instanceof GoogleSheetsApiError) {
-    const status = [401, 403, 404, 503].includes(error.status) ? error.status : 502
+    const quota = error.message === SHEETS_QUOTA_USER_MESSAGE
+    const status = quota
+      ? 429
+      : [401, 403, 404, 503].includes(error.status) ? error.status : 502
     return Response.json({
       error: error.message,
       available: false,

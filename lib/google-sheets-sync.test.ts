@@ -7,8 +7,12 @@ import {
   connectGoogleSheet,
   createGoogleSheetsClient,
   getGoogleSheetsDeck,
+  getGoogleSheetsStatus,
+  isSheetsQuotaError,
   listGoogleSheetsIndex,
   putGoogleSheetsDeck,
+  SHEETS_QUOTA_RETRY_DELAYS_MS,
+  SHEETS_QUOTA_USER_MESSAGE,
 } from "./google-sheets-sync"
 
 const client = createGoogleSheetsClient({
@@ -210,6 +214,27 @@ function createSheetsApi(options: {
     const url = new URL(String(input))
     requests.push({ url, init })
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer short-lived-access-token")
+
+    if (url.pathname.endsWith("/values:batchGet") || url.pathname.endsWith(":batchGet")) {
+      const ranges = url.searchParams.getAll("ranges")
+      const valueRanges = ranges.map((reference) => {
+        const separator = reference.lastIndexOf("!")
+        const quotedTitle = reference.slice(0, separator)
+        const range = reference.slice(separator + 1)
+        const sheetTitle = quotedTitle.startsWith("'") && quotedTitle.endsWith("'")
+          ? quotedTitle.slice(1, -1).replaceAll("''", "'")
+          : quotedTitle
+        const sheet = [...sheets.values()].find((item) => item.title === sheetTitle)
+        if (!sheet) return {}
+        const parsedRange = parseA1(range)
+        const selected = sheet.values
+          .slice(parsedRange.startRow, parsedRange.endRow)
+          .map((row) => row.slice(parsedRange.startColumn, parsedRange.endColumn))
+        const values = compactValues(selected)
+        return values.length > 0 ? { range: reference, values } : { range: reference }
+      })
+      return Response.json({ valueRanges })
+    }
 
     if (url.pathname.endsWith(":batchUpdate")) {
       const body = JSON.parse(String(init?.body)) as { requests?: Array<Record<string, unknown>> }
@@ -668,5 +693,78 @@ describe("Google Sheets API sync", () => {
       rev: 42,
       deck: { name: "旧卡包" },
     })
+  })
+
+  it("does not read the spreadsheet to report sync status", async () => {
+    const api = createSheetsApi()
+    await expect(getGoogleSheetsStatus(client)).resolves.toMatchObject({
+      id: "spreadsheet-1234567890",
+      url: expect.stringContaining("spreadsheet-1234567890"),
+    })
+    expect(api.state().requests).toHaveLength(0)
+  })
+
+  it("scans every deck preview with one batched read instead of per-deck values.get", async () => {
+    const api = createSheetsApi()
+    const firstDeck = { ...createDefaultDeck(), name: "卡包甲" }
+    const secondDeck = { ...createDefaultDeck(), name: "卡包乙" }
+    await putGoogleSheetsDeck(client, "deck-a", { expectedRev: 0, deck: firstDeck }, api.fetchImpl)
+    await putGoogleSheetsDeck(client, "deck-b", { expectedRev: 0, deck: secondDeck }, api.fetchImpl)
+    const before = api.state().requests.length
+
+    await expect(listGoogleSheetsIndex(client, api.fetchImpl)).resolves.toMatchObject([
+      { id: "deck-a", name: "卡包甲" },
+      { id: "deck-b", name: "卡包乙" },
+    ])
+
+    const added = api.state().requests.slice(before)
+    const reads = added.filter((item) => (item.init?.method ?? "GET") === "GET")
+    const valueGets = reads.filter((item) => item.url.pathname.includes("/values/"))
+    const batchGets = reads.filter((item) => item.url.pathname.includes("batchGet"))
+    expect(batchGets.length).toBeGreaterThanOrEqual(1)
+    expect(valueGets.length + batchGets.length).toBeLessThanOrEqual(3)
+    expect(reads.length).toBeLessThanOrEqual(4)
+  })
+
+  it("retries a quota 403 and then succeeds", async () => {
+    const api = createSheetsApi()
+    let quotaReads = 0
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input))
+      if ((init?.method ?? "GET") === "GET" && !url.pathname.includes(":batchUpdate")) {
+        quotaReads += 1
+        if (quotaReads === 1) {
+          return Response.json({
+            error: {
+              message: "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'sheets.googleapis.com' for consumer 'project_number:827130296367'",
+            },
+          }, { status: 403 })
+        }
+      }
+      return api.fetchImpl(input, init)
+    }
+    const previous = [...SHEETS_QUOTA_RETRY_DELAYS_MS]
+    SHEETS_QUOTA_RETRY_DELAYS_MS.splice(0, SHEETS_QUOTA_RETRY_DELAYS_MS.length, 0, 0)
+    try {
+      await expect(connectGoogleSheet(client, fetchImpl)).resolves.toMatchObject({
+        id: "spreadsheet-1234567890",
+      })
+      expect(quotaReads).toBeGreaterThan(1)
+    } finally {
+      SHEETS_QUOTA_RETRY_DELAYS_MS.splice(0, SHEETS_QUOTA_RETRY_DELAYS_MS.length, ...previous)
+    }
+  })
+})
+
+describe("Sheets quota errors", () => {
+  it("recognizes Google's per-user read quota 403", () => {
+    expect(isSheetsQuotaError(403, {
+      error: {
+        message: "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'sheets.googleapis.com' for consumer 'project_number:827130296367'",
+      },
+    })).toBe(true)
+    expect(isSheetsQuotaError(429, { error: { message: "rate limit exceeded" } })).toBe(true)
+    expect(isSheetsQuotaError(403, { error: { message: "The caller does not have permission" } })).toBe(false)
+    expect(SHEETS_QUOTA_USER_MESSAGE).toContain("过于频繁")
   })
 })
