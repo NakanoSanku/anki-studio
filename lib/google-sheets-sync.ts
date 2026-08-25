@@ -20,6 +20,8 @@ import type {
 const SHEETS_API_ROOT = "https://sheets.googleapis.com/v4/spreadsheets"
 const INDEX_SHEET_NAME = "_anki_studio_sync"
 const HAS_WRITTEN_METADATA_KEY = "anki_studio_has_data"
+const HISTORY_COMPACTED_METADATA_KEY = "anki_studio_history_compacted"
+const HISTORY_COMPACTED_SCHEMA_VERSION = "1"
 const DECK_SHEET_METADATA_KEY = "anki_studio_deck_id"
 const PREVIEW_SHEET_METADATA_KEY = "anki_studio_preview_deck_id"
 const PREVIEW_SCHEMA_METADATA_KEY = "anki_studio_preview_schema"
@@ -187,7 +189,11 @@ function apiMessage(status: number, payload: unknown): string {
     ? (payload as GoogleErrorPayload).error?.message
     : undefined
   if (status === 401) return "Google 授权已失效，请重新连接帐号"
-  if (status === 403) return "当前帐号无权访问这个 Google Sheet"
+  if (status === 403) {
+    return typeof message === "string" && message.trim()
+      ? `当前帐号无权访问这个 Google Sheet：${message.slice(0, 180)}`
+      : "当前帐号无权访问这个 Google Sheet"
+  }
   if (status === 404) return "找不到这个 Google Sheet"
   return typeof message === "string" && message.trim()
     ? message.slice(0, 240)
@@ -313,6 +319,13 @@ async function readSpreadsheetMetadata(
 function hasWrittenData(metadata: SpreadsheetMetadata): boolean {
   return (metadata.developerMetadata ?? []).some((item) => (
     item.metadataKey === HAS_WRITTEN_METADATA_KEY && item.metadataValue === "1"
+  ))
+}
+
+function hasHistoryCompacted(metadata: SpreadsheetMetadata): boolean {
+  return (metadata.developerMetadata ?? []).some((item) => (
+    item.metadataKey === HISTORY_COMPACTED_METADATA_KEY
+    && item.metadataValue === HISTORY_COMPACTED_SCHEMA_VERSION
   ))
 }
 
@@ -828,6 +841,32 @@ async function markHasWrittenData(
   ]
 }
 
+async function markHistoryCompacted(
+  client: GoogleSheetsClient,
+  metadata: SpreadsheetMetadata,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  if (hasHistoryCompacted(metadata)) return
+  await batchUpdate(client, [{
+    createDeveloperMetadata: {
+      developerMetadata: {
+        location: { spreadsheet: true },
+        metadataKey: HISTORY_COMPACTED_METADATA_KEY,
+        metadataValue: HISTORY_COMPACTED_SCHEMA_VERSION,
+        visibility: "DOCUMENT",
+      },
+    },
+  }], fetchImpl)
+  metadata.developerMetadata = [
+    ...(metadata.developerMetadata ?? []),
+    {
+      metadataKey: HISTORY_COMPACTED_METADATA_KEY,
+      metadataValue: HISTORY_COMPACTED_SCHEMA_VERSION,
+      location: { spreadsheet: true },
+    },
+  ]
+}
+
 async function markPreviewSchema(
   client: GoogleSheetsClient,
   metadata: SpreadsheetMetadata,
@@ -1317,6 +1356,96 @@ async function replaceSheetData(
   await updateValues(client, dataSheet.title, `A1:K${rowCount}`, values, fetchImpl)
 }
 
+function latestIndexRows(rows: IndexRow[]): IndexRow[] {
+  const ids = [...new Set(rows.map((row) => row.id))]
+  return ids
+    .map((id) => findCurrentIndexVersion(rows, id)?.row ?? null)
+    .filter((row): row is IndexRow => row !== null)
+}
+
+async function compactIndexSheet(
+  client: GoogleSheetsClient,
+  storage: SyncStorage,
+  rows: IndexRow[],
+  fetchImpl: typeof fetch
+): Promise<void> {
+  const existing = await readValues(client, storage.indexSheet.title, "A1:J", fetchImpl)
+  const current = latestIndexRows(rows)
+  const rowCount = Math.max(existing.length, current.length + 1, 1)
+  const values: unknown[][] = [
+    [...INDEX_HEADERS],
+    ...current.map((row) => indexValues(row)),
+    ...Array.from({
+      length: rowCount - current.length - 1,
+    }, () => Array(INDEX_HEADERS.length).fill("")),
+  ]
+  await updateValues(
+    client,
+    storage.indexSheet.title,
+    `A1:J${rowCount}`,
+    values,
+    fetchImpl
+  )
+}
+
+async function compactSyncHistory(
+  client: GoogleSheetsClient,
+  storage: SyncStorage,
+  fetchImpl: typeof fetch
+): Promise<void> {
+  const values = await readValues(client, storage.indexSheet.title, "A2:J", fetchImpl)
+  const rows = parseIndexRows(values)
+  const currentRows = latestIndexRows(rows)
+
+  // The payload sheets only need a one-time migration, but the index receives
+  // a new optimistic row on every write. Keep that directory compact on every
+  // pass as well, including spreadsheets already carrying the marker.
+  if (hasHistoryCompacted(storage.metadata)) {
+    await compactIndexSheet(client, storage, currentRows, fetchImpl)
+    return
+  }
+
+  const compactedRows: IndexRow[] = []
+
+  for (const current of currentRows) {
+    if (current.deletedAt || current.sheetId == null) {
+      compactedRows.push(current)
+      continue
+    }
+
+    const dataSheet = await ensureDeckSheet(
+      client,
+      storage.metadata,
+      current.id,
+      current.name,
+      current.sheetId,
+      fetchImpl
+    )
+    const dataRows = await readDeckRows(client, dataSheet, fetchImpl)
+    const version = findExactVersion(dataRows, current.id, current.revision, current.versionId)
+    if (!version) {
+      throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
+    }
+    const payload = decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
+    await replaceSheetData(
+      client,
+      dataSheet,
+      dataRowsForPayload(current.id, payload, current.versionId),
+      fetchImpl
+    )
+    compactedRows.push({
+      ...current,
+      name: payload.deck?.name.trim().slice(0, 200) || current.name || "未命名卡包",
+      cardCount: payload.deck?.cards.length ?? current.cardCount,
+      sheetId: dataSheet.sheetId,
+      sheetTitle: dataSheet.title,
+    })
+  }
+
+  await compactIndexSheet(client, storage, compactedRows, fetchImpl)
+  await markHistoryCompacted(client, storage.metadata, fetchImpl)
+}
+
 async function migrateLegacyStorage(
   client: GoogleSheetsClient,
   metadata: SpreadsheetMetadata,
@@ -1593,6 +1722,18 @@ export async function connectGoogleSheet(
 ): Promise<GoogleSheetDetails> {
   const storage = await ensureSyncStorage(client, fetchImpl)
   await ensureExistingDeckPreviews(client, storage, fetchImpl)
+  // Older versions appended every revision forever. Compact that legacy data
+  // once when the spreadsheet is connected; future writes compact themselves.
+  try {
+    await compactSyncHistory(client, storage, fetchImpl)
+  } catch (error) {
+    // A maintenance failure must not make an otherwise readable spreadsheet
+    // impossible to connect. The next sync retries the cleanup.
+    console.error(JSON.stringify({
+      message: "Google Sheets history migration failed",
+      error: String(error),
+    }))
+  }
   return {
     id: client.spreadsheetId,
     title: storage.metadata.properties?.title?.trim() || "Google Sheet",
@@ -1612,6 +1753,15 @@ export async function listGoogleSheetsIndex(
   fetchImpl: typeof fetch = fetch
 ): Promise<RemoteIndexEntry[]> {
   await materializePreviewEdits(client, fetchImpl)
+  const { storage } = await readIndexState(client, fetchImpl)
+  try {
+    await compactSyncHistory(client, storage, fetchImpl)
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "Google Sheets sync history maintenance failed",
+      error: String(error),
+    }))
+  }
   const { rows } = await readIndexState(client, fetchImpl)
   const ids = [...new Set(rows.map((row) => row.id))]
   return parseRemoteIndex(ids.map((id) => {
@@ -1737,6 +1887,22 @@ export async function putGoogleSheetsDeck(
     if (!writtenVersion) throw new Error("Google Sheet 卡包数据写入不完整")
     decodePayload(writtenVersion, GOOGLE_SHEETS_SCHEMA_VERSION)
     try {
+      // The append above makes optimistic concurrent writes safe. Once this
+      // version wins, replace the payload history with the single current
+      // version so old revisions are no longer retained in Drive.
+      await replaceSheetData(
+        client,
+        dataSheet,
+        dataRowsForPayload(id, payload, versionId),
+        fetchImpl
+      )
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: "Google Sheets deck history compaction failed",
+        error: String(error),
+      }))
+    }
+    try {
       await writeDeckPreview(client, storage.metadata, id, deck!, fetchImpl)
       previewReady = true
     } catch (error) {
@@ -1776,6 +1942,17 @@ export async function putGoogleSheetsDeck(
         }))
       }
     }
+  }
+
+  try {
+    await compactSyncHistory(client, storage, fetchImpl)
+  } catch (error) {
+    // Compaction is storage maintenance, not part of the optimistic write.
+    // Keep the valid latest revision usable and retry maintenance next time.
+    console.error(JSON.stringify({
+      message: "Google Sheets sync history maintenance failed",
+      error: String(error),
+    }))
   }
 
   if (previewReady) await markPreviewSchema(client, storage.metadata, fetchImpl)

@@ -16,7 +16,11 @@ export type GoogleOAuthConfiguration =
     }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/drive.file"
+// `drive.file` is enough for Picker-selected files, but it cannot open an
+// arbitrary spreadsheet URL pasted by the user. Keep the Picker scope and add
+// the Sheets scope so both connection paths use the same token.
+const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+const GOOGLE_PICKER_SCOPE = "https://www.googleapis.com/auth/drive.file"
 const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60_000
 
 type GoogleToken = JWT & {
@@ -166,7 +170,7 @@ export function createGoogleAuthOptions(
                 access_type: "offline",
                 include_granted_scopes: "true",
                 prompt: "consent",
-                scope: `openid email profile ${GOOGLE_SHEETS_SCOPE}`,
+                scope: `openid email profile ${GOOGLE_SHEETS_SCOPE} ${GOOGLE_PICKER_SCOPE}`,
               },
             },
           }),

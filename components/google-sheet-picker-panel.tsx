@@ -137,7 +137,7 @@ export function GoogleSheetPickerPanel({
       if (!response.ok) {
         const issue = responseError(data, "无法连接这个 Google Sheet")
         throw new Error(response.status === 403
-          ? `${issue}。请先用“选择 Google 表格”授权这个文件。`
+          ? `${issue}。请确认当前 Google 帐号拥有该表格的编辑权限，并重新授权 Google 表格访问。`
           : issue)
       }
       const sheet = data && typeof data === "object"
@@ -257,7 +257,7 @@ export function GoogleSheetPickerPanel({
             </Badge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            可见工作表按“字段列、笔记行”展示；可直接修改文本字段、增加或删除行，网站同步时会回写。TTS 字段由应用管理，版本和 FSRS 数据保存在隐藏工作表中。
+            可见工作表按“字段列、笔记行”展示；可直接修改文本字段、增加或删除行，网站同步时会回写。也可以粘贴 Docs、Drive 或登录页里的表格链接，但当前帐号需要拥有编辑权限。TTS 字段由应用管理，版本和 FSRS 数据保存在隐藏工作表中。
           </p>
         </div>
       </div>
@@ -308,10 +308,11 @@ export function GoogleSheetPickerPanel({
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative min-w-0 flex-1">
             <Link2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            {/* Raw IDs and Google Drive/sign-in links are validated by the parser below. */}
             <Input
               id="google-sheet-link"
               className="pl-9"
-              type="url"
+              type="text"
               inputMode="url"
               autoComplete="off"
               placeholder="https://docs.google.com/spreadsheets/d/…/edit"

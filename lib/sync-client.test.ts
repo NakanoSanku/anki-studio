@@ -106,6 +106,20 @@ describe("runSyncCycle", () => {
     expect(record?.rev).toBe(1)
   })
 
+  it("pushes the clean sample deck when the remote sheet is empty", async () => {
+    const { getStudioStore } = await import("./studio-store")
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const transport = memoryTransport({ decks: {} })
+    const summary = await runSyncCycle({
+      store,
+      transport,
+      resolveConflict: async () => "defer",
+    })
+    expect(summary.pushed).toBe(1)
+    expect(transport.decks[session.library.activeId]?.deck?.name).toBe(session.deck.name)
+  })
+
   it("keeps local data when a conflict is deferred", async () => {
     const { getStudioStore } = await import("./studio-store")
     const store = getStudioStore()

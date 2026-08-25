@@ -63,8 +63,10 @@ describe("Google OAuth configuration", () => {
     expect(isAllowedGoogleSession({ expires: "soon", user: { email: "other@example.com" } }, allowed)).toBe(false)
   })
 
-  it("recognizes only the per-file Google Drive scope", () => {
-    expect(hasGoogleSheetsScope("openid https://www.googleapis.com/auth/drive.file email")).toBe(true)
+  it("requires the full Google Sheets scope for pasted links", () => {
+    expect(hasGoogleSheetsScope("openid https://www.googleapis.com/auth/spreadsheets email")).toBe(true)
+    expect(hasGoogleSheetsScope("openid https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file")).toBe(true)
+    expect(hasGoogleSheetsScope("openid https://www.googleapis.com/auth/drive.file email")).toBe(false)
     expect(hasGoogleSheetsScope("openid email profile")).toBe(false)
   })
 
@@ -80,7 +82,7 @@ describe("Google OAuth configuration", () => {
       return Response.json({
         access_token: "new-access-token",
         expires_in: 3600,
-        scope: "https://www.googleapis.com/auth/drive.file",
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
       })
     }) as unknown as typeof fetch
 

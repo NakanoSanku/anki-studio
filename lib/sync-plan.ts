@@ -65,7 +65,10 @@ export function planSync(local: DeckRecord[], remote: RemoteIndexEntry[]): SyncA
     }
 
     if (record && !entry) {
-      if (record.dirty) {
+      // A freshly installed starter deck is intentionally clean, but it is
+      // still local data that must be materialized in an empty cloud sheet.
+      // Once it has a revision, the normal dirty/tombstone rules apply.
+      if (record.dirty || record.rev === 0) {
         actions.push(record.deletedAt ? { type: "push-tombstone", id } : { type: "push", id })
       } else if (record.rev > 0) {
         actions.push({

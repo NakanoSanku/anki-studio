@@ -471,6 +471,43 @@ describe("Google Sheets API sync", () => {
     })
   })
 
+  it("keeps only the latest payload and index row after each revision", async () => {
+    const api = createSheetsApi()
+    const initial = createDefaultDeck()
+    const first = await putGoogleSheetsDeck(client, "history-deck", {
+      expectedRev: 0,
+      deck: initial,
+    }, api.fetchImpl)
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error("expected first save to succeed")
+
+    const nextDeck = {
+      ...initial,
+      cards: initial.cards.map((card) => ({
+        ...card,
+        values: { ...card.values, Word: "latest" },
+      })),
+    }
+    const second = await putGoogleSheetsDeck(client, "history-deck", {
+      expectedRev: first.rev,
+      deck: nextDeck,
+    }, api.fetchImpl)
+    expect(second.ok).toBe(true)
+
+    const dataSheet = deckSheets(api)[0]
+    const dataValues = dataSheet?.values.filter(hasValue) ?? []
+    expect(dataValues).toHaveLength(2)
+    expect(dataValues[1]?.[1]).toBe(second.ok ? second.rev : -1)
+    const indexSheet = api.state().sheets.find((sheet) => sheet.title === "_anki_studio_sync")
+    const indexValues = indexSheet?.values.filter(hasValue) ?? []
+    expect(indexValues).toHaveLength(2)
+    expect(indexValues[1]?.[1]).toBe(second.ok ? second.rev : -1)
+    expect(api.state().developerMetadata).toContainEqual(expect.objectContaining({
+      metadataKey: "anki_studio_history_compacted",
+      metadataValue: "1",
+    }))
+  })
+
   it("pulls edited, added, and deleted rows from an editable preview", async () => {
     const api = createSheetsApi()
     const source = createDefaultDeck()

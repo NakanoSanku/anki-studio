@@ -66,7 +66,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 5. 配置 `GOOGLE_ALLOWED_EMAILS`。这是可登录帐号白名单，多个邮箱用逗号分隔；Google 返回的邮箱必须已经验证并出现在列表中。
 
-OAuth 使用 `drive.file` 最小权限，只能访问应用创建或用户通过 Picker 授权的文件。短期访问令牌由服务端会话续期，不会保存到 IndexedDB 或同步表。直接粘贴链接只有在该文件已经对本应用授权时才能连接；否则先通过 Picker 选择一次。
+OAuth 同时申请 Google Sheets 的编辑权限与 Picker 所需的 `drive.file` 权限：前者让用户可以直接粘贴自己有权限的表格链接，后者用于 Picker 选表。短期访问令牌由服务端会话续期，不会保存到 IndexedDB 或同步表。升级授权范围后，已有登录需要重新连接 Google 帐号一次。
 
 ### 3. 本地开发
 

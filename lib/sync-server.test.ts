@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { GOOGLE_SHEET_ID_HEADER } from "./google-sheet-id"
 import { getSyncEnv } from "./sync-server"
 
-const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -50,7 +50,7 @@ describe("getSyncEnv", () => {
     }
   })
 
-  it("requires drive.file authorization on the session", async () => {
+  it("requires Google Sheets authorization on the session", async () => {
     configureOAuth()
     const result = await getSyncEnv(request(), async () => ({
       expires: "soon",
@@ -70,7 +70,7 @@ describe("getSyncEnv", () => {
       expires: "soon",
       user: { email: "kate@example.com" },
       googleAccessToken: "access-token",
-      googleScope: DRIVE_FILE_SCOPE,
+      googleScope: SHEETS_SCOPE,
     }))
 
     expect(result.ok).toBe(false)
@@ -83,7 +83,7 @@ describe("getSyncEnv", () => {
       expires: "soon",
       user: { email: "KATE@example.com" },
       googleAccessToken: "access-token",
-      googleScope: `openid email ${DRIVE_FILE_SCOPE}`,
+      googleScope: `openid email ${SHEETS_SCOPE}`,
     }))
 
     expect(result).toMatchObject({
@@ -101,7 +101,7 @@ describe("getSyncEnv", () => {
       expires: "soon",
       user: { email: "other@example.com" },
       googleAccessToken: "access-token",
-      googleScope: DRIVE_FILE_SCOPE,
+      googleScope: SHEETS_SCOPE,
     }))
 
     expect(result.ok).toBe(false)

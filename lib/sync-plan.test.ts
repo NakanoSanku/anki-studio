@@ -138,7 +138,9 @@ describe("planSync", () => {
     ).toEqual([])
   })
 
-  it("does not upload a clean never-synced deck", () => {
-    expect(planSync([record({ id: "fresh", dirty: false, rev: 0 })], [])).toEqual([])
+  it("uploads a clean never-synced starter deck", () => {
+    expect(planSync([record({ id: "fresh", dirty: false, rev: 0 })], [])).toEqual([
+      { type: "push", id: "fresh" },
+    ])
   })
 })
