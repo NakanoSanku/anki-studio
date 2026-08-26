@@ -13,6 +13,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Trash2,
 } from "lucide-react"
 
@@ -30,6 +31,7 @@ import {
 } from "@/lib/google-sheet-connection"
 import { GOOGLE_SHEET_ID_HEADER, parseGoogleSpreadsheetId } from "@/lib/google-sheet-id"
 import type { SpreadsheetInventory } from "@/lib/sync-types"
+import { cn } from "@/lib/utils"
 
 type PickerConfig = {
   accessToken: string
@@ -80,6 +82,12 @@ declare global {
   }
 }
 
+const tabStyles = {
+  create: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
+  picker: "bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]",
+  link: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
+} as const
+
 function responseError(data: unknown, fallback: string): string {
   if (data && typeof data === "object" && "error" in data) {
     const error = (data as Record<string, unknown>).error
@@ -121,9 +129,7 @@ export function GoogleSheetPickerPanel({
     readGoogleSheetConnectionSnapshot,
     () => null
   )
-  const connection = useMemo(() => readGoogleSheetConnection({
-    getItem: () => connectionSnapshot,
-  }), [connectionSnapshot])
+  const connection = useMemo(() => readGoogleSheetConnection({ getItem: () => connectionSnapshot }), [connectionSnapshot])
   const [link, setLink] = useState("")
   const [newSheetTitle, setNewSheetTitle] = useState("Anki Studio · 闪卡同步")
   const [scriptReady, setScriptReady] = useState(false)
@@ -142,14 +148,13 @@ export function GoogleSheetPickerPanel({
     setDriveLoading(true)
     try {
       const queryParam = searchQuery.trim() ? `?q=${encodeURIComponent(searchQuery.trim())}` : ""
-      const response = await fetch(`/api/google-sheets/list${queryParam}`, {
-        cache: "no-store",
-      })
+      const response = await fetch(`/api/google-sheets/list${queryParam}`, { cache: "no-store" })
       const data = await response.json().catch(() => null) as { files?: Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string }> } | null
       setDriveFiles(data?.files || [])
       setDriveLoaded(true)
     } catch {
       setDriveFiles([])
+      setDriveLoaded(true)
     } finally {
       setDriveLoading(false)
     }
@@ -159,18 +164,16 @@ export function GoogleSheetPickerPanel({
     let active = true
     if (activeTab === "picker" && enabled && !driveLoaded) {
       void fetch("/api/google-sheets/list", { cache: "no-store" })
-        .then((res) => res.json())
+        .then((response) => response.json())
         .then((data: { files?: Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string }> }) => {
-          if (active) {
-            setDriveFiles(data?.files || [])
-            setDriveLoaded(true)
-          }
+          if (!active) return
+          setDriveFiles(data?.files || [])
+          setDriveLoaded(true)
         })
         .catch(() => {
-          if (active) {
-            setDriveFiles([])
-            setDriveLoaded(true)
-          }
+          if (!active) return
+          setDriveFiles([])
+          setDriveLoaded(true)
         })
     }
     return () => {
@@ -206,17 +209,14 @@ export function GoogleSheetPickerPanel({
     if (!connection || !enabled) return
     let cancelled = false
     void (async () => {
-      if (cancelled) return
-      await fetchInventory(connection.id)
+      if (!cancelled) await fetchInventory(connection.id)
     })()
     return () => {
       cancelled = true
     }
   }, [connection, enabled, inventoryKey])
 
-  const visibleInventory = connection && inventory?.spreadsheetId === connection.id
-    ? inventory
-    : null
+  const visibleInventory = connection && inventory?.spreadsheetId === connection.id ? inventory : null
 
   const connect = async (spreadsheetId: string) => {
     setBusy("connect")
@@ -234,33 +234,23 @@ export function GoogleSheetPickerPanel({
           ? `${issue}。请确认当前 Google 帐号拥有该表格的编辑权限，并重新授权 Google 表格访问。`
           : issue)
       }
-      const sheet = data && typeof data === "object"
-        ? (data as { sheet?: Partial<GoogleSheetConnection> }).sheet
-        : undefined
-      if (
-        typeof sheet?.id !== "string"
-        || typeof sheet.name !== "string"
-        || typeof sheet.url !== "string"
-      ) {
+      const sheet = data && typeof data === "object" ? (data as { sheet?: Partial<GoogleSheetConnection> }).sheet : undefined
+      if (typeof sheet?.id !== "string" || typeof sheet.name !== "string" || typeof sheet.url !== "string") {
         throw new Error("Google Sheet 连接响应无效")
       }
       const next = { id: sheet.id, name: sheet.name, url: sheet.url }
       writeGoogleSheetConnection(next)
       setLink(next.url)
-      setMessage("表格已成功连接！正在同步卡包数据…")
+      setMessage("表格已连接，正在同步卡包数据…")
       onConnectionChange?.(true)
       try {
-        if (onConnected) {
-          await Promise.resolve(onConnected())
-        }
+        if (onConnected) await Promise.resolve(onConnected())
         setMessage("表格绑定成功，已完成双向同步！")
       } catch {
         setMessage("表格已绑定成功！")
       }
       await fetchInventory(next.id)
-      setTimeout(() => {
-        setMessage((current) => current.includes("成功") ? "" : current)
-      }, 4000)
+      window.setTimeout(() => setMessage((current) => current.includes("成功") ? "" : current), 4000)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法连接这个 Google Sheet")
     } finally {
@@ -282,37 +272,24 @@ export function GoogleSheetPickerPanel({
         body: JSON.stringify({ title: newSheetTitle.trim() || "Anki Studio · 闪卡同步" }),
       })
       const data = await response.json().catch(() => null) as unknown
-      if (!response.ok) {
-        const issue = responseError(data, "在 Google Drive 中创建表格失败")
-        throw new Error(issue)
-      }
-      const sheet = data && typeof data === "object"
-        ? (data as { sheet?: Partial<GoogleSheetConnection> }).sheet
-        : undefined
-      if (
-        typeof sheet?.id !== "string"
-        || typeof sheet.name !== "string"
-        || typeof sheet.url !== "string"
-      ) {
+      if (!response.ok) throw new Error(responseError(data, "在 Google Drive 中创建表格失败"))
+      const sheet = data && typeof data === "object" ? (data as { sheet?: Partial<GoogleSheetConnection> }).sheet : undefined
+      if (typeof sheet?.id !== "string" || typeof sheet.name !== "string" || typeof sheet.url !== "string") {
         throw new Error("创建表格响应无效")
       }
       const next = { id: sheet.id, name: sheet.name, url: sheet.url }
       writeGoogleSheetConnection(next)
       setLink(next.url)
-      setMessage("已创建表格！正在同步卡包数据…")
+      setMessage("已创建表格，正在同步卡包数据…")
       onConnectionChange?.(true)
       try {
-        if (onConnected) {
-          await Promise.resolve(onConnected())
-        }
+        if (onConnected) await Promise.resolve(onConnected())
         setMessage("已在 Google Drive 中创建表格并完成首次同步！")
       } catch {
         setMessage("已成功在 Google Drive 中创建并连接表格！")
       }
       await fetchInventory(next.id)
-      setTimeout(() => {
-        setMessage((current) => current.includes("成功") ? "" : current)
-      }, 4000)
+      window.setTimeout(() => setMessage((current) => current.includes("成功") ? "" : current), 4000)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "创建表格失败")
     } finally {
@@ -339,9 +316,7 @@ export function GoogleSheetPickerPanel({
       const data = await response.json().catch(() => null) as unknown
       if (!response.ok) throw new Error(responseError(data, "无法启动 Google Picker"))
       const config = data as Partial<PickerConfig>
-      if (!config.accessToken || !config.developerKey || !config.appId) {
-        throw new Error("Google Picker 配置不完整")
-      }
+      if (!config.accessToken || !config.developerKey || !config.appId) throw new Error("Google Picker 配置不完整")
       const view = new picker.DocsView(picker.ViewId.SPREADSHEETS)
         .setMimeTypes("application/vnd.google-apps.spreadsheet")
         .setMode(picker.DocsViewMode.LIST)
@@ -406,301 +381,205 @@ export function GoogleSheetPickerPanel({
       ) : null}
 
       {connection ? (
-        <div className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-xs sm:p-4">
-          {/* Header with Title and Action buttons */}
-          <div className="flex items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                <FileSpreadsheet className="size-4.5" />
-              </span>
+        <section className="relative overflow-hidden rounded-[2rem] bg-[#d8f4aa] p-5 text-[#315f18] shadow-[0_22px_60px_-46px_rgba(0,0,0,0.7)] dark:bg-[#385528] dark:text-[#e4f8c5]">
+          <div className="pointer-events-none absolute -right-12 -top-10 size-40 rounded-[48%_52%_60%_40%/56%_44%_56%_44%] bg-[#ffe39a] opacity-80 dark:bg-[#68551f]" aria-hidden="true" />
+          <div className="relative z-10">
+            <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="truncate text-sm font-bold text-foreground">{connection.name}</p>
-                  <Badge variant="outline" className="hidden shrink-0 border-emerald-500/30 bg-emerald-50/50 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 xs:inline-flex">
-                    已绑定
-                  </Badge>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
-                  <a
-                    href={connection.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline dark:text-emerald-400"
-                  >
-                    在 Sheets 打开
-                    <ExternalLink className="size-2.5" />
-                  </a>
-                  <span className="text-muted-foreground/30">·</span>
-                  <a
-                    href={driveUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    云端硬盘
-                    <ExternalLink className="size-2.5" />
-                  </a>
-                </div>
+                <span className="inline-flex items-center rounded-full bg-white/50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] dark:bg-black/15">
+                  <Check className="mr-1 size-3" />sheet connected
+                </span>
+                <h3 className="mt-4 truncate text-2xl font-black tracking-[-0.055em]">{connection.name}</h3>
+                <p className="mt-1 text-xs font-semibold opacity-55">你的同步数据库已经绑定。</p>
               </div>
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-[1.2rem] bg-white/55 dark:bg-black/15">
+                <FileSpreadsheet className="size-5" />
+              </span>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a href={connection.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-black px-3.5 text-[10px] font-black text-white dark:bg-white dark:text-black">
+                在 Sheets 打开 <ExternalLink className="size-3" />
+              </a>
+              <a href={driveUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/55 px-3.5 text-[10px] font-black dark:bg-black/15">
+                Google Drive <ExternalLink className="size-3" />
+              </a>
+            </div>
+
+            {visibleInventory ? (
+              <div className="mt-5 rounded-[1.5rem] bg-white/45 p-3.5 dark:bg-black/15">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] opacity-45">inventory</p>
+                    <p className="mt-0.5 text-lg font-black tracking-[-0.035em]">{visibleInventory.decks.length} 个卡包</p>
+                  </div>
+                  <Badge className="border-0 bg-black px-2.5 py-1 text-[9px] font-black text-white shadow-none dark:bg-white dark:text-black">{visibleInventory.sheetCount} sheets</Badge>
+                </div>
+                {visibleInventory.decks.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {visibleInventory.decks.map((deck) => (
+                      <span key={deck.deckId} className="max-w-full truncate rounded-full bg-white/60 px-3 py-1.5 text-[10px] font-black dark:bg-white/10">
+                        {deck.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs font-semibold opacity-55">还没有同步卡包，执行一次同步即可初始化。</p>
+                )}
+              </div>
+            ) : null}
+
+            {inventoryError ? <p className="mt-3 text-xs font-bold text-[#7b3f00] dark:text-[#ffd29f]">{inventoryError}</p> : null}
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
               <Button
                 type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 rounded-xl px-2.5 text-xs font-medium"
+                variant="ghost"
+                className="h-11 bg-white/50 text-xs font-black text-current hover:bg-white/75 hover:text-current dark:bg-black/15 dark:hover:bg-black/25"
                 disabled={busy !== null}
                 onClick={() => {
                   setBusy("refresh")
                   void fetchInventory(connection.id).finally(() => setBusy(null))
                 }}
               >
-                <RefreshCw className={busy === "refresh" ? "size-3 animate-spin" : "size-3 sm:mr-1"} />
-                <span className="hidden sm:inline">检查结构</span>
+                <RefreshCw className={cn("size-3.5", busy === "refresh" && "animate-spin")} />检查结构
               </Button>
               <Button
                 type="button"
-                size="sm"
                 variant="ghost"
-                className="h-8 rounded-xl px-2 text-xs font-medium text-destructive hover:bg-destructive/10"
+                className="h-11 bg-black/8 text-xs font-black text-current hover:bg-black/12 hover:text-current dark:bg-white/10 dark:hover:bg-white/15"
                 onClick={remove}
-                title="断开与此表格的连接"
               >
-                <Trash2 className="size-3 sm:mr-1" />
-                <span className="hidden sm:inline">断开</span>
+                <Trash2 className="size-3.5" />断开表格
               </Button>
             </div>
           </div>
-
-          {/* Sync Decks Inventory */}
-          {visibleInventory ? (
-            <div className="mt-3 border-t border-border/50 pt-2.5">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  已同步 {visibleInventory.decks.length} 个卡包
-                </span>
-                <span className="text-[11px] opacity-70">
-                  共 {visibleInventory.sheetCount} 张工作表
-                </span>
-              </div>
-              {visibleInventory.decks.length > 0 ? (
-                <div className="mt-2 divide-y divide-border/40 rounded-xl border border-border/50 bg-muted/20">
-                  {visibleInventory.decks.map((deck) => {
-                    const previewSheets = deck.sheets.filter((s) => s.kind === "preview")
-                    return (
-                      <div key={deck.deckId} className="flex items-center justify-between gap-2 p-2.5 text-xs">
-                        <span className="font-medium text-foreground truncate">{deck.name}</span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {previewSheets.map((sheet) => (
-                            <span
-                              key={sheet.sheetId}
-                              className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
-                            >
-                              <FileSpreadsheet className="size-2.5" />
-                              工作表: {sheet.title}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="mt-2 rounded-xl border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground">
-                  暂未同步卡包，点击下方“立即同步”即可将当前卡包写入此表格。
-                </p>
-              )}
-            </div>
-          ) : null}
-
-          {inventoryError ? (
-            <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{inventoryError}</p>
-          ) : null}
-        </div>
+        </section>
       ) : (
-        <div className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-xs sm:p-5">
-          {/* Header */}
-          <div className="flex items-start gap-3 min-w-0">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 sm:size-10 sm:rounded-2xl">
-              <FileSpreadsheet className="size-4.5 sm:size-5" />
+        <section className="rounded-[2rem] bg-card p-4 shadow-[0_22px_60px_-46px_rgba(0,0,0,0.7)] sm:p-5">
+          <div className="flex items-start gap-3.5">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-[1.2rem] bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]">
+              <FileSpreadsheet className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground">绑定 Google 表格</p>
-                <Badge variant="secondary" className="border-border/60 text-[10px] font-normal text-muted-foreground">
-                  未绑定
-                </Badge>
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                卡包数据与进度将安全保存在您的专属 Google 表格中，支持多端实时双向同步。
-              </p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">sync database</p>
+              <h3 className="mt-1 text-xl font-black tracking-[-0.045em]">选择 Google Sheet</h3>
+              <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">新建一张专用表格，或者绑定 Drive 中已有的表格。</p>
             </div>
           </div>
 
-          {/* Segmented Control */}
-          <div className="mt-3.5 grid grid-cols-3 gap-1 rounded-xl bg-muted/50 p-1 text-xs">
-            <button
-              type="button"
-              className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-medium whitespace-nowrap transition-all ${
-                activeTab === "create" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setActiveTab("create")}
-            >
-              <FolderPlus className="size-3.5 shrink-0" />
-              <span>新建表格</span>
-            </button>
-            <button
-              type="button"
-              className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-medium whitespace-nowrap transition-all ${
-                activeTab === "picker" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setActiveTab("picker")}
-            >
-              <HardDrive className="size-3.5 shrink-0" />
-              <span>云端挑选</span>
-            </button>
-            <button
-              type="button"
-              className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-medium whitespace-nowrap transition-all ${
-                activeTab === "link" ? "bg-card text-foreground shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setActiveTab("link")}
-            >
-              <Link2 className="size-3.5 shrink-0" />
-              <span>粘贴链接</span>
-            </button>
+          <div className="mt-4 grid grid-cols-3 gap-1.5">
+            {([
+              ["create", "新建", FolderPlus],
+              ["picker", "Drive", HardDrive],
+              ["link", "链接", Link2],
+            ] as const).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={cn(
+                  "flex min-h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[10px] font-black transition-transform active:scale-95",
+                  activeTab === id ? tabStyles[id] : "bg-muted/55 text-muted-foreground"
+                )}
+              >
+                <Icon className="size-4" />{label}
+              </button>
+            ))}
           </div>
 
-          {/* Tab Content - Flattened layout without nested card borders */}
-          <div className="mt-3.5">
+          <div className={cn("mt-3 rounded-[1.6rem] p-3.5", tabStyles[activeTab])}>
             {activeTab === "create" ? (
               <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="new-sheet-title" className="text-xs font-medium text-muted-foreground">
-                    表格名称
-                  </Label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      id="new-sheet-title"
-                      value={newSheetTitle}
-                      onChange={(event) => setNewSheetTitle(event.target.value)}
-                      placeholder="Anki Studio · 闪卡同步"
-                      disabled={!enabled || busy !== null}
-                      className="h-9 rounded-xl text-xs sm:text-sm"
-                    />
-                    <Button
-                      type="button"
-                      disabled={!enabled || busy !== null || !newSheetTitle.trim()}
-                      onClick={() => void createNewSheet()}
-                      className="h-9 shrink-0 rounded-xl px-4 text-xs font-semibold shadow-xs"
-                    >
-                      {busy === "create" ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Plus className="mr-1.5 size-3.5" />}
-                      在 Drive 中创建
-                    </Button>
-                  </div>
+                <div>
+                  <Label htmlFor="new-sheet-title" className="text-[10px] font-black uppercase tracking-[0.14em] text-current opacity-50">Sheet name</Label>
+                  <Input
+                    id="new-sheet-title"
+                    value={newSheetTitle}
+                    onChange={(event) => setNewSheetTitle(event.target.value)}
+                    placeholder="Anki Studio · 闪卡同步"
+                    disabled={!enabled || busy !== null}
+                    className="mt-2 h-11 border-0 bg-white/60 text-xs font-bold shadow-none dark:bg-black/15"
+                  />
                 </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  系统将在您的 Google Drive 根目录自动创建此表格并初始化数据与预览结构。
-                </p>
+                <Button
+                  type="button"
+                  disabled={!enabled || busy !== null || !newSheetTitle.trim()}
+                  onClick={() => void createNewSheet()}
+                  className="h-11 w-full bg-black text-xs font-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
+                >
+                  {busy === "create" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  在 Drive 中创建并绑定
+                </Button>
               </div>
             ) : null}
 
             {activeTab === "picker" ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">挑选或搜索云端已有表格</span>
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
+                    <Input
+                      placeholder="搜索 Drive 中的表格…"
+                      className="h-10 border-0 bg-white/60 pl-9 text-xs font-semibold shadow-none dark:bg-black/15"
+                      value={driveSearch}
+                      onChange={(event) => {
+                        setDriveSearch(event.target.value)
+                        void loadDriveSpreadsheets(event.target.value)
+                      }}
+                      disabled={!enabled || driveLoading}
+                    />
+                  </div>
                   <Button
                     type="button"
+                    size="icon-lg"
                     variant="ghost"
-                    size="sm"
-                    className="h-7 rounded-lg px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                    className="bg-white/55 text-current hover:bg-white/75 hover:text-current dark:bg-black/15"
                     disabled={!enabled || driveLoading}
                     onClick={() => void loadDriveSpreadsheets(driveSearch)}
+                    aria-label="刷新 Drive 表格"
                   >
-                    <RefreshCw className={driveLoading ? "mr-1 size-3 animate-spin" : "mr-1 size-3"} />
-                    刷新
+                    <RefreshCw className={cn("size-3.5", driveLoading && "animate-spin")} />
                   </Button>
                 </div>
 
-                <div className="relative">
-                  <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="搜索云端硬盘中的表格名称…"
-                    className="h-8.5 rounded-xl pl-8.5 text-xs"
-                    value={driveSearch}
-                    onChange={(e) => {
-                      setDriveSearch(e.target.value)
-                      void loadDriveSpreadsheets(e.target.value)
-                    }}
-                    disabled={!enabled || driveLoading}
-                  />
-                </div>
-
                 {driveLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
-                    <LoaderCircle className="size-3.5 animate-spin text-primary" />
-                    正在读取云端硬盘表格…
-                  </div>
+                  <div className="flex min-h-28 items-center justify-center text-xs font-bold opacity-55"><LoaderCircle className="mr-2 size-4 animate-spin" />读取 Drive…</div>
                 ) : driveFiles.length > 0 ? (
-                  <div className="max-h-52 overflow-y-auto divide-y divide-border/40 rounded-xl border border-border/50 bg-muted/20">
+                  <div className="max-h-56 space-y-1.5 overflow-y-auto">
                     {driveFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center justify-between gap-2.5 p-2.5 transition-colors hover:bg-muted/40"
-                      >
+                      <div key={file.id} className="flex items-center gap-2 rounded-[1.15rem] bg-white/55 p-2.5 dark:bg-black/15">
+                        <FileSpreadsheet className="size-4 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <FileSpreadsheet className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            <p className="truncate text-xs font-medium text-foreground">{file.name}</p>
-                          </div>
-                          {file.modifiedTime ? (
-                            <p className="mt-0.5 pl-5 text-[10px] text-muted-foreground">
-                              修改于 {new Date(file.modifiedTime).toLocaleDateString()}
-                            </p>
-                          ) : null}
+                          <p className="truncate text-xs font-black">{file.name}</p>
+                          {file.modifiedTime ? <p className="mt-0.5 text-[9px] font-semibold opacity-45">{new Date(file.modifiedTime).toLocaleDateString()}</p> : null}
                         </div>
                         <Button
                           type="button"
                           size="sm"
-                          className="h-7.5 shrink-0 rounded-lg px-2.5 text-xs font-medium"
+                          className="h-8 bg-black px-3 text-[10px] font-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
                           disabled={busy !== null}
                           onClick={() => void connect(file.id)}
                         >
-                          {busy === "connect" ? <LoaderCircle className="mr-1 size-3 animate-spin" /> : <Check className="mr-1 size-3" />}
+                          {busy === "connect" ? <LoaderCircle className="size-3 animate-spin" /> : <Check className="size-3" />}
                           绑定
                         </Button>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-border/70 p-4 text-center">
-                    <p className="text-xs text-muted-foreground">
-                      {driveLoaded ? "未找到匹配的表格" : "暂未加载表格列表"}
-                    </p>
-                    <div className="mt-2.5 flex flex-wrap justify-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7.5 rounded-lg px-2.5 text-xs"
-                        onClick={() => setActiveTab("create")}
-                      >
-                        <FolderPlus className="mr-1 size-3" />
-                        新建表格
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7.5 rounded-lg px-2.5 text-xs"
-                        disabled={!enabled || busy !== null}
-                        onClick={() => void openPicker()}
-                      >
-                        <HardDrive className="mr-1 size-3" />
-                        Google Picker
-                      </Button>
-                    </div>
+                  <div className="flex min-h-28 flex-col items-center justify-center text-center">
+                    <p className="text-xs font-bold opacity-55">{driveLoaded ? "没有找到表格" : "还没有读取 Drive"}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2 h-8 bg-white/50 px-3 text-[10px] font-black text-current hover:bg-white/75 hover:text-current dark:bg-black/15"
+                      disabled={!enabled || busy !== null}
+                      onClick={() => void openPicker()}
+                    >
+                      <HardDrive className="size-3" />打开 Google Picker
+                    </Button>
                   </div>
                 )}
               </div>
@@ -714,47 +593,40 @@ export function GoogleSheetPickerPanel({
                   connectLink()
                 }}
               >
-                <div className="space-y-1.5">
-                  <Label htmlFor="google-sheet-link" className="text-xs font-medium text-muted-foreground">
-                    表格链接或 Spreadsheet ID
-                  </Label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <div className="relative min-w-0 flex-1">
-                      <Link2 className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="google-sheet-link"
-                        className="h-9 rounded-xl pl-8.5 text-xs sm:text-sm"
-                        type="text"
-                        inputMode="url"
-                        autoComplete="off"
-                        placeholder="https://docs.google.com/spreadsheets/d/…/edit"
-                        value={link}
-                        onChange={(event) => setLink(event.target.value)}
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      className="h-9 shrink-0 rounded-xl px-4 text-xs font-medium"
-                      disabled={busy !== null || !link.trim()}
-                    >
-                      {busy === "connect" ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Check className="mr-1.5 size-3.5" />}
-                      绑定此表
-                    </Button>
+                <div>
+                  <Label htmlFor="google-sheet-link" className="text-[10px] font-black uppercase tracking-[0.14em] text-current opacity-50">Sheet URL / ID</Label>
+                  <div className="relative mt-2">
+                    <Link2 className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
+                    <Input
+                      id="google-sheet-link"
+                      className="h-11 border-0 bg-white/60 pl-9 text-xs font-semibold shadow-none dark:bg-black/15"
+                      type="text"
+                      inputMode="url"
+                      autoComplete="off"
+                      placeholder="https://docs.google.com/spreadsheets/d/…/edit"
+                      value={link}
+                      onChange={(event) => setLink(event.target.value)}
+                    />
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  支持粘贴来自 Google Sheets 的浏览器分享或编辑链接。
-                </p>
+                <Button
+                  type="submit"
+                  className="h-11 w-full bg-black text-xs font-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
+                  disabled={busy !== null || !link.trim()}
+                >
+                  {busy === "connect" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                  绑定此表格
+                </Button>
               </form>
             ) : null}
           </div>
-        </div>
+        </section>
       )}
 
       {message ? (
-        <div className="rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground" role="status" aria-live="polite">
-          {message}
+        <div className="flex items-start gap-2 rounded-[1.4rem] bg-[#dff1ff] p-3.5 text-xs font-bold leading-5 text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]" role="status" aria-live="polite">
+          {busy ? <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin" /> : <Sparkles className="mt-0.5 size-4 shrink-0" />}
+          <span>{message}</span>
         </div>
       ) : null}
     </div>
