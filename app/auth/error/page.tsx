@@ -4,6 +4,9 @@ import { ShieldX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
+// This page is a runtime destination for NextAuth failures.
+export const dynamic = "force-dynamic"
+
 export default function GoogleAuthErrorPage() {
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-background p-5">
