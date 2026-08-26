@@ -9,6 +9,7 @@ import {
   formatAuthError,
   getCachedAccessToken,
   getCachedGoogleUser,
+  getCurrentFirebaseUser,
   googleSignIn,
   googleSignOut,
   initFirebaseAuth,
