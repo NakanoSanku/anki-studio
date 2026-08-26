@@ -87,35 +87,58 @@ export function formatAuthError(error: unknown): string {
   return message || "登录遇到错误，请重试"
 }
 
+function readStorage(key: string): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    const val = localStorage.getItem(key)
+    if (val) return val
+  } catch {
+    // ignore
+  }
+  try {
+    const val = sessionStorage.getItem(key)
+    if (val) return val
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+function writeStorage(key: string, val: string | null) {
+  if (typeof window === "undefined") return
+  try {
+    if (val) {
+      localStorage.setItem(key, val)
+    } else {
+      localStorage.removeItem(key)
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (val) {
+      sessionStorage.setItem(key, val)
+    } else {
+      sessionStorage.removeItem(key)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function getCachedAccessToken(): string | null {
   if (cachedAccessToken) return cachedAccessToken
-  if (typeof window !== "undefined") {
-    try {
-      const stored = sessionStorage.getItem(TOKEN_STORAGE_KEY)
-      if (stored) {
-        cachedAccessToken = stored
-        return stored
-      }
-    } catch {
-      // ignore
-    }
+  const stored = readStorage(TOKEN_STORAGE_KEY)
+  if (stored) {
+    cachedAccessToken = stored
+    return stored
   }
   return null
 }
 
 export function setCachedAccessToken(token: string | null) {
   cachedAccessToken = token
-  if (typeof window !== "undefined") {
-    try {
-      if (token) {
-        sessionStorage.setItem(TOKEN_STORAGE_KEY, token)
-      } else {
-        sessionStorage.removeItem(TOKEN_STORAGE_KEY)
-      }
-    } catch {
-      // ignore
-    }
-  }
+  writeStorage(TOKEN_STORAGE_KEY, token)
   notifySubscribers()
 }
 
@@ -127,14 +150,12 @@ export function getCachedGoogleUser(): CachedGoogleUser | null {
       image: currentUser.photoURL ?? null,
     }
   }
-  if (typeof window !== "undefined") {
+  const stored = readStorage(USER_STORAGE_KEY)
+  if (stored) {
     try {
-      const stored = sessionStorage.getItem(USER_STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored) as CachedGoogleUser
-        if (parsed && typeof parsed.email === "string") {
-          return parsed
-        }
+      const parsed = JSON.parse(stored) as CachedGoogleUser
+      if (parsed && typeof parsed.email === "string") {
+        return parsed
       }
     } catch {
       // ignore
@@ -158,17 +179,7 @@ export function getCachedGoogleUser(): CachedGoogleUser | null {
 }
 
 export function setCachedGoogleUser(user: CachedGoogleUser | null) {
-  if (typeof window !== "undefined") {
-    try {
-      if (user) {
-        sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
-      } else {
-        sessionStorage.removeItem(USER_STORAGE_KEY)
-      }
-    } catch {
-      // ignore
-    }
-  }
+  writeStorage(USER_STORAGE_KEY, user ? JSON.stringify(user) : null)
 }
 
 export function getCurrentFirebaseUser(): User | null {
@@ -205,19 +216,19 @@ export function initFirebaseAuth(
   // Handle returning from redirect sign-in
   void getRedirectResult(currentAuth)
     .then((result) => {
-      if (result) {
+      if (result && result.user) {
         const credential = GoogleAuthProvider.credentialFromResult(result)
-        if (credential?.accessToken && result.user) {
-          currentUser = result.user
-          setCachedGoogleUser({
-            name: result.user.displayName ?? null,
-            email: result.user.email ?? "",
-            image: result.user.photoURL ?? null,
-          })
+        currentUser = result.user
+        setCachedGoogleUser({
+          name: result.user.displayName ?? null,
+          email: result.user.email ?? "",
+          image: result.user.photoURL ?? null,
+        })
+        if (credential?.accessToken) {
           setCachedAccessToken(credential.accessToken)
           onSuccess?.(result.user, credential.accessToken)
-          notifySubscribers()
         }
+        notifySubscribers()
       }
     })
     .catch((err) => {
@@ -237,8 +248,6 @@ export function initFirebaseAuth(
         const token = getCachedAccessToken()
         if (token) {
           onSuccess?.(user, token)
-        } else if (!isSigningIn) {
-          onFailure?.()
         }
       } else if (!isSigningIn) {
         currentUser = null

@@ -45,18 +45,15 @@ function getInitialAccountState(): AccountState {
   if (typeof window === "undefined") return { phase: "loading" }
   const user = getCachedGoogleUser()
   const token = getCachedAccessToken()
-  if (user && token) {
+  if (user) {
     return {
       phase: "signed-in",
       name: user.name,
       email: user.email,
       image: user.image,
-      sheetsAuthorized: true,
-      driveAuthorized: true,
+      sheetsAuthorized: Boolean(token),
+      driveAuthorized: Boolean(token),
     }
-  }
-  if (isFirebaseConfigured()) {
-    return { phase: "signed-out" }
   }
   return { phase: "loading" }
 }
@@ -81,16 +78,16 @@ export function GoogleAccountPanel({
       // 1. Check client-side cached user and token
       const user = getCachedGoogleUser()
       const token = getCachedAccessToken()
-      if (user && token) {
+      if (user) {
         if (active) {
-          onReadyChangeRef.current?.(true)
+          onReadyChangeRef.current?.(Boolean(token))
           setAccount({
             phase: "signed-in",
             name: user.name,
             email: user.email,
             image: user.image,
-            sheetsAuthorized: true,
-            driveAuthorized: true,
+            sheetsAuthorized: Boolean(token),
+            driveAuthorized: Boolean(token),
           })
         }
         return
@@ -98,6 +95,21 @@ export function GoogleAccountPanel({
 
       // If Firebase is configured, client popup auth is authoritative
       if (isFirebaseConfigured()) {
+        const fbUser = getCurrentFirebaseUser()
+        if (fbUser && fbUser.email) {
+          if (active) {
+            onReadyChangeRef.current?.(Boolean(token))
+            setAccount({
+              phase: "signed-in",
+              name: fbUser.displayName ?? null,
+              email: fbUser.email,
+              image: fbUser.photoURL ?? null,
+              sheetsAuthorized: Boolean(token),
+              driveAuthorized: Boolean(token),
+            })
+          }
+          return
+        }
         if (active) {
           onReadyChangeRef.current?.(false)
           setAccount({ phase: "signed-out" })
@@ -148,15 +160,15 @@ export function GoogleAccountPanel({
 
     initFirebaseAuth(
       (fbUser, token) => {
-        if (token && active && fbUser.email) {
-          onReadyChangeRef.current?.(true)
+        if (active && fbUser.email) {
+          onReadyChangeRef.current?.(Boolean(token))
           setAccount({
             phase: "signed-in",
             name: fbUser.displayName ?? null,
             email: fbUser.email,
             image: fbUser.photoURL ?? null,
-            sheetsAuthorized: true,
-            driveAuthorized: true,
+            sheetsAuthorized: Boolean(token),
+            driveAuthorized: Boolean(token),
           })
         }
       },
@@ -180,16 +192,18 @@ export function GoogleAccountPanel({
   const connect = async (options?: { redirect?: boolean }) => {
     setBusy(true)
     try {
-      const { user } = await googleSignIn(options)
-      if (user) {
-        onReadyChangeRef.current?.(true)
+      const res = await googleSignIn(options)
+      const user = res.user || getCurrentFirebaseUser()
+      const token = res.accessToken || getCachedAccessToken()
+      if (user && user.email) {
+        onReadyChangeRef.current?.(Boolean(token))
         setAccount({
           phase: "signed-in",
           name: user.displayName ?? null,
-          email: user.email ?? "",
+          email: user.email,
           image: user.photoURL ?? null,
-          sheetsAuthorized: true,
-          driveAuthorized: true,
+          sheetsAuthorized: Boolean(token),
+          driveAuthorized: Boolean(token),
         })
       }
     } catch (error) {
