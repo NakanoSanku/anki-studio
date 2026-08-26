@@ -1,6 +1,6 @@
 "use client"
-
-import { useMemo } from "react"
+ 
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   BrainCircuit,
@@ -13,7 +13,6 @@ import {
 import { PATHS, SETTINGS_ROWS } from "@/lib/app-paths"
 import { fsrsOf, type Deck } from "@/lib/deck"
 import { readAiSettings } from "@/lib/ai-settings"
-import { getCachedGoogleUser } from "@/lib/firebase-auth"
 import { readGoogleSheetConnection } from "@/lib/google-sheet-connection"
 import { Badge } from "@/components/ui/badge"
 
@@ -23,6 +22,19 @@ type SettingsOverviewProps = {
 }
 
 export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
+  const [googleUser, setGoogleUser] = useState<{ email?: string | null } | null>(null)
+
+  useEffect(() => {
+    void fetch("/api/auth/account", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { authenticated?: boolean; user?: { email?: string | null } }) => {
+        if (data?.authenticated && data.user) {
+          setGoogleUser(data.user)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const retentionPercent = useMemo(() => {
     if (!deck) return 90
     return Math.round(fsrsOf(deck).requestRetention * 100)
@@ -39,17 +51,16 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
 
   const syncInfo = useMemo(() => {
     const sheet = readGoogleSheetConnection()
-    const user = getCachedGoogleUser()
     if (sheet) {
       return {
         badge: sheet.name,
         subtitle: `已绑定表格：${sheet.name}`,
       }
     }
-    if (user?.email) {
+    if (googleUser?.email) {
       return {
         badge: "已登录",
-        subtitle: `已登录 Google (${user.email})，未绑定表格`,
+        subtitle: `已登录 Google (${googleUser.email})，未绑定表格`,
       }
     }
     if (syncMessage && !syncMessage.includes("请先选择") && syncMessage !== "尚未同步") {
@@ -62,7 +73,7 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
       badge: "未绑定",
       subtitle: "Google Sheets 与多端数据同步",
     }
-  }, [syncMessage])
+  }, [googleUser, syncMessage])
 
   const rowDetails: Record<
     string,

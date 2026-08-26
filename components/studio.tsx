@@ -45,7 +45,6 @@ import { getStudyQueue } from "@/lib/fsrs"
 import { createHttpTransport } from "@/lib/sync-transport"
 import { createIdbStore } from "@/lib/studio-store-idb"
 import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
-import { initFirebaseAuth } from "@/lib/firebase-auth"
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 import { AppShell } from "@/components/app-shell"
 import { CardEditor } from "@/components/card-editor"
@@ -216,14 +215,6 @@ export function Studio() {
       setSyncing(false)
     }
   }
-
-  useEffect(() => {
-    return initFirebaseAuth(
-      (_user, _token) => {
-        void runSync("auto")
-      }
-    )
-  }, [])
 
   useEffect(() => {
     let cancelled = false

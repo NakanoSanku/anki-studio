@@ -71,12 +71,11 @@ export function readGoogleOAuthConfiguration(
   if (!clientId) missing.push("GOOGLE_CLIENT_ID")
   if (!clientSecret) missing.push("GOOGLE_CLIENT_SECRET")
   if (!authSecret) missing.push("AUTH_SECRET")
-  if (allowedEmails.length === 0) missing.push("GOOGLE_ALLOWED_EMAILS")
   if (missing.length > 0) {
     return { state: "invalid", issue: `Google OAuth 缺少 ${missing.join("、")}` }
   }
 
-  if (allowedEmails.some((email) => !EMAIL_PATTERN.test(email))) {
+  if (allowedEmails.length > 0 && allowedEmails.some((email) => !EMAIL_PATTERN.test(email))) {
     return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS 包含无效邮箱" }
   }
 
@@ -88,7 +87,9 @@ export function isAllowedGoogleProfile(
   allowedEmails: readonly string[]
 ): boolean {
   const email = typeof profile?.email === "string" ? profile.email.toLowerCase() : ""
-  return profile?.email_verified === true && allowedEmails.includes(email)
+  if (!email) return false
+  if (allowedEmails.length === 0) return true
+  return (profile?.email_verified === true || profile?.email_verified === undefined) && allowedEmails.includes(email)
 }
 
 export function isAllowedGoogleSession(
@@ -96,7 +97,9 @@ export function isAllowedGoogleSession(
   allowedEmails: readonly string[]
 ): boolean {
   const email = session?.user?.email?.toLowerCase()
-  return Boolean(email && allowedEmails.includes(email))
+  if (!email) return false
+  if (allowedEmails.length === 0) return true
+  return allowedEmails.includes(email)
 }
 
 export function hasGoogleSheetsScope(scope: string | undefined): boolean {

@@ -1,21 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { signIn, signOut } from "next-auth/react"
 import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, UserRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  formatAuthError,
-  getCachedAccessToken,
-  getCachedGoogleUser,
-  getCurrentFirebaseUser,
-  googleSignIn,
-  googleSignOut,
-  initFirebaseAuth,
-  isFirebaseConfigured,
-  subscribeAuth,
-} from "@/lib/firebase-auth"
 
 type AccountState =
   | { phase: "loading" }
@@ -42,29 +32,12 @@ function GoogleMark() {
   )
 }
 
-function getInitialAccountState(): AccountState {
-  if (typeof window === "undefined") return { phase: "loading" }
-  const user = getCachedGoogleUser()
-  const token = getCachedAccessToken()
-  if (user) {
-    return {
-      phase: "signed-in",
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      sheetsAuthorized: Boolean(token),
-      driveAuthorized: Boolean(token),
-    }
-  }
-  return { phase: "loading" }
-}
-
 export function GoogleAccountPanel({
   onReadyChange,
 }: {
   onReadyChange?: (ready: boolean | undefined) => void
 }) {
-  const [account, setAccount] = useState<AccountState>(getInitialAccountState)
+  const [account, setAccount] = useState<AccountState>({ phase: "loading" })
   const [busy, setBusy] = useState(false)
   const onReadyChangeRef = useRef(onReadyChange)
 
@@ -73,52 +46,9 @@ export function GoogleAccountPanel({
   }, [onReadyChange])
 
   useEffect(() => {
-    let active = true
+    let cancelled = false
 
-    const syncState = async () => {
-      // 1. Check client-side cached user and token
-      const user = getCachedGoogleUser()
-      const token = getCachedAccessToken()
-      if (user) {
-        if (active) {
-          onReadyChangeRef.current?.(Boolean(token))
-          setAccount({
-            phase: "signed-in",
-            name: user.name,
-            email: user.email,
-            image: user.image,
-            sheetsAuthorized: Boolean(token),
-            driveAuthorized: Boolean(token),
-          })
-        }
-        return
-      }
-
-      // If Firebase is configured, client popup auth is authoritative
-      if (isFirebaseConfigured()) {
-        const fbUser = getCurrentFirebaseUser()
-        if (fbUser && fbUser.email) {
-          if (active) {
-            onReadyChangeRef.current?.(Boolean(token))
-            setAccount({
-              phase: "signed-in",
-              name: fbUser.displayName ?? null,
-              email: fbUser.email,
-              image: fbUser.photoURL ?? null,
-              sheetsAuthorized: Boolean(token),
-              driveAuthorized: Boolean(token),
-            })
-          }
-          return
-        }
-        if (active) {
-          onReadyChangeRef.current?.(false)
-          setAccount({ phase: "signed-out" })
-        }
-        return
-      }
-
-      // 2. Server-side NextAuth fallback (if Firebase not configured)
+    const refresh = async () => {
       try {
         const response = await fetch("/api/auth/account", { cache: "no-store" })
         const data = await response.json().catch(() => null) as {
@@ -130,7 +60,7 @@ export function GoogleAccountPanel({
           user?: { name?: string | null; email?: string | null; image?: string | null }
         } | null
 
-        if (!active) return
+        if (cancelled) return
 
         if (data?.authenticated && data.user?.email) {
           onReadyChangeRef.current?.(data.sheetsAuthorized === true)
@@ -153,68 +83,33 @@ export function GoogleAccountPanel({
           setAccount({ phase: "signed-out" })
         }
       } catch {
-        if (!active) return
+        if (cancelled) return
         onReadyChangeRef.current?.(undefined)
         setAccount({ phase: "error", issue: "无法读取 Google 帐号状态" })
       }
     }
 
-    initFirebaseAuth(
-      (fbUser, token) => {
-        if (active && fbUser.email) {
-          onReadyChangeRef.current?.(Boolean(token))
-          setAccount({
-            phase: "signed-in",
-            name: fbUser.displayName ?? null,
-            email: fbUser.email,
-            image: fbUser.photoURL ?? null,
-            sheetsAuthorized: Boolean(token),
-            driveAuthorized: Boolean(token),
-          })
-        }
-      },
-      () => {
-        if (active) void syncState()
-      }
-    )
-
-    const unsubscribe = subscribeAuth(() => {
-      if (active) void syncState()
-    })
-
-    void syncState()
-
+    void refresh()
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
     return () => {
-      active = false
-      unsubscribe()
+      cancelled = true
+      document.removeEventListener("visibilitychange", onVisibility)
     }
   }, [])
 
-  const connect = async (options?: { redirect?: boolean }) => {
+  const connect = async () => {
     setBusy(true)
     try {
-      const res = await googleSignIn(options)
-      const user = res.user || getCurrentFirebaseUser()
-      const token = res.accessToken || getCachedAccessToken()
-      if (user && user.email) {
-        onReadyChangeRef.current?.(Boolean(token))
-        setAccount({
-          phase: "signed-in",
-          name: user.displayName ?? null,
-          email: user.email,
-          image: user.photoURL ?? null,
-          sheetsAuthorized: Boolean(token),
-          driveAuthorized: Boolean(token),
-        })
-      }
+      await signIn("google", { callbackUrl: window.location.href })
     } catch (error) {
-      console.error("Google sign-in error:", error)
-      const issue = formatAuthError(error)
+      console.error("NextAuth sign in error:", error)
       setAccount({
         phase: "error",
-        issue,
+        issue: "无法启动 Google 登录，请重试",
       })
-    } finally {
       setBusy(false)
     }
   }
@@ -222,7 +117,7 @@ export function GoogleAccountPanel({
   const disconnect = async () => {
     setBusy(true)
     try {
-      await googleSignOut()
+      await signOut({ redirect: false })
       onReadyChangeRef.current?.(false)
       setAccount({ phase: "signed-out" })
     } catch {
@@ -266,16 +161,6 @@ export function GoogleAccountPanel({
             >
               {busy ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : null}
               重新尝试登录
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-xl px-3 text-xs font-medium"
-              disabled={busy}
-              onClick={() => void connect({ redirect: true })}
-            >
-              使用页面跳转登录 (重定向模式)
             </Button>
           </div>
         ) : null}
