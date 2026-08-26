@@ -2,6 +2,8 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app"
 import {
   getAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -56,6 +58,33 @@ function notifySubscribers() {
 
 export function isFirebaseConfigured(): boolean {
   return Boolean(firebaseConfig?.apiKey && firebaseConfig?.projectId)
+}
+
+export function formatAuthError(error: unknown): string {
+  if (!error) return "登录遇到未知错误，请重试"
+  const err = error as { code?: string; message?: string }
+  const code = err.code || ""
+  const message = err.message || ""
+
+  if (code === "auth/popup-blocked" || message.includes("popup-blocked")) {
+    return "浏览器拦截了弹出登录窗口，正在自动为您切换为页面跳转登录…"
+  }
+  if (code === "auth/unauthorized-domain" || message.includes("unauthorized-domain")) {
+    return "当前域名尚未在 Firebase 控制台授权。请前往 Firebase 控制台 ➔ Authentication ➔ Settings ➔ Authorized Domains 添加此 Vercel 部署域名。"
+  }
+  if (code === "auth/popup-closed-by-user" || message.includes("popup-closed-by-user")) {
+    return "登录窗口已被关闭，请点击重新登录。"
+  }
+  if (code === "auth/cancelled-popup-request" || message.includes("cancelled-popup-request")) {
+    return "登录请求已重置，请再次点击登录。"
+  }
+  if (code === "auth/network-request-failed" || message.includes("network-request-failed")) {
+    return "网络请求失败，请检查网络连接后重试。"
+  }
+  if (code === "auth/operation-not-allowed") {
+    return "Firebase 项目尚未开启 Google 登录提供方，请在控制台中启用。"
+  }
+  return message || "登录遇到错误，请重试"
 }
 
 export function getCachedAccessToken(): string | null {
@@ -173,6 +202,28 @@ export function initFirebaseAuth(
   if (typeof window === "undefined") return () => {}
   const { auth: currentAuth } = getFirebaseInstance()
 
+  // Handle returning from redirect sign-in
+  void getRedirectResult(currentAuth)
+    .then((result) => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result)
+        if (credential?.accessToken && result.user) {
+          currentUser = result.user
+          setCachedGoogleUser({
+            name: result.user.displayName ?? null,
+            email: result.user.email ?? "",
+            image: result.user.photoURL ?? null,
+          })
+          setCachedAccessToken(credential.accessToken)
+          onSuccess?.(result.user, credential.accessToken)
+          notifySubscribers()
+        }
+      }
+    })
+    .catch((err) => {
+      console.error("Firebase redirect result error:", err)
+    })
+
   if (!authListenerInitialized) {
     authListenerInitialized = true
     onAuthStateChanged(currentAuth, (user) => {
@@ -202,24 +253,43 @@ export function initFirebaseAuth(
   return () => {}
 }
 
-export async function googleSignIn(): Promise<{ user: User; accessToken: string }> {
+export async function googleSignIn(options?: { redirect?: boolean }): Promise<{ user?: User; accessToken?: string }> {
   const { auth: currentAuth, provider: currentProvider } = getFirebaseInstance()
   isSigningIn = true
   try {
-    const result = await signInWithPopup(currentAuth, currentProvider)
-    const credential = GoogleAuthProvider.credentialFromResult(result)
-    if (!credential?.accessToken) {
-      throw new Error("未能从 Google 登录获取访问令牌")
+    if (options?.redirect) {
+      await signInWithRedirect(currentAuth, currentProvider)
+      return {}
     }
-    currentUser = result.user
-    setCachedGoogleUser({
-      name: result.user.displayName ?? null,
-      email: result.user.email ?? "",
-      image: result.user.photoURL ?? null,
-    })
-    setCachedAccessToken(credential.accessToken)
-    notifySubscribers()
-    return { user: result.user, accessToken: credential.accessToken }
+
+    try {
+      const result = await signInWithPopup(currentAuth, currentProvider)
+      const credential = GoogleAuthProvider.credentialFromResult(result)
+      if (!credential?.accessToken) {
+        throw new Error("未能从 Google 登录获取访问令牌")
+      }
+      currentUser = result.user
+      setCachedGoogleUser({
+        name: result.user.displayName ?? null,
+        email: result.user.email ?? "",
+        image: result.user.photoURL ?? null,
+      })
+      setCachedAccessToken(credential.accessToken)
+      notifySubscribers()
+      return { user: result.user, accessToken: credential.accessToken }
+    } catch (popupError: unknown) {
+      const err = popupError as { code?: string; message?: string }
+      if (
+        err?.code === "auth/popup-blocked" ||
+        err?.code === "auth/cancelled-popup-request" ||
+        err?.message?.includes("popup-blocked")
+      ) {
+        console.info("Popup blocked by browser/environment, falling back to signInWithRedirect...")
+        await signInWithRedirect(currentAuth, currentProvider)
+        return {}
+      }
+      throw popupError
+    }
   } catch (error) {
     console.error("Google sign-in error:", error)
     throw error

@@ -6,6 +6,7 @@ import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, UserRound } from "l
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  formatAuthError,
   getCachedAccessToken,
   getCachedGoogleUser,
   googleSignIn,
@@ -176,24 +177,27 @@ export function GoogleAccountPanel({
     }
   }, [])
 
-  const connect = async () => {
+  const connect = async (options?: { redirect?: boolean }) => {
     setBusy(true)
     try {
-      const { user } = await googleSignIn()
-      onReadyChangeRef.current?.(true)
-      setAccount({
-        phase: "signed-in",
-        name: user.displayName ?? null,
-        email: user.email ?? "",
-        image: user.photoURL ?? null,
-        sheetsAuthorized: true,
-        driveAuthorized: true,
-      })
+      const { user } = await googleSignIn(options)
+      if (user) {
+        onReadyChangeRef.current?.(true)
+        setAccount({
+          phase: "signed-in",
+          name: user.displayName ?? null,
+          email: user.email ?? "",
+          image: user.photoURL ?? null,
+          sheetsAuthorized: true,
+          driveAuthorized: true,
+        })
+      }
     } catch (error) {
       console.error("Google sign-in error:", error)
+      const issue = formatAuthError(error)
       setAccount({
         phase: "error",
-        issue: error instanceof Error ? error.message : "无法启动 Google 登录，请重试",
+        issue,
       })
     } finally {
       setBusy(false)
@@ -224,14 +228,42 @@ export function GoogleAccountPanel({
 
   if (account.phase === "unconfigured" || account.phase === "error") {
     return (
-      <div className="flex items-start gap-3.5 rounded-2xl border border-amber-500/30 bg-amber-50/50 p-4 backdrop-blur-xs dark:border-amber-900/50 dark:bg-amber-950/30">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-          <ShieldAlert className="size-4.5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Google 帐号暂不可连接</p>
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{account.issue}</p>
+      <div className="flex flex-col gap-3 rounded-2xl border border-amber-500/30 bg-amber-50/50 p-4 backdrop-blur-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+        <div className="flex items-start gap-3.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <ShieldAlert className="size-4.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">
+              {account.phase === "unconfigured" ? "Google OAuth 尚未配置" : "登录提示"}
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{account.issue}</p>
+          </div>
         </div>
+        {account.phase === "error" ? (
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 rounded-xl px-3 text-xs font-medium"
+              disabled={busy}
+              onClick={() => void connect()}
+            >
+              {busy ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : null}
+              重新尝试登录
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-xl px-3 text-xs font-medium"
+              disabled={busy}
+              onClick={() => void connect({ redirect: true })}
+            >
+              使用页面跳转登录 (重定向模式)
+            </Button>
+          </div>
+        ) : null}
       </div>
     )
   }
