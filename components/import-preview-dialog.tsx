@@ -1,5 +1,7 @@
 "use client"
 
+import { AlertTriangle, Check, FileInput, Merge, PackagePlus, Replace } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -9,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   applyTextImport,
@@ -17,12 +18,13 @@ import {
   type ImportPreview,
 } from "@/lib/import-preview"
 import type { Deck } from "@/lib/deck"
+import { cn } from "@/lib/utils"
 
-const MODES: { id: ImportMode; label: string; hint: string }[] = [
-  { id: "merge", label: "合并到当前", hint: "按首字段去重后追加" },
-  { id: "replace", label: "替换当前", hint: "覆盖当前卡包内容" },
-  { id: "new", label: "新建卡包", hint: "导入为独立卡包并切换过去" },
-]
+const MODES = [
+  { id: "merge", label: "合并到当前", hint: "按首字段去重后追加", icon: Merge, color: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]" },
+  { id: "replace", label: "替换当前", hint: "覆盖当前卡包内容", icon: Replace, color: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]" },
+  { id: "new", label: "新建卡包", hint: "独立导入并切换过去", icon: PackagePlus, color: "bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]" },
+] as const satisfies ReadonlyArray<{ id: ImportMode; label: string; hint: string; icon: typeof Merge; color: string }>
 
 type ImportPreviewDialogProps = {
   preview: ImportPreview | null
@@ -49,141 +51,137 @@ export function ImportPreviewDialog({
   const warnings = preview.issues.filter((item) => item.level === "warning")
   const sampleFields = preview.fields.slice(0, 4)
 
-  const confirm = () => {
-    onConfirm(applyTextImport(preview, current, mode))
-  }
+  const confirm = () => onConfirm(applyTextImport(preview, current, mode))
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel() }}>
-      <DialogContent className="sm:max-w-2xl" showCloseButton={!busy}>
-        <DialogHeader>
-          <DialogTitle>导入校验</DialogTitle>
-          <DialogDescription>
-            {preview.filename} · {preview.encodingLabel}
-            {preview.kind === "json" ? ` · ${preview.name}` : ""}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" showCloseButton={!busy}>
+        <DialogHeader className="pr-8">
+          <div className="mb-1 flex size-11 items-center justify-center rounded-[1.15rem] bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]">
+            <FileInput className="size-5" />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">import preview</p>
+          <DialogTitle className="text-2xl">先看看再导入</DialogTitle>
+          <DialogDescription className="font-medium">
+            {preview.filename} · {preview.encodingLabel}{preview.kind === "json" ? ` · ${preview.name}` : ""}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 text-sm">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat label="字段" value={String(preview.fields.length)} />
-            <Stat label="数据行" value={String(preview.rowCount)} />
-            <Stat label="空首字段" value={String(preview.emptyFirstField)} />
-            <Stat label="与当前重复" value={String(preview.duplicateInCurrent)} />
-          </div>
-
-          {preview.fields.length > 0 ? (
-            <p className="text-muted-foreground">
-              字段：{preview.fields.join("、")}
-            </p>
-          ) : null}
-
-          {errors.length > 0 ? (
-            <IssueList title="错误，无法导入" tone="error" items={errors.map((item) => item.message)} />
-          ) : null}
-          {warnings.length > 0 ? (
-            <IssueList title="警告" tone="warning" items={warnings.map((item) => item.message)} />
-          ) : null}
-
-          {sampleFields.length > 0 && preview.sample.length > 0 ? (
-            <div>
-              <p className="mb-1 text-muted-foreground">预览前 {preview.sample.length} 行</p>
-              <ScrollArea className="max-h-40 rounded-lg border">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b bg-muted/40">
-                      {sampleFields.map((field) => (
-                        <th key={field} className="px-2 py-1.5 font-medium">
-                          {field}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.sample.map((row, index) => (
-                      <tr key={index} className="border-b last:border-0">
-                        {sampleFields.map((field) => (
-                          <td key={field} className="max-w-32 truncate px-2 py-1.5">
-                            {row[field] || "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </ScrollArea>
-            </div>
-          ) : null}
-
-          {preview.canImport ? (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-muted-foreground">导入方式</legend>
-              {MODES.map((item) => (
-                <Label key={item.id} className="flex items-start gap-2 font-normal">
-                  <input
-                    type="radio"
-                    name="import-mode"
-                    className="mt-0.5"
-                    checked={mode === item.id}
-                    disabled={busy}
-                    onChange={() => onModeChange(item.id)}
-                  />
-                  <span>
-                    <span className="font-medium">{item.label}</span>
-                    <span className="ml-2 text-muted-foreground">{item.hint}</span>
-                  </span>
-                </Label>
-              ))}
-            </fieldset>
-          ) : null}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="字段" value={String(preview.fields.length)} color="blue" />
+          <Stat label="数据行" value={String(preview.rowCount)} color="green" />
+          <Stat label="空首字段" value={String(preview.emptyFirstField)} color="yellow" />
+          <Stat label="当前重复" value={String(preview.duplicateInCurrent)} color="pink" />
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+        {preview.fields.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {preview.fields.map((field) => (
+              <span key={field} className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-black text-muted-foreground">{field}</span>
+            ))}
+          </div>
+        ) : null}
+
+        {errors.length > 0 ? <IssueList title="这些问题会阻止导入" tone="error" items={errors.map((item) => item.message)} /> : null}
+        {warnings.length > 0 ? <IssueList title="导入前提醒" tone="warning" items={warnings.map((item) => item.message)} /> : null}
+
+        {sampleFields.length > 0 && preview.sample.length > 0 ? (
+          <div className="rounded-[1.6rem] bg-card p-3 shadow-[0_16px_44px_-38px_rgba(0,0,0,0.7)]">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-xs font-black">数据预览</span>
+              <span className="text-[10px] font-bold text-muted-foreground">前 {preview.sample.length} 行</span>
+            </div>
+            <ScrollArea className="max-h-44 rounded-[1.2rem] bg-muted/45">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-black text-white dark:bg-white dark:text-black">
+                    {sampleFields.map((field) => <th key={field} className="px-3 py-2 font-black">{field}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.sample.map((row, index) => (
+                    <tr key={index} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.06]">
+                      {sampleFields.map((field) => <td key={field} className="max-w-36 truncate px-3 py-2 font-medium">{row[field] || "—"}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+          </div>
+        ) : null}
+
+        {preview.canImport ? (
+          <fieldset>
+            <legend className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">choose import mode</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {MODES.map((item) => {
+                const Icon = item.icon
+                const active = mode === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={active}
+                    onClick={() => onModeChange(item.id)}
+                    className={cn(
+                      "relative min-h-28 rounded-[1.5rem] p-3.5 text-left transition-transform active:scale-[0.985]",
+                      item.color,
+                      active && "ring-4 ring-black dark:ring-white"
+                    )}
+                  >
+                    <Icon className="size-4.5" />
+                    <span className="mt-4 block text-sm font-black tracking-[-0.03em]">{item.label}</span>
+                    <span className="mt-1 block text-[10px] font-semibold leading-4 opacity-55">{item.hint}</span>
+                    {active ? <span className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-black text-white dark:bg-white dark:text-black"><Check className="size-3" /></span> : null}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+        ) : null}
+
+        <DialogFooter className="grid grid-cols-2 sm:grid-cols-2">
+          <Button type="button" variant="outline" className="h-12" disabled={busy} onClick={onCancel}>
             {preview.canImport ? "取消" : "关闭"}
           </Button>
           {preview.canImport ? (
-            <Button type="button" disabled={busy} onClick={confirm}>
+            <Button type="button" className="h-12 bg-black text-sm font-black text-white hover:bg-black/85 dark:bg-white dark:text-black" disabled={busy} onClick={confirm}>
               确认导入
             </Button>
-          ) : null}
+          ) : <div />}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, color }: { label: string; value: string; color: "blue" | "green" | "yellow" | "pink" }) {
+  const classes = {
+    blue: "bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]",
+    green: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
+    yellow: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
+    pink: "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]",
+  }
   return (
-    <div className="rounded-lg border bg-muted/30 px-2.5 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
+    <div className={cn("rounded-[1.4rem] px-3.5 py-3", classes[color])}>
+      <p className="text-[9px] font-black uppercase tracking-[0.14em] opacity-45">{label}</p>
+      <p className="mt-1 text-2xl font-black tracking-[-0.045em]">{value}</p>
     </div>
   )
 }
 
-function IssueList({
-  title,
-  tone,
-  items,
-}: {
-  title: string
-  tone: "error" | "warning"
-  items: string[]
-}) {
+function IssueList({ title, tone, items }: { title: string; tone: "error" | "warning"; items: string[] }) {
   return (
-    <div
-      className={
-        tone === "error"
-          ? "rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2"
-          : "rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2"
-      }
-    >
-      <p className="mb-1 font-medium">{title}</p>
-      <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
+    <div className={cn(
+      "rounded-[1.4rem] px-4 py-3.5",
+      tone === "error"
+        ? "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]"
+        : "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]"
+    )}>
+      <p className="flex items-center gap-1.5 text-xs font-black"><AlertTriangle className="size-3.5" />{title}</p>
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] font-semibold leading-4 opacity-65">
+        {items.map((item) => <li key={item}>{item}</li>)}
       </ul>
     </div>
   )
