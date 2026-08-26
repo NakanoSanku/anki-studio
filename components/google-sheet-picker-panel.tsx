@@ -29,7 +29,6 @@ import {
   type GoogleSheetConnection,
 } from "@/lib/google-sheet-connection"
 import { GOOGLE_SHEET_ID_HEADER, parseGoogleSpreadsheetId } from "@/lib/google-sheet-id"
-import { getCachedAccessToken } from "@/lib/firebase-auth"
 import type { SpreadsheetInventory } from "@/lib/sync-types"
 
 type PickerConfig = {
@@ -142,14 +141,9 @@ export function GoogleSheetPickerPanel({
     if (!enabled) return
     setDriveLoading(true)
     try {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = {}
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
       const queryParam = searchQuery.trim() ? `?q=${encodeURIComponent(searchQuery.trim())}` : ""
       const response = await fetch(`/api/google-sheets/list${queryParam}`, {
         cache: "no-store",
-        headers,
       })
       const data = await response.json().catch(() => null) as { files?: Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string }> } | null
       setDriveFiles(data?.files || [])
@@ -164,11 +158,7 @@ export function GoogleSheetPickerPanel({
   useEffect(() => {
     let active = true
     if (activeTab === "picker" && enabled && !driveLoaded) {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = {}
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
-      void fetch("/api/google-sheets/list", { cache: "no-store", headers })
+      void fetch("/api/google-sheets/list", { cache: "no-store" })
         .then((res) => res.json())
         .then((data: { files?: Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string }> }) => {
           if (active) {
@@ -194,13 +184,9 @@ export function GoogleSheetPickerPanel({
 
   const fetchInventory = async (spreadsheetId: string) => {
     try {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = { [GOOGLE_SHEET_ID_HEADER]: spreadsheetId }
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
       const response = await fetch("/api/sync/sheets", {
         cache: "no-store",
-        headers,
+        headers: { [GOOGLE_SHEET_ID_HEADER]: spreadsheetId },
       })
       const data = await response.json().catch(() => null) as unknown
       if (!response.ok) {
@@ -236,13 +222,9 @@ export function GoogleSheetPickerPanel({
     setBusy("connect")
     setMessage("正在检查表格并初始化同步结构…")
     try {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
       const response = await fetch("/api/google-sheets/connect", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spreadsheetId }),
       })
       const data = await response.json().catch(() => null) as unknown
@@ -294,13 +276,9 @@ export function GoogleSheetPickerPanel({
     setBusy("create")
     setMessage("正在您的 Google Drive 中创建专属闪卡同步表格…")
     try {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
       const response = await fetch("/api/google-sheets/create", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newSheetTitle.trim() || "Anki Studio · 闪卡同步" }),
       })
       const data = await response.json().catch(() => null) as unknown
@@ -354,13 +332,9 @@ export function GoogleSheetPickerPanel({
     setBusy("picker")
     setMessage("")
     try {
-      const token = getCachedAccessToken()
-      const headers: Record<string, string> = {}
-      if (token) headers["Authorization"] = `Bearer ${token}`
-
       const [picker, response] = await Promise.all([
         loadPickerApi(),
-        fetch("/api/google-sheets/picker", { cache: "no-store", headers }),
+        fetch("/api/google-sheets/picker", { cache: "no-store" }),
       ])
       const data = await response.json().catch(() => null) as unknown
       if (!response.ok) throw new Error(responseError(data, "无法启动 Google Picker"))

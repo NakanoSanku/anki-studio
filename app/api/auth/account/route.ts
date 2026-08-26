@@ -5,15 +5,13 @@ import {
   isAllowedGoogleSession,
   readGoogleOAuthConfiguration,
 } from "@/lib/google-auth"
-import firebaseConfig from "@/firebase-applet-config.json"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   const configuration = readGoogleOAuthConfiguration()
-  const isFirebaseSetup = Boolean(firebaseConfig?.apiKey && firebaseConfig?.projectId)
 
-  if (configuration.state !== "ready" && !isFirebaseSetup) {
+  if (configuration.state !== "ready") {
     return Response.json({
       configured: false,
       authenticated: false,

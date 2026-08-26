@@ -23,7 +23,7 @@ export async function getGoogleSheetsAuthorization(
   request?: Request,
   resolveSession: SessionResolver = getGoogleSession
 ): Promise<AuthorizationResult> {
-  // 1. Check Bearer token in request Authorization header (from Firebase Auth / Client-side GSI)
+  // 1. Check Bearer token in request Authorization header (if provided directly)
   const authHeader = request?.headers.get("authorization")?.trim()
   if (authHeader?.startsWith("Bearer ")) {
     const bearerToken = authHeader.slice(7).trim()

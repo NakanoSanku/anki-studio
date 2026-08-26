@@ -7,7 +7,6 @@ import type {
 } from "./sync-types"
 import { readGoogleSheetConnection } from "./google-sheet-connection"
 import { GOOGLE_SHEET_ID_HEADER } from "./google-sheet-id"
-import { getCachedAccessToken } from "./firebase-auth"
 
 export type SyncTransport = {
   status(): Promise<SyncStatus>
@@ -33,10 +32,6 @@ export function createHttpTransport(fetchImpl: typeof fetch = fetch): SyncTransp
     if (!connection) throw new Error("请先选择用于同步的 Google Sheet")
     const headers = new Headers(init.headers)
     headers.set(GOOGLE_SHEET_ID_HEADER, connection.id)
-    const token = getCachedAccessToken()
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`)
-    }
     return fetchImpl(input, {
       ...init,
       headers,

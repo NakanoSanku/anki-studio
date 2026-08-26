@@ -45,11 +45,6 @@ next-env.d.ts
 /tmp-*
 /*.png
 
-# cloudflare
-.open-next
-.wrangler
-.dev.vars
-
 # antigravity
 .antigravity
 

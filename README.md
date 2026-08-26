@@ -17,14 +17,20 @@
 
 ## 开发
 
-需要 [pnpm](https://pnpm.io/)。
-
 ```bash
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 打开 [http://localhost:3000](http://localhost:3000)。
+
+### 常用命令
+
+- `npm run dev`: 启动本地开发服务
+- `npm run build`: 生产环境打包
+- `npm run typecheck`: 静态类型检查
+- `npm run lint`: 代码规范检查
+- `npm test`: 运行单元测试套件
 
 ## 云同步（Google Sheets）
 
@@ -68,38 +74,17 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 OAuth 同时申请 Google Sheets 的编辑权限与 Picker 所需的 `drive.file` 权限：前者让用户可以直接粘贴自己有权限的表格链接，后者用于 Picker 选表。短期访问令牌由服务端会话续期，不会保存到 IndexedDB 或同步表。升级授权范围后，已有登录需要重新连接 Google 帐号一次。
 
-### 3. 本地开发
+### 3. 本地环境配置
 
 ```powershell
-Copy-Item .dev.vars.example .env.local
+Copy-Item .env.example .env.local
 # 编辑 .env.local 后运行 Next.js 开发服务
-pnpm dev
-
-Copy-Item .dev.vars.example .dev.vars
-# 如需验证 Cloudflare 运行时，编辑 .dev.vars 后运行：
-pnpm preview
+npm run dev
 ```
 
-### 4. Cloudflare 部署
+### 4. 部署 (Vercel / Node.js / Docker)
 
-将 Picker 配置、OAuth 客户端密钥和会话密钥保存为 Worker secret，再部署应用；`NEXTAUTH_URL` 应设为正式域名：
-
-```bash
-pnpm wrangler secret put GOOGLE_CLIENT_ID
-pnpm wrangler secret put GOOGLE_CLIENT_SECRET
-pnpm wrangler secret put AUTH_SECRET
-pnpm wrangler secret put GOOGLE_ALLOWED_EMAILS
-pnpm wrangler secret put GOOGLE_PICKER_API_KEY
-pnpm wrangler secret put GOOGLE_CLOUD_PROJECT_NUMBER
-pnpm wrangler secret put NEXTAUTH_URL
-pnpm deploy
-```
-
-Google OAuth 是 Sheets API 同步的身份与文件权限来源；未配置时仍可离线编辑和学习，但云同步不可用。
-
-### 5. Vercel 部署
-
-项目也支持 Vercel。请在 Vercel 项目的 `Settings → Environment Variables` 中为 Production（以及需要的 Preview 环境）配置：
+项目为标准 Next.js 全栈应用，推荐部署到 Vercel 或支持 Node.js 的容器平台。请在环境变量中配置：
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
@@ -109,7 +94,7 @@ Google OAuth 是 Sheets API 同步的身份与文件权限来源；未配置时�
 - `GOOGLE_CLOUD_PROJECT_NUMBER`
 - `NEXTAUTH_URL`（例如 `https://anki-studio.example.com`）
 
-Google Cloud Console 中的 JavaScript 来源、生产回调地址和 API Key 网站限制必须与 `NEXTAUTH_URL` 使用同一个域名；Vercel Deployment Protection 可按需保留。
+Google Cloud Console 中的 JavaScript 来源、生产回调地址和 API Key 网站限制必须与 `NEXTAUTH_URL` 使用同一个域名。
 
 ### 6. 在应用中连接表格
 
@@ -117,3 +102,10 @@ Google Cloud Console 中的 JavaScript 来源、生产回调地址和 API Key �
 2. 点击“选择 Google 表格”，选择现有表格；也可以先新建一张空表再选择。
 3. 应用验证文件后会自动创建隐藏索引；同步时每个卡包会创建自己的工作表，并显示表格名称和可点击链接。
 4. 其他设备登录同一帐号，再选择同一张表；如果已经授权，也可直接粘贴其编辑链接。
+
+## 项目结构与架构设计
+
+- 详细文件目录组织、核心模块分层与数据流向说明：请查阅 [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+- 核心架构设计决策记录：请查阅 [ADR 文档目录](docs/adr/)
+- 领域专业术语与规范约束：请查阅 [CONTEXT.md](CONTEXT.md)
+
