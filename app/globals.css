@@ -247,6 +247,70 @@
     box-shadow: 0 24px 64px -50px rgb(0 0 0 / 0.7);
   }
 
+  [data-testid="card-editor-fields"]:has(> div + div) > div:first-child {
+    border-radius: 1.45rem;
+    background: color-mix(in oklab, var(--card) 62%, var(--pastel-yellow) 38%);
+    padding: 0.85rem 1rem;
+  }
+
+  [data-testid="card-editor-fields"] > div:nth-child(2) > div {
+    border-radius: 1.45rem;
+    padding: 0.9rem 1rem;
+    background: color-mix(in oklab, var(--card) 74%, var(--pastel-blue) 26%);
+    box-shadow: 0 16px 38px -34px rgb(0 0 0 / 0.7);
+  }
+
+  [data-testid="card-editor-fields"] > div:nth-child(2) > div:nth-child(3n + 2) {
+    background: color-mix(in oklab, var(--card) 76%, var(--pastel-green) 24%);
+  }
+
+  [data-testid="card-editor-fields"] > div:nth-child(2) > div:nth-child(3n) {
+    background: color-mix(in oklab, var(--card) 78%, var(--pastel-pink) 22%);
+  }
+
+  section:has(#card-template-picker) {
+    border: 0 !important;
+    border-radius: 2rem !important;
+    background: color-mix(in oklab, var(--card) 58%, var(--pastel-yellow) 42%) !important;
+    box-shadow: 0 22px 54px -42px rgb(0 0 0 / 0.68);
+  }
+
+  section:has(#card-template-picker) [data-slot="select-trigger"],
+  section:has(#card-template-picker) [data-slot="input"] {
+    background: color-mix(in oklab, var(--card) 82%, transparent) !important;
+    border-color: transparent !important;
+  }
+
+  section:has(input[aria-label^="字段 "]) > div:nth-of-type(2) {
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  section:has(input[aria-label^="字段 "]) > div:nth-of-type(2) > div,
+  section:has(input[aria-label^="TTS 字段 "]) > div:nth-of-type(2) > div {
+    margin-block: 0.4rem;
+    border: 0 !important;
+    border-radius: 1.35rem;
+    background: color-mix(in oklab, var(--card) 70%, var(--pastel-green) 30%) !important;
+    padding: 0.65rem 0.75rem;
+    box-shadow: 0 14px 32px -30px rgb(0 0 0 / 0.68);
+  }
+
+  section:has(input[aria-label^="字段 "]) > div:nth-of-type(2) > div:nth-child(even),
+  section:has(input[aria-label^="TTS 字段 "]) > div:nth-of-type(2) > div:nth-child(even) {
+    background: color-mix(in oklab, var(--card) 72%, var(--pastel-blue) 28%) !important;
+  }
+
+  section:has([id^="template-front"]),
+  section:has([id^="template-back"]),
+  section:has([id^="template-css"]) {
+    border-radius: 2rem;
+    background: color-mix(in oklab, var(--card) 72%, var(--pastel-pink) 28%);
+    padding: 1rem;
+    box-shadow: 0 22px 58px -46px rgb(0 0 0 / 0.68);
+  }
+
   @media (max-width: 1023px) {
     [data-testid="notes-card-list"] {
       box-shadow: none;
@@ -254,6 +318,19 @@
 
     [data-testid="card-editor-fields"] {
       padding: 1rem;
+    }
+
+    [data-testid="card-editor-fields"]:has(> div + div) > div:first-child {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(14px);
+    }
+
+    section:has([id^="template-front"]),
+    section:has([id^="template-back"]),
+    section:has([id^="template-css"]) {
+      padding: 0.75rem;
     }
   }
 }
