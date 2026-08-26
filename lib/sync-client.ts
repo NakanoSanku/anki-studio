@@ -117,10 +117,12 @@ async function replaceWithRemote(
   for (const record of local) {
     await store.deleteRecord(record.id)
   }
+  const payloads = await Promise.all(
+    remoteIds.map(async (id) => ({ id, payload: await transport.getDeck(id) }))
+  )
   let pulled = 0
   const order: string[] = []
-  for (const id of remoteIds) {
-    const payload = await transport.getDeck(id)
+  for (const { id, payload } of payloads) {
     if (!payload || payload.deletedAt || !payload.deck) continue
     await applyPayload(store, id, payload)
     order.push(id)

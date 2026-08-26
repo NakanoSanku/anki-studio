@@ -5,15 +5,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { scrollToRow, visibleRange } from "@/lib/virtual-window"
 
 export function useVirtualWindow(count: number, rowHeight: number, offset = 0, enabled = true) {
-  const elementRef = useRef<HTMLDivElement>(null)
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
+  const elementRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(400)
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     elementRef.current = node
+    setElement(node)
   }, [])
 
   useEffect(() => {
-    const element = elementRef.current
     if (!element || !enabled) return
     const update = () => {
       setScrollTop(element.scrollTop)
@@ -27,7 +28,7 @@ export function useVirtualWindow(count: number, rowHeight: number, offset = 0, e
       observer.disconnect()
       element.removeEventListener("scroll", update)
     }
-  }, [count, rowHeight, offset, enabled])
+  }, [element, count, rowHeight, offset, enabled])
 
   const range = visibleRange(count, scrollTop, viewport, rowHeight, 8, offset)
 

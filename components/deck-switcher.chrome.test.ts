@@ -49,7 +49,7 @@ describe("卡包 sheet chrome", () => {
     expect(tools).toContain("PATHS.settingsTemplates")
     expect(tools).toContain("导入")
     expect(tools).toContain("导出")
-    expect(tools).toContain("onPushAnki")
     expect(tools).not.toContain("管理卡包")
+    expect(tools).not.toContain("推送到 Anki")
   })
 })

@@ -38,7 +38,7 @@ const PREVIEW_SCHEMA_METADATA_KEY = "anki_studio_preview_schema"
 const PREVIEW_SCHEMA_VERSION = "2"
 const LEGACY_SCHEMA_VERSION = 2
 const CHUNK_SIZE = 40_000
-const PREVIEW_READ_RANGE = "A1:ZZ"
+const PREVIEW_READ_RANGE = "A1:Z"
 const PREVIEW_CELL_LIMIT = 50_000
 const PREVIEW_ID_HEADER = "__anki_studio_card_id"
 const DATA_HEADERS = [
@@ -98,7 +98,10 @@ type DeveloperMetadata = {
 type SpreadsheetMetadata = {
   spreadsheetId?: string
   properties?: { title?: string }
-  sheets?: Array<{ properties?: SheetProperties }>
+  sheets?: Array<{
+    properties?: SheetProperties
+    developerMetadata?: DeveloperMetadata[]
+  }>
   developerMetadata?: DeveloperMetadata[]
 }
 
@@ -401,7 +404,7 @@ async function readSpreadsheetMetadata(
   const fields = [
     "spreadsheetId",
     "properties(title)",
-    "sheets(properties(sheetId,title,hidden,gridProperties(frozenRowCount)))",
+    "sheets(properties(sheetId,title,hidden,gridProperties(frozenRowCount)),developerMetadata(metadataId,metadataKey,metadataValue,location(sheetId,spreadsheet)))",
     "developerMetadata(metadataId,metadataKey,metadataValue,location(sheetId,spreadsheet))",
   ].join(",")
   const metadata = await sheetsRequest<SpreadsheetMetadata>(
@@ -415,21 +418,31 @@ async function readSpreadsheetMetadata(
   return metadata
 }
 
+function allDeveloperMetadata(metadata: SpreadsheetMetadata): DeveloperMetadata[] {
+  const list: DeveloperMetadata[] = [...(metadata.developerMetadata ?? [])]
+  for (const sheet of metadata.sheets ?? []) {
+    if (sheet.developerMetadata) {
+      list.push(...sheet.developerMetadata)
+    }
+  }
+  return list
+}
+
 function hasWrittenData(metadata: SpreadsheetMetadata): boolean {
-  return (metadata.developerMetadata ?? []).some((item) => (
+  return allDeveloperMetadata(metadata).some((item) => (
     item.metadataKey === HAS_WRITTEN_METADATA_KEY && item.metadataValue === "1"
   ))
 }
 
 function hasHistoryCompacted(metadata: SpreadsheetMetadata): boolean {
-  return (metadata.developerMetadata ?? []).some((item) => (
+  return allDeveloperMetadata(metadata).some((item) => (
     item.metadataKey === HISTORY_COMPACTED_METADATA_KEY
     && item.metadataValue === HISTORY_COMPACTED_SCHEMA_VERSION
   ))
 }
 
 function hasPreviewSchema(metadata: SpreadsheetMetadata): boolean {
-  return (metadata.developerMetadata ?? []).some((item) => (
+  return allDeveloperMetadata(metadata).some((item) => (
     item.metadataKey === PREVIEW_SCHEMA_METADATA_KEY
     && item.metadataValue === PREVIEW_SCHEMA_VERSION
   ))
@@ -455,21 +468,21 @@ function findSheetById(metadata: SpreadsheetMetadata, sheetId: number): SheetPro
 }
 
 function deckIdForSheet(metadata: SpreadsheetMetadata, sheetId: number): string | null {
-  const value = metadata.developerMetadata?.find((item) => (
+  const value = allDeveloperMetadata(metadata).find((item) => (
     item.metadataKey === DECK_SHEET_METADATA_KEY && item.location?.sheetId === sheetId
   ))?.metadataValue
   return typeof value === "string" && value ? value : null
 }
 
 function previewDeckIdForSheet(metadata: SpreadsheetMetadata, sheetId: number): string | null {
-  const value = metadata.developerMetadata?.find((item) => (
+  const value = allDeveloperMetadata(metadata).find((item) => (
     item.metadataKey === PREVIEW_SHEET_METADATA_KEY && item.location?.sheetId === sheetId
   ))?.metadataValue
   return typeof value === "string" && value ? value : null
 }
 
 function findTaggedDeckSheet(metadata: SpreadsheetMetadata, deckId: string): SheetProperties | undefined {
-  const sheetId = metadata.developerMetadata?.find((item) => (
+  const sheetId = allDeveloperMetadata(metadata).find((item) => (
     item.metadataKey === DECK_SHEET_METADATA_KEY && item.metadataValue === deckId
   ))?.location?.sheetId
   return typeof sheetId === "number" ? findSheetById(metadata, sheetId) : undefined
@@ -490,12 +503,47 @@ function sheetKind(
 
 function spreadsheetInventoryFromMetadata(
   metadata: SpreadsheetMetadata,
-  spreadsheetId: string
+  spreadsheetId: string,
+  indexRows: IndexRow[] = []
 ): SpreadsheetInventory {
+  const activeIndexDecks = new Map<string, { name: string; sheetId?: number }>()
+  const uniqueIndexIds = [...new Set(indexRows.map((row) => row.id))]
+  for (const id of uniqueIndexIds) {
+    const current = findCurrentIndexVersion(indexRows, id)
+    if (current && !current.row.deletedAt) {
+      activeIndexDecks.set(id, {
+        name: current.row.name || "未命名卡包",
+        sheetId: current.row.sheetId ?? undefined,
+      })
+    }
+  }
+
   const sheets: SpreadsheetSheetPreview[] = []
   for (const properties of sheetProperties(metadata)) {
     if (typeof properties.sheetId !== "number" || !properties.title) continue
-    const { kind, deckId } = sheetKind(metadata, properties)
+    let { kind, deckId } = sheetKind(metadata, properties)
+
+    if (!deckId && kind === "other") {
+      const dataMatch = /^_anki_studio_data_(.+)$/.exec(properties.title)
+      if (dataMatch) {
+        kind = "data"
+        deckId = dataMatch[1]
+      } else if (activeIndexDecks.size > 0) {
+        for (const [id, info] of activeIndexDecks.entries()) {
+          if (info.sheetId === properties.sheetId) {
+            kind = "data"
+            deckId = id
+            break
+          }
+          if (properties.title === info.name) {
+            kind = "preview"
+            deckId = id
+            break
+          }
+        }
+      }
+    }
+
     sheets.push({
       sheetId: properties.sheetId,
       title: properties.title,
@@ -506,14 +554,24 @@ function spreadsheetInventoryFromMetadata(
   }
 
   const names = new Map<string, string>()
+  for (const [id, info] of activeIndexDecks.entries()) {
+    names.set(id, info.name)
+  }
   for (const sheet of sheets) {
     if (sheet.kind === "preview" && sheet.deckId && sheet.title.trim()) {
       names.set(sheet.deckId, sheet.title.trim())
     }
   }
 
-  const deckIds = [...new Set(sheets.flatMap((sheet) => (sheet.deckId ? [sheet.deckId] : [])))]
-  const decks = deckIds
+  const allDeckIds = new Set<string>()
+  for (const sheet of sheets) {
+    if (sheet.deckId) allDeckIds.add(sheet.deckId)
+  }
+  for (const id of activeIndexDecks.keys()) {
+    allDeckIds.add(id)
+  }
+
+  const decks = [...allDeckIds]
     .map((deckId) => ({
       deckId,
       name: names.get(deckId) || "未命名卡包",
@@ -535,7 +593,7 @@ function findTaggedDeckPreviewSheet(
   metadata: SpreadsheetMetadata,
   deckId: string
 ): SheetProperties | undefined {
-  const sheetId = metadata.developerMetadata?.find((item) => (
+  const sheetId = allDeveloperMetadata(metadata).find((item) => (
     item.metadataKey === PREVIEW_SHEET_METADATA_KEY && item.metadataValue === deckId
   ))?.location?.sheetId
   return typeof sheetId === "number" ? findSheetById(metadata, sheetId) : undefined
@@ -1117,34 +1175,6 @@ async function createDeckSheet(
   return { sheetId, title }
 }
 
-async function tagDeckSheet(
-  client: GoogleSheetsClient,
-  metadata: SpreadsheetMetadata,
-  sheetId: number,
-  deckId: string,
-  fetchImpl: typeof fetch
-): Promise<void> {
-  if (deckIdForSheet(metadata, sheetId) === deckId) return
-  await batchUpdate(client, [{
-    createDeveloperMetadata: {
-      developerMetadata: {
-        location: { sheetId },
-        metadataKey: DECK_SHEET_METADATA_KEY,
-        metadataValue: deckId,
-        visibility: "DOCUMENT",
-      },
-    },
-  }], fetchImpl)
-  metadata.developerMetadata = [
-    ...(metadata.developerMetadata ?? []),
-    {
-      metadataKey: DECK_SHEET_METADATA_KEY,
-      metadataValue: deckId,
-      location: { sheetId },
-    },
-  ]
-}
-
 async function ensureDeckSheet(
   client: GoogleSheetsClient,
   metadata: SpreadsheetMetadata,
@@ -1172,8 +1202,27 @@ async function ensureDeckSheet(
   if (taggedDeckId && taggedDeckId !== deckId) {
     throw new Error("Google Sheet 卡包工作表映射冲突")
   }
+
+  const batchRequests: unknown[] = []
   if (!taggedDeckId) {
-    await tagDeckSheet(client, metadata, properties.sheetId, deckId, fetchImpl)
+    batchRequests.push({
+      createDeveloperMetadata: {
+        developerMetadata: {
+          location: { sheetId: properties.sheetId },
+          metadataKey: DECK_SHEET_METADATA_KEY,
+          metadataValue: deckId,
+          visibility: "DOCUMENT",
+        },
+      },
+    })
+    metadata.developerMetadata = [
+      ...(metadata.developerMetadata ?? []),
+      {
+        metadataKey: DECK_SHEET_METADATA_KEY,
+        metadataValue: deckId,
+        location: { sheetId: properties.sheetId },
+      },
+    ]
   }
 
   const dataTitle = uniqueSheetTitle(
@@ -1181,38 +1230,41 @@ async function ensureDeckSheet(
     metadata,
     properties.sheetId
   )
-  if (properties.title !== dataTitle) {
-    await batchUpdate(client, [{
-      updateSheetProperties: {
-        properties: { sheetId: properties.sheetId, title: dataTitle },
-        fields: "title",
-      },
-    }], fetchImpl)
-    properties.title = dataTitle
-  }
-
-  const preview = await readValues(client, properties.title, "A1:K1", fetchImpl)
-  const header = preview[0] ?? []
-  if (!rowHasValue(header)) {
-    await updateValues(client, properties.title, "A1:K1", [[...DATA_HEADERS]], fetchImpl)
-  } else if (!headerMatches(header, DATA_HEADERS)) {
-    throw new Error(`卡包工作表「${properties.title}」结构不兼容`)
-  }
-
-  if (properties.hidden !== true || properties.gridProperties?.frozenRowCount !== 1) {
-    await batchUpdate(client, [{
+  const needTitle = properties.title !== dataTitle
+  const needProps = properties.hidden !== true || properties.gridProperties?.frozenRowCount !== 1
+  if (needTitle || needProps) {
+    batchRequests.push({
       updateSheetProperties: {
         properties: {
           sheetId: properties.sheetId,
-          hidden: true,
-          gridProperties: { frozenRowCount: 1 },
+          ...(needTitle ? { title: dataTitle } : {}),
+          ...(needProps ? { hidden: true, gridProperties: { frozenRowCount: 1 } } : {}),
         },
-        fields: "hidden,gridProperties.frozenRowCount",
+        fields: [
+          ...(needTitle ? ["title"] : []),
+          ...(needProps ? ["hidden", "gridProperties.frozenRowCount"] : []),
+        ].join(","),
       },
-    }], fetchImpl)
+    })
+    properties.title = dataTitle
     properties.hidden = true
     properties.gridProperties = { ...properties.gridProperties, frozenRowCount: 1 }
   }
+
+  if (batchRequests.length > 0) {
+    await batchUpdate(client, batchRequests, fetchImpl)
+  }
+
+  if (!hasWrittenData(metadata) || !taggedDeckId) {
+    const preview = await readValues(client, properties.title, "A1:K1", fetchImpl)
+    const header = preview[0] ?? []
+    if (!rowHasValue(header)) {
+      await updateValues(client, properties.title, "A1:K1", [[...DATA_HEADERS]], fetchImpl)
+    } else if (!headerMatches(header, DATA_HEADERS)) {
+      throw new Error(`卡包工作表「${properties.title}」结构不兼容`)
+    }
+  }
+
   return { sheetId: properties.sheetId, title: properties.title }
 }
 
@@ -1262,7 +1314,7 @@ async function createDeckPreviewSheet(
           title,
           hidden: false,
           gridProperties: {
-            columnCount: headers.length,
+            columnCount: Math.max(headers.length, 10),
             frozenRowCount: 1,
             rowCount: Math.max(1000, deck.cards.length + 1),
           },
@@ -1281,6 +1333,16 @@ async function createDeckPreviewSheet(
         fields: "hiddenByUser",
       },
     },
+    {
+      createDeveloperMetadata: {
+        developerMetadata: {
+          location: { sheetId },
+          metadataKey: PREVIEW_SHEET_METADATA_KEY,
+          metadataValue: deckId,
+          visibility: "DOCUMENT",
+        },
+      },
+    },
   ], fetchImpl)
   const properties: SheetProperties = {
     sheetId,
@@ -1289,27 +1351,15 @@ async function createDeckPreviewSheet(
     gridProperties: { frozenRowCount: 1 },
   }
   addLocalPreviewSheetMetadata(metadata, properties)
-  await tagDeckPreviewSheet(client, metadata, sheetId, deckId, fetchImpl)
-  return { sheetId, title }
-}
-
-async function hidePreviewIdColumn(
-  client: GoogleSheetsClient,
-  sheetId: number,
-  fetchImpl: typeof fetch
-): Promise<void> {
-  await batchUpdate(client, [{
-    updateDimensionProperties: {
-      range: {
-        sheetId,
-        dimension: "COLUMNS",
-        startIndex: 0,
-        endIndex: 1,
-      },
-      properties: { hiddenByUser: true },
-      fields: "hiddenByUser",
+  metadata.developerMetadata = [
+    ...(metadata.developerMetadata ?? []),
+    {
+      metadataKey: PREVIEW_SHEET_METADATA_KEY,
+      metadataValue: deckId,
+      location: { sheetId },
     },
-  }], fetchImpl)
+  ]
+  return { sheetId, title }
 }
 
 async function replaceDeckPreview(
@@ -1334,35 +1384,67 @@ async function replaceDeckPreview(
   if (taggedDeckId && taggedDeckId !== deckId) {
     throw new Error("Google Sheet 卡包预览工作表映射冲突")
   }
+
+  const batchRequests: unknown[] = []
   if (!taggedDeckId) {
-    await tagDeckPreviewSheet(client, metadata, properties.sheetId, deckId, fetchImpl)
+    batchRequests.push({
+      createDeveloperMetadata: {
+        developerMetadata: {
+          location: { sheetId: properties.sheetId },
+          metadataKey: PREVIEW_SHEET_METADATA_KEY,
+          metadataValue: deckId,
+          visibility: "DOCUMENT",
+        },
+      },
+    })
+    metadata.developerMetadata = [
+      ...(metadata.developerMetadata ?? []),
+      {
+        metadataKey: PREVIEW_SHEET_METADATA_KEY,
+        metadataValue: deckId,
+        location: { sheetId: properties.sheetId },
+      },
+    ]
   }
 
   const title = uniqueSheetTitle(deck.name, metadata, properties.sheetId)
-  if (properties.title !== title) {
-    await batchUpdate(client, [{
-      updateSheetProperties: {
-        properties: { sheetId: properties.sheetId, title },
-        fields: "title",
-      },
-    }], fetchImpl)
-    properties.title = title
-  }
-  if (properties.hidden === true || properties.gridProperties?.frozenRowCount !== 1) {
-    await batchUpdate(client, [{
+  const needTitle = properties.title !== title
+  const needProps = properties.hidden === true || properties.gridProperties?.frozenRowCount !== 1
+  if (needTitle || needProps) {
+    batchRequests.push({
       updateSheetProperties: {
         properties: {
           sheetId: properties.sheetId,
-          hidden: false,
-          gridProperties: { frozenRowCount: 1 },
+          ...(needTitle ? { title } : {}),
+          ...(needProps ? { hidden: false, gridProperties: { frozenRowCount: 1 } } : {}),
         },
-        fields: "hidden,gridProperties.frozenRowCount",
+        fields: [
+          ...(needTitle ? ["title"] : []),
+          ...(needProps ? ["hidden", "gridProperties.frozenRowCount"] : []),
+        ].join(","),
       },
-    }], fetchImpl)
+    })
+    properties.title = title
     properties.hidden = false
     properties.gridProperties = { ...properties.gridProperties, frozenRowCount: 1 }
   }
-  await hidePreviewIdColumn(client, properties.sheetId, fetchImpl)
+
+  batchRequests.push({
+    updateDimensionProperties: {
+      range: {
+        sheetId: properties.sheetId,
+        dimension: "COLUMNS",
+        startIndex: 0,
+        endIndex: 1,
+      },
+      properties: { hiddenByUser: true },
+      fields: "hiddenByUser",
+    },
+  })
+
+  if (batchRequests.length > 0) {
+    await batchUpdate(client, batchRequests, fetchImpl)
+  }
 
   return { sheetId: properties.sheetId, title: properties.title }
 }
@@ -1412,13 +1494,13 @@ async function writeDeckPreviewValues(
   fetchImpl: typeof fetch
 ): Promise<void> {
   const rows = previewValues(deck)
-  const existing = await readValues(client, previewSheet.title, PREVIEW_READ_RANGE, fetchImpl)
+  const existingRows = await readValues(client, previewSheet.title, "A1:A", fetchImpl)
   const width = Math.max(
     rows.reduce((maximum, row) => Math.max(maximum, row.length), 0),
-    existing.reduce((maximum, row) => Math.max(maximum, row.length), 0),
+    deck.fields.length + 1,
     1
   )
-  const height = Math.max(rows.length, existing.length, 1)
+  const height = Math.max(rows.length, existingRows.length, 1)
   const values = Array.from({ length: height }, (_, rowIndex) => (
     Array.from({ length: width }, (_, columnIndex) => rows[rowIndex]?.[columnIndex] ?? "")
   ))
@@ -1429,7 +1511,6 @@ async function writeDeckPreviewValues(
     values,
     fetchImpl
   )
-  await hidePreviewIdColumn(client, previewSheet.sheetId, fetchImpl)
 }
 
 function parsePreviewValues(
@@ -1941,6 +2022,40 @@ async function deleteDeckSheet(
   await batchUpdate(client, requests, fetchImpl)
 }
 
+export async function createGoogleSpreadsheet(
+  accessToken: string,
+  title: string = "Anki Studio · 闪卡同步",
+  fetchImpl: typeof fetch = fetch
+): Promise<GoogleSheetDetails> {
+  const response = await fetchImpl(SHEETS_API_ROOT, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      properties: {
+        title: title.trim() || "Anki Studio · 闪卡同步",
+      },
+    }),
+  })
+  const data = await response.json().catch(() => null) as unknown
+  if (
+    !response.ok
+    || !data
+    || typeof data !== "object"
+    || typeof (data as { spreadsheetId?: unknown }).spreadsheetId !== "string"
+  ) {
+    const errorMsg = data && typeof data === "object" && "error" in data && typeof (data as { error?: { message?: unknown } }).error?.message === "string"
+      ? (data as { error: { message: string } }).error.message
+      : "创建 Google 表格失败"
+    throw new GoogleSheetsApiError(errorMsg, response.status)
+  }
+  const spreadsheetId = (data as { spreadsheetId: string }).spreadsheetId
+  const client = createGoogleSheetsClient({ spreadsheetId, accessToken })
+  return connectGoogleSheet(client, fetchImpl)
+}
+
 export async function connectGoogleSheet(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
@@ -1981,8 +2096,25 @@ export async function listSpreadsheetInventory(
   client: GoogleSheetsClient,
   fetchImpl: typeof fetch = fetch
 ): Promise<SpreadsheetInventory> {
-  const metadata = await readSpreadsheetMetadata(client, fetchImpl)
-  return spreadsheetInventoryFromMetadata(metadata, client.spreadsheetId)
+  const session = createSheetsSession()
+  const metadata = await readSpreadsheetMetadata(client, fetchImpl, session)
+  const devMeta = allDeveloperMetadata(metadata)
+  const hasMetaDecks = devMeta.some((item) => (
+    item.metadataKey === DECK_SHEET_METADATA_KEY || item.metadataKey === PREVIEW_SHEET_METADATA_KEY
+  ))
+
+  let indexRows: IndexRow[] = []
+  if (!hasMetaDecks && sheetProperties(metadata).some((s) => s.title === INDEX_SHEET_NAME)) {
+    try {
+      const grid = session.indexGrid ?? await readValues(client, INDEX_SHEET_NAME, "A1:K", fetchImpl, session)
+      session.indexGrid = grid
+      indexRows = parseIndexRows(grid.slice(1))
+    } catch {
+      // index read fallback error ignored
+    }
+  }
+
+  return spreadsheetInventoryFromMetadata(metadata, client.spreadsheetId, indexRows)
 }
 
 export async function listGoogleSheetsIndex(

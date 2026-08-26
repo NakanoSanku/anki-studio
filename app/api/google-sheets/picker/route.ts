@@ -3,8 +3,8 @@ import { getGoogleSheetsAuthorization } from "@/lib/sync-server"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
-  const authorization = await getGoogleSheetsAuthorization()
+export async function GET(request: Request) {
+  const authorization = await getGoogleSheetsAuthorization(request)
   if (!authorization.ok) return authorization.response
 
   const picker = readGooglePickerConfiguration()

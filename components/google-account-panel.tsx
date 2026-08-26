@@ -1,22 +1,37 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { signIn, signOut } from "next-auth/react"
+import { useEffect, useRef, useState } from "react"
 import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, UserRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  getCachedAccessToken,
+  getCachedGoogleUser,
+  googleSignIn,
+  googleSignOut,
+  initFirebaseAuth,
+  isFirebaseConfigured,
+  subscribeAuth,
+} from "@/lib/firebase-auth"
 
 type AccountState =
   | { phase: "loading" }
   | { phase: "unconfigured"; issue: string }
   | { phase: "signed-out" }
-  | { phase: "signed-in"; name: string | null; email: string; sheetsAuthorized: boolean }
+  | {
+      phase: "signed-in"
+      name: string | null
+      email: string
+      image?: string | null
+      sheetsAuthorized: boolean
+      driveAuthorized: boolean
+    }
   | { phase: "error"; issue: string }
 
 function GoogleMark() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4">
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4 shrink-0">
       <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
       <path fill="#34A853" d="M12 22c2.7 0 4.98-.9 6.63-2.36l-3.24-2.54c-.9.6-2.05.96-3.39.96-2.6 0-4.81-1.76-5.6-4.13H3.05v2.62A10 10 0 0 0 12 22Z" />
       <path fill="#FBBC05" d="M6.4 13.93A6 6 0 0 1 6.08 12c0-.67.12-1.32.32-1.93V7.45H3.05A10 10 0 0 0 2 12c0 1.61.39 3.14 1.05 4.55l3.35-2.62Z" />
@@ -25,62 +40,161 @@ function GoogleMark() {
   )
 }
 
+function getInitialAccountState(): AccountState {
+  if (typeof window === "undefined") return { phase: "loading" }
+  const user = getCachedGoogleUser()
+  const token = getCachedAccessToken()
+  if (user && token) {
+    return {
+      phase: "signed-in",
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      sheetsAuthorized: true,
+      driveAuthorized: true,
+    }
+  }
+  if (isFirebaseConfigured()) {
+    return { phase: "signed-out" }
+  }
+  return { phase: "loading" }
+}
+
 export function GoogleAccountPanel({
   onReadyChange,
 }: {
   onReadyChange?: (ready: boolean | undefined) => void
 }) {
-  const [account, setAccount] = useState<AccountState>({ phase: "loading" })
+  const [account, setAccount] = useState<AccountState>(getInitialAccountState)
   const [busy, setBusy] = useState(false)
+  const onReadyChangeRef = useRef(onReadyChange)
 
   useEffect(() => {
-    let cancelled = false
-    void fetch("/api/auth/account", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json() as {
+    onReadyChangeRef.current = onReadyChange
+  }, [onReadyChange])
+
+  useEffect(() => {
+    let active = true
+
+    const syncState = async () => {
+      // 1. Check client-side cached user and token
+      const user = getCachedGoogleUser()
+      const token = getCachedAccessToken()
+      if (user && token) {
+        if (active) {
+          onReadyChangeRef.current?.(true)
+          setAccount({
+            phase: "signed-in",
+            name: user.name,
+            email: user.email,
+            image: user.image,
+            sheetsAuthorized: true,
+            driveAuthorized: true,
+          })
+        }
+        return
+      }
+
+      // If Firebase is configured, client popup auth is authoritative
+      if (isFirebaseConfigured()) {
+        if (active) {
+          onReadyChangeRef.current?.(false)
+          setAccount({ phase: "signed-out" })
+        }
+        return
+      }
+
+      // 2. Server-side NextAuth fallback (if Firebase not configured)
+      try {
+        const response = await fetch("/api/auth/account", { cache: "no-store" })
+        const data = await response.json().catch(() => null) as {
           configured?: boolean
           authenticated?: boolean
           sheetsAuthorized?: boolean
+          driveAuthorized?: boolean
           issue?: string
-          user?: { name?: string | null; email?: string | null }
-        }
-        if (cancelled) return
-        if (!data.configured) {
-          onReadyChange?.(undefined)
-          setAccount({ phase: "unconfigured", issue: data.issue ?? "Google OAuth 尚未配置" })
-        } else if (data.authenticated && data.user?.email) {
-          onReadyChange?.(data.sheetsAuthorized === true)
+          user?: { name?: string | null; email?: string | null; image?: string | null }
+        } | null
+
+        if (!active) return
+
+        if (data?.authenticated && data.user?.email) {
+          onReadyChangeRef.current?.(data.sheetsAuthorized === true)
           setAccount({
             phase: "signed-in",
             name: data.user.name ?? null,
             email: data.user.email,
+            image: data.user.image ?? null,
             sheetsAuthorized: data.sheetsAuthorized === true,
+            driveAuthorized: data.driveAuthorized === true,
           })
-        } else if (response.ok) {
-          onReadyChange?.(false)
-          setAccount({ phase: "signed-out" })
+          return
+        }
+
+        if (data && !data.configured) {
+          onReadyChangeRef.current?.(undefined)
+          setAccount({ phase: "unconfigured", issue: data.issue ?? "Google OAuth 尚未配置" })
         } else {
-          onReadyChange?.(undefined)
-          setAccount({ phase: "error", issue: data.issue ?? "无法读取 Google 帐号状态" })
+          onReadyChangeRef.current?.(false)
+          setAccount({ phase: "signed-out" })
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          onReadyChange?.(undefined)
-          setAccount({ phase: "error", issue: "无法读取 Google 帐号状态" })
-        }
-      })
-    return () => {
-      cancelled = true
+      } catch {
+        if (!active) return
+        onReadyChangeRef.current?.(undefined)
+        setAccount({ phase: "error", issue: "无法读取 Google 帐号状态" })
+      }
     }
-  }, [onReadyChange])
+
+    initFirebaseAuth(
+      (fbUser, token) => {
+        if (token && active && fbUser.email) {
+          onReadyChangeRef.current?.(true)
+          setAccount({
+            phase: "signed-in",
+            name: fbUser.displayName ?? null,
+            email: fbUser.email,
+            image: fbUser.photoURL ?? null,
+            sheetsAuthorized: true,
+            driveAuthorized: true,
+          })
+        }
+      },
+      () => {
+        if (active) void syncState()
+      }
+    )
+
+    const unsubscribe = subscribeAuth(() => {
+      if (active) void syncState()
+    })
+
+    void syncState()
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
 
   const connect = async () => {
     setBusy(true)
     try {
-      await signIn("google", { callbackUrl: "/settings/sync" })
-    } catch {
-      setAccount({ phase: "error", issue: "无法启动 Google 登录" })
+      const { user } = await googleSignIn()
+      onReadyChangeRef.current?.(true)
+      setAccount({
+        phase: "signed-in",
+        name: user.displayName ?? null,
+        email: user.email ?? "",
+        image: user.photoURL ?? null,
+        sheetsAuthorized: true,
+        driveAuthorized: true,
+      })
+    } catch (error) {
+      console.error("Google sign-in error:", error)
+      setAccount({
+        phase: "error",
+        issue: error instanceof Error ? error.message : "无法启动 Google 登录，请重试",
+      })
     } finally {
       setBusy(false)
     }
@@ -89,7 +203,9 @@ export function GoogleAccountPanel({
   const disconnect = async () => {
     setBusy(true)
     try {
-      await signOut({ callbackUrl: "/settings/sync" })
+      await googleSignOut()
+      onReadyChangeRef.current?.(false)
+      setAccount({ phase: "signed-out" })
     } catch {
       setAccount({ phase: "error", issue: "无法退出 Google 帐号" })
     } finally {
@@ -99,20 +215,22 @@ export function GoogleAccountPanel({
 
   if (account.phase === "loading") {
     return (
-      <div className="flex min-h-24 items-center justify-center rounded-xl border border-border/70 bg-muted/25 text-sm text-muted-foreground">
-        <LoaderCircle className="mr-2 size-4 animate-spin" />
-        正在读取 Google 帐号…
+      <div className="flex min-h-20 items-center justify-center rounded-2xl border border-border/60 bg-card/60 p-4 text-sm text-muted-foreground backdrop-blur-xs">
+        <LoaderCircle className="mr-2.5 size-4 animate-spin text-primary" />
+        正在读取 Google 帐号状态…
       </div>
     )
   }
 
   if (account.phase === "unconfigured" || account.phase === "error") {
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/30">
-        <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Google 帐号暂不可连接</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{account.issue}</p>
+      <div className="flex items-start gap-3.5 rounded-2xl border border-amber-500/30 bg-amber-50/50 p-4 backdrop-blur-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+          <ShieldAlert className="size-4.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">Google 帐号暂不可连接</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{account.issue}</p>
         </div>
       </div>
     )
@@ -120,35 +238,65 @@ export function GoogleAccountPanel({
 
   if (account.phase === "signed-in") {
     return (
-      <div className="flex flex-col gap-4 rounded-xl border border-border/70 bg-muted/25 p-4 sm:flex-row sm:items-center">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <UserRound className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{account.name || "Google 帐号"}</p>
-            {account.sheetsAuthorized ? (
-              <Badge variant="outline" className="gap-1 text-emerald-700 dark:text-emerald-300">
-                <Check className="size-3" />表格已授权
-              </Badge>
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card p-3.5 shadow-xs sm:p-4">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="relative shrink-0">
+            {account.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={account.image}
+                alt={account.name || "Google 头像"}
+                className="size-10 rounded-full border border-border/80 object-cover shadow-xs sm:size-11"
+                referrerPolicy="no-referrer"
+              />
             ) : (
-              <Badge variant="outline" className="gap-1 text-amber-700 dark:text-amber-300">
-                <KeyRound className="size-3" />需要表格权限
-              </Badge>
+              <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary sm:size-11">
+                <UserRound className="size-5" />
+              </span>
             )}
+            <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-background bg-emerald-500 sm:size-3.5" />
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.email}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">{account.name || "Google 帐号"}</p>
+              {account.sheetsAuthorized ? (
+                <Badge variant="outline" className="hidden shrink-0 border-emerald-500/30 bg-emerald-50/50 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 xs:inline-flex">
+                  <Check className="mr-0.5 size-2.5" />已授权
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="shrink-0 border-amber-500/30 bg-amber-50/50 text-[10px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                  <KeyRound className="mr-0.5 size-2.5" />未授权
+                </Badge>
+              )}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{account.email}</p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex items-center gap-1.5 shrink-0">
           {!account.sheetsAuthorized ? (
-            <Button type="button" disabled={busy} onClick={() => void connect()}>
-              {busy ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-              授权表格
+            <Button
+              type="button"
+              size="sm"
+              className="h-8.5 rounded-xl px-2.5 text-xs font-medium"
+              disabled={busy}
+              onClick={() => void connect()}
+            >
+              {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5 sm:mr-1" />}
+              <span className="hidden sm:inline">重新授权</span>
             </Button>
           ) : null}
-          <Button type="button" variant="outline" disabled={busy} onClick={() => void disconnect()}>
-            {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-            退出登录
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8.5 rounded-xl px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+            disabled={busy}
+            onClick={() => void disconnect()}
+            title="退出登录"
+          >
+            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <LogOut className="size-3.5 sm:mr-1" />}
+            <span className="hidden sm:inline">退出登录</span>
           </Button>
         </div>
       </div>
@@ -156,17 +304,28 @@ export function GoogleAccountPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border/70 bg-muted/25 p-4 sm:flex-row sm:items-center">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border/70">
-        <GoogleMark />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">连接 Google 帐号</p>
+    <div className="flex flex-col gap-3.5 rounded-2xl border border-border/70 bg-card p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3.5 min-w-0">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-muted/60 border border-border/60 shadow-xs">
+          <GoogleMark />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">Google 帐号云同步</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            连接后自动双向同步闪卡、模板与学习历史
+          </p>
+        </div>
       </div>
-      <Button type="button" disabled={busy} onClick={() => void connect()}>
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}
+      <Button
+        type="button"
+        className="h-10 min-h-[42px] rounded-xl px-4 text-xs font-semibold shadow-xs"
+        disabled={busy}
+        onClick={() => void connect()}
+      >
+        {busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <span className="mr-2"><GoogleMark /></span>}
         使用 Google 登录
       </Button>
     </div>
   )
 }
+

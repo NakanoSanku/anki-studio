@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
-import { hasAnkiPush, markNotesPushed, planAnkiPush, withAnkiIdentity, type AnkiPushPlan } from "@/lib/anki-sync"
+import { withAnkiIdentity } from "@/lib/anki-sync"
 import { exportApkg, importDeckFile } from "@/lib/apkg"
 import { PATHS, noteIdFromPath, notePath } from "@/lib/app-paths"
 import { studyPairTransitionTypes } from "@/lib/study-transition"
@@ -69,26 +69,6 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-function pushButtonLabel(plan: AnkiPushPlan): string {
-  if (plan.cards.length > 0) return `推送到 Anki（${plan.cards.length}）`
-  if (plan.templateChanged) return "推送到 Anki（模板）"
-  return "推送到 Anki"
-}
-
-async function shareOrDownload(blob: Blob, filename: string): Promise<"shared" | "downloaded"> {
-  const file = new File([blob], filename, { type: "application/apkg" })
-  try {
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename })
-      return "shared"
-    }
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error
-  }
-  downloadBlob(blob, filename)
-  return "downloaded"
-}
-
 export function Studio() {
   const pathname = usePathname() ?? PATHS.home
   const router = useRouter()
@@ -103,7 +83,15 @@ export function Studio() {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
-  const editorNoteId = noteIdFromPath(pathname)
+  const [activeNoteOverride, setActiveNoteOverride] = useState<string | null | undefined>(undefined)
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
+    setActiveNoteOverride(undefined)
+  }
+  const pathNoteId = noteIdFromPath(pathname)
+  const editorNoteId = activeNoteOverride !== undefined ? activeNoteOverride : pathNoteId
+  const activePath = editorNoteId ? notePath(editorNoteId) : activeNoteOverride === null ? PATHS.notes : pathname
   const createdInSession = searchParams.get("new") === "1"
   const [status, setStatus] = useState<string>("")
   const [busy, setBusy] = useState(false)
@@ -410,71 +398,6 @@ export function Studio() {
     })()
   }
 
-  const onPushAnki = () => {
-    if (exportAbort.current) {
-      showStatus("正在导出，请稍候或取消后重试")
-      return
-    }
-
-    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(deck)) as Deck)
-    const plan = planAnkiPush(snapshot)
-    if (!hasAnkiPush(plan)) {
-      showStatus("没有需要推送的变更")
-      return
-    }
-
-    persistIdentity(snapshot)
-    const controller = new AbortController()
-    exportAbort.current = controller
-    setExporting(true)
-    setExportProgress(null)
-
-    void (async () => {
-      try {
-        const jobs = await listTtsJobs(snapshot, plan.cards)
-        if (jobs.length > 0) {
-          const minutes = Math.max(1, Math.ceil((jobs.length * 1.5) / 60))
-          showStatus(`将生成 ${jobs.length} 条语音，大约 ${minutes} 分钟，可继续编辑，不要关闭标签页`)
-        } else if (plan.cards.length > 0) {
-          showStatus(`将推送 ${plan.cards.length} 张卡片到 Anki`)
-        } else {
-          showStatus("将更新 Anki 模板")
-        }
-        const blob = await exportApkg(snapshot, {
-          cards: plan.cards,
-          signal: controller.signal,
-          onProgress: (done, total) => setExportProgress({ done, total }),
-        })
-        if (controller.signal.aborted) return
-        const filename = safeFilename(`${snapshot.name}-增量`, "apkg")
-        const result = await shareOrDownload(blob, filename)
-        setDeck((current) =>
-          markNotesPushed(current, {
-            noteHashes: plan.noteHashes,
-            templateHash: plan.templateHash,
-            anki: snapshot.anki!,
-          })
-        )
-        showStatus(
-          result === "shared"
-            ? "已分享增量卡包，用 Anki 打开即可更新"
-            : "已下载增量卡包，发给 Anki 导入即可"
-        )
-      } catch (error) {
-        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-          showStatus("已取消推送")
-        } else {
-          showStatus(error instanceof Error ? error.message : "推送失败")
-        }
-      } finally {
-        if (exportAbort.current === controller) exportAbort.current = null
-        setExporting(false)
-        setExportProgress(null)
-      }
-    })()
-  }
-
-  const pushPlan = planAnkiPush(deck)
   const libraryView: Library = {
     ...library,
     decks: library.decks.map((entry) =>
@@ -485,14 +408,16 @@ export function Studio() {
   }
 
   const studyQueueCount = getStudyQueue(deck).length
+  const isNotesRoute =
+    activePath === PATHS.notes || pathname === PATHS.notes || Boolean(editorNoteId) || Boolean(pathNoteId)
   const settingsSection =
-    pathname === PATHS.settingsDeck
+    activePath === PATHS.settingsDeck
       ? "deck"
-      : pathname === PATHS.settingsStudy
+      : activePath === PATHS.settingsStudy
         ? "study"
-        : pathname === PATHS.settingsAi
+        : activePath === PATHS.settingsAi
           ? "ai"
-          : pathname === PATHS.settingsSync
+          : activePath === PATHS.settingsSync
             ? "sync"
             : null
 
@@ -500,11 +425,13 @@ export function Studio() {
     const card = createCard(deck.fields)
     setDeck((current) => ({ ...current, cards: [...current.cards, card] }))
     setSelectedId(card.id)
+    setActiveNoteOverride(card.id)
     router.push(`${notePath(card.id)}?new=1`)
   }
 
   const openNote = (id: string) => {
     setSelectedId(id)
+    setActiveNoteOverride(id)
     router.push(notePath(id))
   }
 
@@ -575,13 +502,11 @@ export function Studio() {
       busy={busy}
       exporting={exporting}
       exportProgress={exportProgress}
-      pushLabel={pushButtonLabel(pushPlan)}
       hasTts={Object.keys(ttsOf(deck)).length > 0}
       onImport={() => fileRef.current?.click()}
       onExportJson={onExportJson}
       onExportCsv={onExportCsv}
       onExportApkg={onExportApkg}
-      onPushAnki={onPushAnki}
       onCancelExport={cancelExport}
       onSwitchDeck={() => setSwitcherOpen(true)}
     />
@@ -608,10 +533,19 @@ export function Studio() {
         deckName={deck.name}
         status={status}
         lockViewport={pathname === PATHS.notes}
+        activePath={activePath}
         onSync={() => void runSync("manual")}
         onDeckClick={() => setSwitcherOpen(true)}
+        onBack={
+          editorNoteId
+            ? () => {
+                setActiveNoteOverride(null)
+                router.push(PATHS.notes)
+              }
+            : undefined
+        }
       >
-        {pathname === PATHS.home ? (
+        {activePath === PATHS.home ? (
           <StudyOverview
             deck={deck}
             onStart={() =>
@@ -623,7 +557,7 @@ export function Studio() {
           />
         ) : null}
 
-        {pathname === PATHS.studySession ? (
+        {activePath === PATHS.studySession ? (
           <StudySession
             key={library.activeId}
             deck={deck}
@@ -632,7 +566,7 @@ export function Studio() {
           />
         ) : null}
 
-        {pathname === PATHS.notes || editorNoteId ? (
+        {isNotesRoute ? (
           <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col overflow-hidden">
             <CardEditor
               deck={deck}
@@ -649,7 +583,7 @@ export function Studio() {
           </div>
         ) : null}
 
-        {pathname === PATHS.settingsTemplates ? (
+        {activePath === PATHS.settingsTemplates ? (
           <div className="mx-auto w-full max-w-7xl">
             <TemplateEditor
               key={library.activeId}
@@ -662,10 +596,12 @@ export function Studio() {
           </div>
         ) : null}
 
-        {pathname === PATHS.settings ? <SettingsOverview /> : null}
+        {activePath === PATHS.settings ? (
+          <SettingsOverview deck={deck} syncMessage={syncMessage} />
+        ) : null}
 
         {settingsSection ? (
-          <div className="mx-auto w-full max-w-7xl pb-8">
+          <div className="mx-auto w-full max-w-7xl pb-28 sm:pb-12">
             <SettingsForm
               section={settingsSection}
               deckTools={settingsSection === "deck" ? deckTools : undefined}
@@ -678,7 +614,7 @@ export function Studio() {
                 dirtyCount: dirty,
                 unavailable: syncUnavailable,
               }}
-              onSyncNow={() => void runSync("manual")}
+              onSyncNow={() => runSync("manual")}
             />
           </div>
         ) : null}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, ChevronLeft, ChevronRight, Plus, Search, Sparkles } from "lucide-react"
+import { BookOpen, Check, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react"
 
 import { requestBatchAi, requestCardAi, referenceValuesForComplete } from "@/lib/ai"
 import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
@@ -64,7 +64,7 @@ import { cn } from "@/lib/utils"
 
 type MobilePane = "list" | "editor" | "preview"
 
-const LIST_ROW = 56
+const LIST_ROW = 60
 const FILTERS: { id: ReviewFilter; label: string }[] = [
   { id: "all", label: "全部" },
   { id: "unreviewed", label: "未审" },
@@ -99,22 +99,32 @@ export function CardEditor({
 }: CardEditorProps) {
   const [mobilePane, setMobilePane] = useState<MobilePane>(layout === "detail" ? "editor" : "list")
   const [busyKeys, setBusyKeys] = useState<string[]>([])
+  const [prevLayout, setPrevLayout] = useState(layout)
+  if (prevLayout !== layout) {
+    setPrevLayout(layout)
+    if (layout === "list") {
+      setMobilePane("list")
+    }
+  }
   const busyRef = useRef(new Set<string>())
   const deckRef = useRef(deck)
   const pendingDecks = useRef(new Set<Deck>())
   const [alert, setAlert] = useState("")
   const [batchOpen, setBatchOpen] = useState(false)
+  const [completeOpen, setCompleteOpen] = useState(false)
   const [referencePickerOpen, setReferencePickerOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
   const [batchCount, setBatchCount] = useState("10")
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<ReviewFilter>("all")
   const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
-  const [jumpText, setJumpText] = useState("")
-  const [jumpFocused, setJumpFocused] = useState(false)
   const selected = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
   const editableFields = textFields(deck)
-  const canCompleteSelected = editableFields.some((field) => !selected?.values[field]?.trim())
+  const hasFilledField = editableFields.some((field) => Boolean(selected?.values[field]?.trim()))
+  const hasEmptyField = editableFields.some((field) => !selected?.values[field]?.trim())
+  const canCompleteSelected = Boolean(selected && hasFilledField && hasEmptyField)
+  const filledFields = editableFields.filter((field) => Boolean(selected?.values[field]?.trim()))
+  const emptyFields = editableFields.filter((field) => !selected?.values[field]?.trim())
   const fieldTts = ttsOf(deck)
   const visibleCards = deck.cards.filter(
     (card) => cardMatchesQuery(card, editableFields, query) && matchesReviewFilter(card, review, filter)
@@ -367,7 +377,7 @@ export function CardEditor({
   }
 
   const applyCardCompletion = () => {
-    if (!selected) return
+    if (!selected || !canCompleteSelected) return
     const cardId = selected.id
     const values = selected.values
     const references = referenceValuesForComplete(
@@ -387,6 +397,7 @@ export function CardEditor({
       const result = commitChange((current) => mergeCardAiValues(current, cardId, generated))
       if (!result.ok) throw new Error(result.error)
       setReview((state) => markUnreviewed(state, cardId))
+      setCompleteOpen(false)
     })
   }
 
@@ -402,104 +413,63 @@ export function CardEditor({
     if (selectedId === id) onSelect(nextId)
   }
 
-  const jumpValue = jumpFocused ? jumpText : selectedIndex > 0 ? String(selectedIndex) : ""
-
-  const submitJump = () => {
-    const raw = jumpFocused ? jumpText : jumpValue
-    if (!raw.trim()) return
-    const index = Number(raw)
-    if (!Number.isFinite(index)) return
-    jumpTo(index)
-  }
-
-  const desktopToolbar = (
-    <div className="hidden flex-col gap-2 lg:flex">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-9 items-center rounded-xl border border-border/70 bg-card p-1 shadow-xs">
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              data-testid="prev-card"
-              aria-label="上一张卡片"
-              title="上一张（Alt+↑）"
-              disabled={visibleCards.length === 0}
-              onClick={() => goVisible(-1)}
-            >
-              <ChevronLeft />
-            </Button>
-            <form
-              className="flex items-center gap-1 px-1 text-sm"
-              onSubmit={(event) => {
-                event.preventDefault()
-                submitJump()
-              }}
-            >
-              <span className="text-muted-foreground">卡片</span>
-              <Input
-                value={jumpValue}
-                inputMode="numeric"
-                aria-label="跳转到卡片序号"
-                data-testid="jump-card-index"
-                className="h-7 w-12 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0"
-                onChange={(event) => setJumpText(event.target.value.replace(/[^\d]/g, ""))}
-                onFocus={() => {
-                  setJumpText(selectedIndex > 0 ? String(selectedIndex) : "")
-                  setJumpFocused(true)
-                }}
-                onBlur={() => {
-                  submitJump()
-                  setJumpFocused(false)
-                }}
-              />
-              <span className="text-muted-foreground">/ {deck.cards.length}</span>
-            </form>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              data-testid="next-card"
-              aria-label="下一张卡片"
-              title="下一张卡片"
-              disabled={visibleCards.length === 0}
-              onClick={() => goVisible(1)}
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-          <Button type="button" data-testid="insert-after-card" title="在当前卡片后插入（Alt+N）" onClick={addCard}>
-            <Plus data-icon="inline-start" />
-            新建卡片
-          </Button>
-          <Button type="button" variant="outline" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>
-            <Sparkles data-icon="inline-start" />
-            批量生成
-          </Button>
-        </div>
-        <div className="relative min-w-0">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+  const listToolbar = (
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
           <Input
             value={query}
             aria-label="搜索卡片"
-            placeholder="搜索卡片"
-            className="h-9 w-56 border-border bg-card pr-3 pl-8"
+            placeholder="搜索卡片…"
+            className="h-9.5 rounded-xl border-border/60 bg-card pr-8 pl-8.5 text-xs transition-colors shadow-none placeholder:text-muted-foreground/60 focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:border-primary/50"
             onChange={(event) => setQuery(event.target.value)}
           />
+          {query.trim() ? (
+            <button
+              type="button"
+              aria-label="清空搜索"
+              className="absolute top-1/2 right-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground"
+              onClick={() => setQuery("")}
+            >
+              <X className="size-2.5" />
+            </button>
+          ) : null}
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-9.5 rounded-xl px-3 text-xs font-medium border-border/70 shrink-0"
+          disabled={isBusy("batch")}
+          onClick={() => setBatchOpen(true)}
+        >
+          生成
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9.5 rounded-xl px-3 text-xs font-medium shadow-xs shrink-0"
+          aria-label="新建卡片"
+          title="在当前卡片后新建"
+          onClick={addCard}
+        >
+          <Plus className="mr-1 size-3.5" />
+          新建
+        </Button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg bg-muted/70 p-0.5">
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7.5 items-center rounded-lg bg-muted/40 p-0.5 ring-1 ring-border/50">
             {FILTERS.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                data-testid={`review-filter-${item.id}`}
+                data-testid={`mobile-review-filter-${item.id}`}
                 className={cn(
-                  "rounded-md px-2.5 py-1 text-xs transition-colors",
+                  "h-6.5 rounded-md px-2.5 text-xs transition-all",
                   filter === item.id
-                    ? "bg-card text-foreground shadow-sm"
+                    ? "bg-card font-medium text-foreground shadow-2xs"
                     : "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => setFilter(item.id)}
@@ -508,71 +478,14 @@ export function CardEditor({
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {query.trim() || filter !== "all"
-              ? `显示 ${visibleCards.length} / ${deck.cards.length}`
-              : `${deck.cards.length} 张 · 已审 ${reviewedCount}`}
-          </p>
+          {review.referenceIds.length > 0 ? (
+            <ReferenceNotesBar
+              referenceIds={review.referenceIds}
+              onOpenPicker={() => setReferencePickerOpen(true)}
+            />
+          ) : null}
         </div>
-        <p className="text-xs text-muted-foreground">Alt+↓ 标记为已审核 · Alt+↑ 上一张 · Alt+N 新建</p>
-      </div>
-    </div>
-  )
-
-  const mobileListToolbar = (
-    <div className={cn("space-y-2", layout === "list" ? undefined : "lg:hidden")}>
-      <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            aria-label="搜索卡片"
-            placeholder="搜索卡片"
-            className="h-10 rounded-xl border-border bg-card pr-3 pl-9"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        <Button
-          type="button"
-          size="icon-lg"
-          aria-label="新建卡片"
-          title="在当前卡片后新建"
-          onClick={addCard}
-        >
-          <Plus />
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          className="px-3"
-          disabled={isBusy("batch")}
-          onClick={() => setBatchOpen(true)}
-        >
-          <Sparkles data-icon="inline-start" />
-          AI 生成
-        </Button>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex rounded-lg bg-muted/70 p-0.5">
-          {FILTERS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              data-testid={`mobile-review-filter-${item.id}`}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs transition-colors",
-                filter === item.id
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setFilter(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs tabular-nums text-muted-foreground">
+        <p className="flex h-7.5 items-center font-mono text-xs tabular-nums text-muted-foreground">
           {query.trim() || filter !== "all"
             ? `${visibleCards.length} / ${deck.cards.length} 张`
             : `${deck.cards.length} 张 · 已审 ${reviewedCount}`}
@@ -675,19 +588,41 @@ export function CardEditor({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>批量生成笔记</DialogTitle>
+          <DialogTitle>批量生成</DialogTitle>
           <DialogDescription>
             按主题或粘贴词表一次生成多条笔记。与现有首字段相同的不会写入。新笔记插在当前笔记后面。
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
-          <ReferenceNotesBar
-            cards={deck.cards}
-            fields={editableFields}
-            referenceIds={review.referenceIds}
-            onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))}
-            onOpenPicker={() => setReferencePickerOpen(true)}
-          />
+          <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card p-3 shadow-2xs">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <BookOpen className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground">参考范例</span>
+                  {review.referenceIds.length > 0 && (
+                    <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                      {review.referenceIds.length} 张
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {review.referenceIds.length > 0 ? "学习选定卡片的排版与例句风格" : "从卡包中指定 1~3 张风格范例"}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="h-7 rounded-lg text-xs shrink-0"
+              onClick={() => setReferencePickerOpen(true)}
+            >
+              {review.referenceIds.length > 0 ? "修改" : "选择"}
+            </Button>
+          </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="batch-topic">主题或词表</Label>
             <Textarea
@@ -710,12 +645,101 @@ export function CardEditor({
             />
           </div>
         </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setBatchOpen(false)}>
+        <DialogFooter className="flex flex-row justify-end gap-2 pt-1">
+          <Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setBatchOpen(false)}>
             取消
           </Button>
-          <Button type="button" disabled={isBusy("batch")} onClick={applyBatchAi}>
-            {isBusy("batch") ? "生成中" : "生成"}
+          <Button type="button" className="flex-1 sm:flex-initial shadow-xs" disabled={isBusy("batch")} onClick={applyBatchAi}>
+            {isBusy("batch") ? "生成中…" : "生成"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const completeDialog = (
+    <Dialog
+      open={completeOpen && !referencePickerOpen}
+      onOpenChange={(open) => {
+        if (!open && referencePickerOpen) return
+        setCompleteOpen(open)
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>补全卡片</DialogTitle>
+          <DialogDescription>
+            基于当前已有字段内容，自动补全空白项。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card p-3 shadow-2xs">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <BookOpen className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground">参考范例</span>
+                  {review.referenceIds.length > 0 && (
+                    <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                      {review.referenceIds.length} 张
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {review.referenceIds.length > 0 ? "学习选定卡片的排版与例句风格" : "从卡包中指定 1~3 张风格范例"}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="h-7 rounded-lg text-xs shrink-0"
+              onClick={() => setReferencePickerOpen(true)}
+            >
+              {review.referenceIds.length > 0 ? "修改" : "选择"}
+            </Button>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-3">
+            <div>
+              <span className="text-xs font-medium text-foreground">已有字段（输入源）</span>
+              <div className="mt-2 space-y-1.5">
+                {filledFields.map((field) => (
+                  <div
+                    key={field}
+                    className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 text-xs shadow-2xs"
+                  >
+                    <span className="font-semibold text-muted-foreground shrink-0 w-28 truncate">{field}</span>
+                    <span className="font-medium text-foreground break-all">{selected?.values[field]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-border/50">
+              <span className="text-xs font-medium text-foreground">待补全字段</span>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {emptyFields.map((field) => (
+                  <span
+                    key={field}
+                    className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                  >
+                    {field}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="flex flex-row justify-end gap-2 pt-1">
+          <Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setCompleteOpen(false)}>
+            取消
+          </Button>
+          <Button type="button" className="flex-1 sm:flex-initial shadow-xs" disabled={isBusy("card:complete")} onClick={applyCardCompletion}>
+            {isBusy("card:complete") ? "补全中…" : "开始补全"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -738,36 +762,35 @@ export function CardEditor({
         }}
         style={{ height: LIST_ROW }}
         className={cn(
-          "flex w-full flex-col justify-center rounded-xl px-3 text-left transition-colors duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          active ? "bg-primary text-primary-foreground" : "text-foreground/80 hover:bg-muted",
-          !active && isReviewed && "opacity-55"
+          "group flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors duration-150",
+          active && !listOnly
+            ? "bg-primary/10 text-primary font-medium"
+            : "hover:bg-muted/40 active:bg-muted/70 text-foreground",
+          !active && isReviewed && "opacity-60"
         )}
       >
-        <span className="flex items-center gap-2">
-          <span
-            className={cn(
-              "w-8 shrink-0 text-[11px] tabular-nums",
-              active ? "text-primary-foreground/70" : "text-muted-foreground"
-            )}
-          >
+        <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+          <span className="w-6 shrink-0 text-center font-mono text-xs text-muted-foreground/70">
             {absolute || index + 1}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm">{cardLabel(card, deck.fields)}</span>
-          {isReviewed ? (
-            <span className="flex shrink-0 items-center gap-1 text-[10px]" aria-label="已审核">
-              <Check className="size-3" aria-hidden="true" />
-              已审
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-xs font-semibold text-foreground tracking-tight">
+                {cardLabel(card, deck.fields)}
+              </span>
+              {isReviewed ? (
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400" aria-label="已审核">
+                  <Check className="size-2.5" aria-hidden="true" />
+                  已审
+                </span>
+              ) : null}
+            </div>
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+              {cardSubtitle(card, deck.fields) || "空卡片"}
             </span>
-          ) : null}
-        </span>
-        <span
-          className={cn(
-            "line-clamp-1 pl-10 text-[11px]",
-            active ? "text-primary-foreground/65" : "text-muted-foreground"
-          )}
-        >
-          {cardSubtitle(card, deck.fields) || " "}
-        </span>
+          </div>
+        </div>
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
       </button>
     )
   }
@@ -783,17 +806,22 @@ export function CardEditor({
       ref={listRef}
       data-testid="notes-card-list"
       className={cn(
-        "overflow-y-auto overscroll-contain rounded-2xl border border-border/70 bg-card/70",
+        "overflow-y-auto overscroll-contain rounded-2xl bg-card ring-1 ring-border/70 shadow-xs",
         listOnly
           ? "min-h-0 flex-1"
           : "h-[min(58vh,520px)] lg:h-[min(calc(100vh-16rem),720px)]"
       )}
     >
-      <div className="flex flex-col p-1.5">
+      <div className="divide-y divide-border/60">
         {deck.cards.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground">还没有卡片</p>
+          <div className="px-4 py-12 text-center text-xs text-muted-foreground space-y-2">
+            <p className="font-medium text-foreground">还没有卡片</p>
+            <p>点击上方「新建」或「AI 生成」添加第一张卡片</p>
+          </div>
         ) : visibleCards.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有匹配的卡片</p>
+          <div className="px-4 py-12 text-center text-xs text-muted-foreground">
+            没有匹配「{query}」的卡片
+          </div>
         ) : (
           <>
             {listPadTop > 0 ? <div style={{ height: listPadTop }} /> : null}
@@ -806,143 +834,164 @@ export function CardEditor({
   )
 
   return (
-    <div className={cn("flex min-w-0 flex-col gap-4", listOnly && "h-full min-h-0 flex-1 overflow-hidden")}>
-      {listOnly ? null : desktopToolbar}
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-3",
+        listOnly && "h-full min-h-0 flex-1 overflow-hidden",
+        detail && "h-full min-h-0 flex-1 overflow-hidden"
+      )}
+    >
       {detail ? (
-        <Tabs value={editorPane === "preview" ? "preview" : "editor"} className="lg:hidden" onValueChange={(value) => setMobilePane(value as MobilePane)}>
-          <TabsList className="grid h-11 w-full grid-cols-2 rounded-xl p-1">
-            <TabsTrigger value="editor">编辑</TabsTrigger>
-            <TabsTrigger value="preview">预览</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="shrink-0 lg:hidden">
+          <Tabs value={editorPane === "preview" ? "preview" : "editor"} onValueChange={(value) => setMobilePane(value as MobilePane)}>
+            <TabsList className="grid h-11 w-full grid-cols-2 rounded-xl p-1">
+              <TabsTrigger value="editor">编辑</TabsTrigger>
+              <TabsTrigger value="preview">预览</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       ) : null}
-      {listOnly ? <div className="shrink-0">{mobileListToolbar}</div> : detail ? null : mobilePane === "list" ? mobileListToolbar : mobilePager}
-      {listOnly ? listBox : (
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(200px,260px)_minmax(0,1fr)]">
-      <section className={cn(
-        "flex-col gap-3",
-        detail ? "hidden lg:flex" : cn("lg:flex", mobilePane === "list" ? "flex" : "hidden")
+      <div className={cn(
+        "min-w-0 min-h-0 flex-1",
+        (listOnly || detail)
+          ? "flex flex-col lg:grid lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)] lg:gap-6 overflow-hidden"
+          : "grid gap-6 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]"
       )}>
-        {listBox}
-      </section>
+        <section className={cn(
+          "min-h-0 flex-col gap-3",
+          listOnly ? "flex h-full flex-1" : detail ? "hidden lg:flex" : mobilePane === "list" ? "flex" : "hidden lg:flex"
+        )}>
+          <div className={cn("shrink-0 pb-1", !listOnly && detail && "hidden")}>{listToolbar}</div>
+          {listBox}
+        </section>
 
-      <section
-        className={cn(
-          "min-h-0 flex-col gap-4",
-          detail ? (editorPane === "editor" ? "flex" : "hidden lg:flex") : cn("lg:flex", mobilePane === "editor" ? "flex" : "hidden")
-        )}
-      >
-        {selected ? (
-          <>
-            <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="shrink-0 text-sm font-medium">编辑卡片</p>
-              <div className="flex min-w-0 shrink-0 items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={isSelectedReviewed ? "outline" : "default"}
-                  data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"}
-                  aria-pressed={isSelectedReviewed}
-                  aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"}
-                  title={
-                    isSelectedReviewed
-                      ? "取消当前卡片的已审核状态"
-                      : "将当前卡片标记为已审核并前往下一张（Alt+↓）"
-                  }
-                  onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}
-                >
-                  {isSelectedReviewed ? "取消已审核" : "标记为已审核"}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canCompleteSelected || isBusy("card:complete")}
-                  title={canCompleteSelected ? undefined : "当前没有需要补全的空字段"}
-                  onClick={applyCardCompletion}
-                >
-                  <Sparkles data-icon="inline-start" />
-                  {isBusy("card:complete") ? "补全中" : "AI 补全"}
-                </Button>
-                <Button type="button" size="sm" variant="destructive" onClick={() => removeCard(selected.id)}>
-                  删除
-                </Button>
+        <section
+          data-testid="card-editor-fields"
+          className={cn(
+            "min-h-0 flex-col gap-4",
+            listOnly
+              ? "hidden lg:flex"
+              : detail
+                ? (editorPane === "editor" ? "flex h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-16" : "hidden lg:flex")
+                : mobilePane === "editor" ? "flex" : "hidden lg:flex"
+          )}
+        >
+          {selected ? (
+            <>
+              <div className="shrink-0 flex flex-col gap-2">
+                {!listOnly && !detail && mobilePager}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="shrink-0 text-sm font-medium">编辑卡片</p>
+                  <div className="flex min-w-0 shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isSelectedReviewed ? "outline" : "default"}
+                      data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"}
+                      aria-pressed={isSelectedReviewed}
+                      aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"}
+                      title={
+                        isSelectedReviewed
+                          ? "取消当前卡片的已审核状态"
+                          : "将当前卡片标记为已审核并前往下一张（Alt+↓）"
+                      }
+                      onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}
+                    >
+                      {isSelectedReviewed ? "取消已审核" : "标记为已审核"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!canCompleteSelected || isBusy("card:complete")}
+                      title={
+                        !selected
+                          ? undefined
+                          : !hasFilledField
+                            ? "请至少填入一个字段后再使用补全"
+                            : !hasEmptyField
+                              ? "当前卡片所有字段均已填满，无需补全"
+                              : "基于已有字段内容自动补全空白字段"
+                      }
+                      onClick={() => setCompleteOpen(true)}
+                    >
+                      补全
+                    </Button>
+                    <Button type="button" size="sm" variant="destructive" onClick={() => removeCard(selected.id)}>
+                      删除
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <ReferenceNotesBar
-              cards={deck.cards}
-              fields={editableFields}
-              referenceIds={review.referenceIds}
-              onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))}
-              onOpenPicker={() => setReferencePickerOpen(true)}
-            />
-            </div>
-            <div className="flex flex-col gap-4">
-              {deck.fields.map((field) => {
-                const tts = fieldTts[field]
-                if (tts) {
-                  const sourceText = selected.values[tts.source] ?? ""
+              <div className="flex flex-col gap-4">
+                {deck.fields.map((field) => {
+                  const tts = fieldTts[field]
+                  if (tts) {
+                    const sourceText = selected.values[tts.source] ?? ""
+                    return (
+                      <div key={field} className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <Label>{field}</Label>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {ttsLangLabel(tts.lang)} · 来自「{tts.source}」
+                              {tts.slow ? " · 慢速" : ""}
+                            </p>
+                          </div>
+                          <TtsPlayButton text={sourceText} lang={tts.lang} slow={tts.slow} />
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/50 px-3 py-2 text-sm text-foreground/80">
+                          {sourceText.trim() || "源字段为空，导出时跳过"}
+                        </div>
+                      </div>
+                    )
+                  }
+                  const fieldNote = notesOf(deck)[field]?.trim() || undefined
                   return (
                     <div key={field} className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <Label>{field}</Label>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {ttsLangLabel(tts.lang)} · 来自「{tts.source}」
-                            {tts.slow ? " · 慢速" : ""}
-                          </p>
-                        </div>
-                        <TtsPlayButton text={sourceText} lang={tts.lang} slow={tts.slow} />
-                      </div>
-                      <div className="rounded-xl border border-border/70 bg-muted/50 px-3 py-2 text-sm text-foreground/80">
-                        {sourceText.trim() || "源字段为空，导出时跳过"}
-                      </div>
+                      <Label htmlFor={`field-${field}`}>{field}</Label>
+                      {editableFields.indexOf(field) >= 2 ? (
+                        <Textarea
+                          id={`field-${field}`}
+                          value={selected.values[field] ?? ""}
+                          placeholder={fieldNote}
+                          className="min-h-24 placeholder:text-muted-foreground/65"
+                          onChange={(event) => updateCard(selected.id, field, event.target.value)}
+                        />
+                      ) : (
+                        <Input
+                          id={`field-${field}`}
+                          value={selected.values[field] ?? ""}
+                          placeholder={fieldNote}
+                          className="placeholder:text-muted-foreground/65"
+                          onChange={(event) => updateCard(selected.id, field, event.target.value)}
+                        />
+                      )}
                     </div>
                   )
-                }
-                const fieldNote = notesOf(deck)[field]?.trim() || undefined
-                return (
-                  <div key={field} className="space-y-2">
-                    <Label htmlFor={`field-${field}`}>{field}</Label>
-                    {editableFields.indexOf(field) >= 2 ? (
-                      <Textarea
-                        id={`field-${field}`}
-                        value={selected.values[field] ?? ""}
-                        placeholder={fieldNote}
-                        className="min-h-24 placeholder:text-muted-foreground/65"
-                        onChange={(event) => updateCard(selected.id, field, event.target.value)}
-                      />
-                    ) : (
-                      <Input
-                        id={`field-${field}`}
-                        value={selected.values[field] ?? ""}
-                        placeholder={fieldNote}
-                        className="placeholder:text-muted-foreground/65"
-                        onChange={(event) => updateCard(selected.id, field, event.target.value)}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="flex h-[360px] items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-sm text-muted-foreground">
+              先新建一张卡片
             </div>
-          </>
-        ) : (
-          <div className="flex h-[360px] items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-sm text-muted-foreground">
-            先新建一张卡片
-          </div>
-        )}
-      </section>
+          )}
+        </section>
 
-      <section className={cn(
-        detail ? (editorPane === "preview" ? "block" : "hidden lg:block") : cn("lg:block", mobilePane === "preview" ? "block" : "hidden")
-      )}>
-        {preview}
-      </section>
+        <section className={cn(
+          listOnly
+            ? "hidden lg:block"
+            : detail
+              ? (editorPane === "preview" ? "block h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pb-16" : "hidden lg:block")
+              : mobilePane === "preview" ? "block" : "hidden lg:block"
+        )}>
+          {preview}
+        </section>
       </div>
-      )}
       {aiDialog}
       {batchDialog}
+      {completeDialog}
       <ReferenceNotesPicker
         cards={deck.cards}
         fields={editableFields}

@@ -5,6 +5,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror"
 import type { ViewUpdate } from "@codemirror/view"
 
 import { cssExtensions, paperEditorTheme, promptExtensions, templateExtensions } from "@/lib/codemirror"
+import { cn } from "@/lib/utils"
 
 export type CodeEditorHandle = {
   insert: (snippet: string) => void
@@ -18,6 +19,8 @@ type CodeEditorProps = {
   value: string
   language: "template" | "css" | "prompt"
   placeholder?: string
+  className?: string
+  editorClassName?: string
   onChange: (value: string) => void
 }
 
@@ -34,7 +37,7 @@ const basicSetup = {
 } as const
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
-  function CodeEditor({ id, label, value, language, placeholder, onChange }, ref) {
+  function CodeEditor({ id, label, value, language, placeholder, className, editorClassName, onChange }, ref) {
     const editorRef = useRef<ReactCodeMirrorRef>(null)
     const [caret, setCaret] = useState({ line: 1, column: 1 })
 
@@ -91,9 +94,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       <div
         role="group"
         aria-label={label}
-        className="min-w-0 overflow-hidden rounded-2xl bg-[#17181d] shadow-[0_18px_42px_-30px_rgba(0,0,0,0.8)] ring-1 ring-white/10"
+        className={cn("min-w-0 overflow-hidden rounded-2xl bg-[#17181d] shadow-[0_18px_42px_-30px_rgba(0,0,0,0.8)] ring-1 ring-white/10", className)}
       >
-        <div className="h-[280px] min-w-0 lg:h-[420px]">
+        <div className={cn("h-[280px] min-w-0 lg:h-[420px]", editorClassName)}>
           <CodeMirror
             ref={editorRef}
             id={id}

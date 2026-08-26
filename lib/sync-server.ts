@@ -16,12 +16,23 @@ import { GOOGLE_SHEET_ID_HEADER, isGoogleSpreadsheetId } from "./google-sheet-id
 type SessionResolver = () => Promise<GoogleSession | null>
 
 type AuthorizationResult =
-  | { ok: true; accessToken: string; session: GoogleSession }
+  | { ok: true; accessToken: string; session?: GoogleSession }
   | { ok: false; response: Response }
 
 export async function getGoogleSheetsAuthorization(
+  request?: Request,
   resolveSession: SessionResolver = getGoogleSession
 ): Promise<AuthorizationResult> {
+  // 1. Check Bearer token in request Authorization header (from Firebase Auth / Client-side GSI)
+  const authHeader = request?.headers.get("authorization")?.trim()
+  if (authHeader?.startsWith("Bearer ")) {
+    const bearerToken = authHeader.slice(7).trim()
+    if (bearerToken) {
+      return { ok: true, accessToken: bearerToken }
+    }
+  }
+
+  // 2. Check NextAuth server session
   const oauth = readGoogleOAuthConfiguration()
   if (oauth.state !== "ready") {
     return {
@@ -33,7 +44,7 @@ export async function getGoogleSheetsAuthorization(
     }
   }
 
-  let session: GoogleSession | null
+  let session: GoogleSession | null = null
   try {
     session = await resolveSession()
   } catch (error) {
@@ -56,6 +67,7 @@ export async function getGoogleSheetsAuthorization(
       ),
     }
   }
+
   if (!isAllowedGoogleSession(session, oauth.allowedEmails)) {
     return {
       ok: false,
@@ -65,6 +77,7 @@ export async function getGoogleSheetsAuthorization(
       ),
     }
   }
+
   if (
     session.googleAccessError
     || !session.googleAccessToken
@@ -83,6 +96,7 @@ export async function getGoogleSheetsAuthorization(
       ),
     }
   }
+
   return { ok: true, accessToken: session.googleAccessToken, session }
 }
 
@@ -90,7 +104,7 @@ export async function getSyncEnv(
   request: Request,
   resolveSession: SessionResolver = getGoogleSession
 ): Promise<{ ok: true; client: GoogleSheetsClient } | { ok: false; response: Response }> {
-  const authorization = await getGoogleSheetsAuthorization(resolveSession)
+  const authorization = await getGoogleSheetsAuthorization(request, resolveSession)
   if (!authorization.ok) return authorization
 
   const spreadsheetId = request.headers.get(GOOGLE_SHEET_ID_HEADER)?.trim() ?? ""

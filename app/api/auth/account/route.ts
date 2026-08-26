@@ -1,15 +1,19 @@
 import {
   getGoogleSession,
+  hasGoogleDriveScope,
   hasGoogleSheetsScope,
   isAllowedGoogleSession,
   readGoogleOAuthConfiguration,
 } from "@/lib/google-auth"
+import firebaseConfig from "@/firebase-applet-config.json"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   const configuration = readGoogleOAuthConfiguration()
-  if (configuration.state !== "ready") {
+  const isFirebaseSetup = Boolean(firebaseConfig?.apiKey && firebaseConfig?.projectId)
+
+  if (configuration.state !== "ready" && !isFirebaseSetup) {
     return Response.json({
       configured: false,
       authenticated: false,
@@ -19,31 +23,38 @@ export async function GET() {
 
   try {
     const session = await getGoogleSession()
-    if (!isAllowedGoogleSession(session, configuration.allowedEmails)) {
-      return Response.json({ configured: true, authenticated: false })
+    const allowedEmails = configuration.state === "ready" ? configuration.allowedEmails : []
+    if (session && isAllowedGoogleSession(session, allowedEmails)) {
+      return Response.json({
+        configured: true,
+        authenticated: true,
+        sheetsAuthorized: Boolean(
+          session?.googleAccessToken
+          && !session.googleAccessError
+          && hasGoogleSheetsScope(session.googleScope)
+        ),
+        driveAuthorized: Boolean(
+          session?.googleAccessToken
+          && !session.googleAccessError
+          && hasGoogleDriveScope(session.googleScope)
+        ),
+        user: {
+          name: session?.user?.name ?? null,
+          email: session?.user?.email ?? null,
+          image: session?.user?.image ?? null,
+        },
+      })
     }
+
     return Response.json({
       configured: true,
-      authenticated: true,
-      sheetsAuthorized: Boolean(
-        session?.googleAccessToken
-        && !session.googleAccessError
-        && hasGoogleSheetsScope(session.googleScope)
-      ),
-      user: {
-        name: session?.user?.name ?? null,
-        email: session?.user?.email ?? null,
-      },
+      authenticated: false,
     })
   } catch (error) {
     console.error(JSON.stringify({ message: "Google account status failed", error: String(error) }))
-    return Response.json(
-      {
-        configured: true,
-        authenticated: false,
-        issue: "Google 登录服务暂时不可用",
-      },
-      { status: 503 }
-    )
+    return Response.json({
+      configured: true,
+      authenticated: false,
+    })
   }
 }

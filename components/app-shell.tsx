@@ -38,8 +38,10 @@ type AppShellProps = {
   deckName: string
   status?: string
   lockViewport?: boolean
+  activePath?: string
   onSync: () => void
   onDeckClick: () => void
+  onBack?: () => void
   children: ReactNode
 }
 
@@ -75,16 +77,16 @@ function headerMeta(pathname: string): { backHref?: string; title: string; showD
     return { title: "设置", showDeck: false }
   }
   if (pathname === PATHS.settingsTemplates) {
-    return { backHref: PATHS.settingsDeck, title: "模板", showDeck: true }
+    return { backHref: PATHS.settingsDeck, title: "模板", showDeck: false }
   }
   if (pathname === PATHS.settingsDeck) {
-    return { backHref: PATHS.settings, title: "卡包", showDeck: true }
+    return { backHref: PATHS.settings, title: "卡包", showDeck: false }
   }
   const row = SETTINGS_ROWS.find((item) => item.href === pathname)
   if (row) {
     return { backHref: PATHS.settings, title: row.label, showDeck: false }
   }
-  return { title: "", showDeck: true }
+  return { title: "", showDeck: false }
 }
 
 export function AppShell({
@@ -95,15 +97,18 @@ export function AppShell({
   deckName,
   status,
   lockViewport = false,
+  activePath,
   onSync,
   onDeckClick,
+  onBack,
   children,
 }: AppShellProps) {
-  const pathname = usePathname() ?? PATHS.home
+  const routerPathname = usePathname() ?? PATHS.home
+  const pathname = activePath ?? routerPathname
   const router = useRouter()
   const showTabBar = tabBarVisible(pathname)
   const session = pathname === PATHS.studySession
-  const lock = lockViewport || pathname === PATHS.notes
+  const lock = lockViewport || pathname === PATHS.notes || Boolean(noteIdFromPath(pathname))
   const header = headerMeta(pathname)
   const name = deckName.trim() || "未命名卡包"
 
@@ -165,28 +170,27 @@ export function AppShell({
                 type="button"
                 className="flex size-10 shrink-0 items-center justify-center rounded-full text-foreground"
                 aria-label="返回"
-                onClick={() => router.push(header.backHref!)}
+                onClick={() => {
+                  if (onBack) onBack()
+                  else if (header.backHref) router.push(header.backHref)
+                }}
               >
                 <ChevronLeft className="size-5" />
               </button>
             ) : null}
 
             {header.title ? (
-              <h1 className="min-w-0 shrink-0 text-base font-semibold tracking-tight">{header.title}</h1>
+              <h1 className="min-w-0 flex-1 text-base font-semibold tracking-tight">{header.title}</h1>
             ) : null}
+
             {header.showDeck ? (
               <button
                 type="button"
-                className={cn(
-                  "min-w-0 truncate text-left",
-                  header.title ? "flex-1 text-sm text-muted-foreground" : "flex-1 text-base font-semibold tracking-tight"
-                )}
+                className="min-w-0 flex-1 truncate text-left text-base font-semibold tracking-tight"
                 onClick={onDeckClick}
               >
                 {name}
               </button>
-            ) : header.title ? (
-              <span className="min-w-0 flex-1" />
             ) : null}
 
             {pathname === PATHS.notes || pathname === PATHS.home ? (

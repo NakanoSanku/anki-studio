@@ -1,4 +1,4 @@
-"use client"
+import { useMemo } from "react"
 
 import { previewDocument, renderCard } from "@/lib/template"
 import { getCardTemplate, previewValues, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
@@ -26,12 +26,16 @@ export function CardPreview({
   className,
   fillViewport = false,
 }: CardPreviewProps) {
-  const preview = previewValues(deck, values)
-  const template = getCardTemplate(deck, templateId)
-  const rendered = renderCard(template.front, template.back, preview)
+  const preview = useMemo(() => previewValues(deck, values), [deck, values])
+  const template = useMemo(() => getCardTemplate(deck, templateId), [deck, templateId])
+  const rendered = useMemo(
+    () => renderCard(template.front, template.back, preview),
+    [template.front, template.back, preview]
+  )
   const html = side === "front" ? rendered.front : rendered.back
-  const playable = ttsFieldsOnSide(deck, side, template.id)
-  const configs = ttsOf(deck)
+  const doc = useMemo(() => previewDocument(deck.css, html), [deck.css, html])
+  const playable = useMemo(() => ttsFieldsOnSide(deck, side, template.id), [deck, side, template.id])
+  const configs = useMemo(() => ttsOf(deck), [deck])
 
   return (
     <div
@@ -75,7 +79,7 @@ export function CardPreview({
         <iframe
           title="卡片预览"
           sandbox=""
-          srcDoc={previewDocument(deck.css, html)}
+          srcDoc={doc}
           className="h-full w-full border-0 bg-white"
         />
       </div>

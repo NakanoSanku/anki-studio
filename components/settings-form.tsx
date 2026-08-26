@@ -3,30 +3,17 @@
 import { useEffect, useState, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
-import { BrainCircuit, FolderCog, Gauge, RefreshCw, Save, Table2 } from "lucide-react"
+import { BrainCircuit, Cloud, CloudOff, FolderCog, Gauge, RefreshCw, Table2 } from "lucide-react"
 
-import {
-  DEFAULT_AI_SETTINGS,
-  readAiSettings,
-  validateAiSettings,
-  validateProviderEndpoint,
-  writeAiSettings,
-  type AiSettings,
-} from "@/lib/ai-settings"
-import { listProviderModels, withBrowserCorsHint } from "@/lib/ai-upstream"
 import { fsrsOf, type Deck } from "@/lib/deck"
-import { updateFsrsSettings } from "@/lib/fsrs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
+import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PromptEditor } from "@/components/prompt-editor"
+import { AiSettingsPanel } from "@/components/ai-settings-panel"
 import { GoogleAccountPanel } from "@/components/google-account-panel"
 import { GoogleSheetPickerPanel } from "@/components/google-sheet-picker-panel"
+import { StudySettingsPanel } from "@/components/study-settings-panel"
 
 export type SyncPanelState = {
   syncing: boolean
@@ -72,87 +59,12 @@ export function SettingsForm({
   deck?: Deck
   onDeckChange?: (deck: Deck) => void
   sync?: SyncPanelState
-  onSyncNow?: () => void
+  onSyncNow?: () => Promise<void> | void
 }) {
-  const [settings, setSettings] = useState<AiSettings>(readAiSettings)
-  const [models, setModels] = useState<string[]>([])
-  const [status, setStatus] = useState("")
-  const [busy, setBusy] = useState(false)
   const [googleReady, setGoogleReady] = useState<boolean | undefined>()
   const [sheetConnected, setSheetConnected] = useState(false)
   const desktopLayout = useDesktopSettingsLayout()
   const fsrsSettings = deck ? fsrsOf(deck) : null
-
-  const patch = (partial: Partial<AiSettings>) => {
-    setSettings((current) => ({ ...current, ...partial }))
-  }
-
-  const trimmed = (): AiSettings => ({
-    ...settings,
-    model: settings.model.trim(),
-    apiKey: settings.apiKey.trim(),
-    baseURL: settings.baseURL.trim(),
-    systemPrompt: settings.systemPrompt.trim(),
-    cardCompletePrompt: settings.cardCompletePrompt.trim(),
-    batchPrompt: settings.batchPrompt.trim(),
-    templateEditPrompt: settings.templateEditPrompt.trim(),
-  })
-
-  const save = () => {
-    const next = trimmed()
-    const error = validateAiSettings(next)
-    if (error) {
-      setStatus(error)
-      return
-    }
-    writeAiSettings(next)
-    setSettings(next)
-    setStatus("已保存")
-  }
-
-  const fetchModels = async () => {
-    const next = trimmed()
-    const error = validateProviderEndpoint(next.baseURL)
-    if (error) {
-      setStatus(error)
-      return
-    }
-    setBusy(true)
-    setStatus("正在拉取模型…")
-    try {
-      const models = await withBrowserCorsHint(() => listProviderModels(next))
-      setModels(models)
-      if (!next.model || !models.includes(next.model)) {
-        patch({ model: models[0] ?? next.model })
-      }
-      setStatus(`已拉取 ${models.length} 个模型`)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "拉取模型失败")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const test = async () => {
-    const next = trimmed()
-    const error = validateAiSettings(next)
-    if (error) {
-      setStatus(error)
-      return
-    }
-    setBusy(true)
-    setStatus("正在测试…")
-    try {
-      await withBrowserCorsHint(async () => {
-        await (await import("@/lib/ai-run")).runTestAi(next)
-      })
-      setStatus("连接成功")
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "测试失败")
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <Tabs
@@ -192,169 +104,101 @@ export function SettingsForm({
 
         <TabsContent value="study" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           {fsrsSettings && deck && onDeckChange ? (
-            <Card className="max-w-3xl border-border/70 bg-card shadow-none">
-              <CardHeader className="pb-4">
-                <CardTitle>复习参数</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="fsrs-retention">目标保留率</Label>
-                    <Badge variant="secondary" className="font-mono">{Math.round(fsrsSettings.requestRetention * 100)}%</Badge>
-                  </div>
-                  <Input
-                    id="fsrs-retention"
-                    type="number"
-                    min="0.7"
-                    max="0.99"
-                    step="0.01"
-                    value={fsrsSettings.requestRetention}
-                    onChange={(event) => onDeckChange(updateFsrsSettings(deck, { requestRetention: Math.min(0.99, Math.max(0.7, Number(event.target.value) || 0.9)) }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="daily-new">每日新卡</Label>
-                  <Input
-                    id="daily-new"
-                    type="number"
-                    min="0"
-                    max="999"
-                    value={fsrsSettings.dailyNewLimit}
-                    onChange={(event) => onDeckChange(updateFsrsSettings(deck, { dailyNewLimit: Math.max(0, Number(event.target.value) || 0) }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="daily-review">每日复习</Label>
-                  <Input
-                    id="daily-review"
-                    type="number"
-                    min="0"
-                    max="9999"
-                    value={fsrsSettings.dailyReviewLimit}
-                    onChange={(event) => onDeckChange(updateFsrsSettings(deck, { dailyReviewLimit: Math.max(0, Number(event.target.value) || 0) }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="maximum-interval">最长间隔（天）</Label>
-                  <Input
-                    id="maximum-interval"
-                    type="number"
-                    min="1"
-                    max="36500"
-                    value={fsrsSettings.maximumInterval}
-                    onChange={(event) => onDeckChange(updateFsrsSettings(deck, { maximumInterval: Math.max(1, Number(event.target.value) || 1) }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+            <StudySettingsPanel
+              deck={deck}
+              fsrsSettings={fsrsSettings}
+              onDeckChange={onDeckChange}
+            />
           ) : null}
         </TabsContent>
 
         <TabsContent value="ai" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(19rem,0.72fr)_minmax(0,1.28fr)]">
-            <Card className="border-border/70 bg-card shadow-none">
-              <CardHeader className="pb-4">
-                <CardTitle>接口</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="baseURL">接口地址</Label>
-                  <Input id="baseURL" value={settings.baseURL} placeholder="https://api.openai.com/v1" onChange={(event) => patch({ baseURL: event.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="model">模型</Label>
-                  <div className="flex gap-2">
-                    {models.length > 0 ? (
-                      <Select value={settings.model} onValueChange={(value) => patch({ model: value })}>
-                        <SelectTrigger id="model" className="h-9 min-w-0 flex-1">
-                          <SelectValue placeholder="选择模型" />
-                        </SelectTrigger>
-                        <SelectContent position="popper" align="start">
-                          {!models.includes(settings.model) && settings.model ? <SelectItem value={settings.model}>{settings.model}</SelectItem> : null}
-                          {models.map((id) => <SelectItem key={id} value={id}>{id}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input id="model" className="flex-1" value={settings.model} placeholder="gpt-4o-mini" onChange={(event) => patch({ model: event.target.value })} />
-                    )}
-                    <Button type="button" variant="outline" disabled={busy} onClick={() => void fetchModels()}>拉取模型</Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey">API Key</Label>
-                  <Input id="apiKey" type="password" value={settings.apiKey} placeholder="本地模型可留空" onChange={(event) => patch({ apiKey: event.target.value })} />
-                </div>
-                <Separator />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={save} disabled={busy}><Save className="size-4" />保存</Button>
-                  <Button type="button" variant="outline" onClick={() => void test()} disabled={busy}>测试连接</Button>
-                  <Button type="button" variant="ghost" disabled={busy} onClick={() => { setSettings({ ...DEFAULT_AI_SETTINGS }); setStatus("已恢复全部默认，记得保存") }}>恢复默认</Button>
-                </div>
-                {status ? <p className="text-sm text-muted-foreground" role="status">{status}</p> : null}
-              </CardContent>
-            </Card>
-
-            <Card className="min-w-0 border-border/70 bg-card shadow-none">
-              <CardHeader className="pb-4">
-                <CardTitle>提示词</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <PromptEditor settings={settings} onChange={(key, value) => patch({ [key]: value })} />
-              </CardContent>
-            </Card>
-          </div>
+          <AiSettingsPanel />
         </TabsContent>
 
         <TabsContent value="sync" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           {sync ? (
-            <Card className="max-w-3xl border-border/70 bg-card shadow-none">
-              <CardHeader className="pb-4">
-                <CardTitle>同步</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <GoogleAccountPanel onReadyChange={setGoogleReady} />
-                <GoogleSheetPickerPanel
-                  enabled={googleReady === true}
-                  onConnectionChange={setSheetConnected}
-                  onConnected={onSyncNow}
-                  inventoryKey={sync.lastSyncAt}
-                />
-                <div className="rounded-xl border border-border/70 bg-muted/35 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium">{sync.message}</span>
-                    {sync.dirtyCount > 0 ? (
-                      <Badge variant="secondary">{sync.dirtyCount} 待上传</Badge>
+            <div className="max-w-3xl space-y-3">
+              <GoogleAccountPanel onReadyChange={setGoogleReady} />
+              <GoogleSheetPickerPanel
+                enabled={googleReady === true}
+                onConnectionChange={setSheetConnected}
+                onConnected={onSyncNow}
+                inventoryKey={sync.lastSyncAt}
+              />
+              
+              {/* PWA Sync Status Card */}
+              <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card p-3.5 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                <div className="flex items-start gap-3 min-w-0">
+                  <span className={cn(
+                    "flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors sm:size-10 sm:rounded-2xl",
+                    sync.syncing
+                      ? "bg-primary/10 text-primary animate-pulse"
+                      : sync.unavailable
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : sync.dirtyCount > 0
+                          ? "bg-sky-500/10 text-sky-600 dark:text-sky-400"
+                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  )}>
+                    {sync.syncing ? (
+                      <RefreshCw className="size-4.5 animate-spin" />
                     ) : sync.unavailable ? (
-                      <Badge variant="secondary">仅本机</Badge>
+                      <CloudOff className="size-4.5" />
                     ) : (
-                      <Badge variant="outline">最新</Badge>
+                      <Cloud className="size-4.5" />
                     )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="text-sm font-semibold text-foreground">{sync.message}</p>
+                      {sync.dirtyCount > 0 ? (
+                        <Badge variant="secondary" className="border-sky-500/30 bg-sky-50/50 text-[10px] font-medium text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+                          {sync.dirtyCount} 条本地更改
+                        </Badge>
+                      ) : sync.unavailable ? (
+                        <Badge variant="secondary" className="border-amber-500/30 bg-amber-50/50 text-[10px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                          离线
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-emerald-500/30 bg-emerald-50/50 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                          已是最新
+                        </Badge>
+                      )}
+                    </div>
+                    {sync.lastSyncAt ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        上次完成：{new Date(sync.lastSyncAt).toLocaleString()}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        支持离线使用；联网且绑定后自动双向同步
+                      </p>
+                    )}
+                    {sync.unavailable ? (
+                      <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">{sync.unavailable}</p>
+                    ) : null}
                   </div>
-                  {sync.lastSyncAt ? (
-                    <p className="mt-2 text-xs text-muted-foreground">上次同步 {new Date(sync.lastSyncAt).toLocaleString()}</p>
-                  ) : null}
-                  {sync.unavailable ? (
-                    <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">{sync.unavailable}</p>
-                  ) : null}
                 </div>
-                <Button
-                  type="button"
-                  className="sm:w-fit"
-                  variant="outline"
-                  disabled={sync.syncing || googleReady !== true || !sheetConnected}
-                  onClick={onSyncNow}
-                >
-                  <RefreshCw className={sync.syncing ? "size-4 animate-spin" : "size-4"} />
-                  {sync.syncing
-                    ? "同步中…"
-                    : googleReady !== true
-                      ? "授权帐号后同步"
-                      : !sheetConnected
-                        ? "选择表格后同步"
-                        : "立即同步"}
-                </Button>
-              </CardContent>
-            </Card>
+
+                <div className="pt-0.5 shrink-0 sm:pt-0">
+                  <Button
+                    type="button"
+                    className="h-9 w-full rounded-xl px-4 text-xs font-semibold shadow-xs sm:w-auto"
+                    disabled={sync.syncing || googleReady !== true || !sheetConnected}
+                    onClick={onSyncNow}
+                  >
+                    <RefreshCw className={sync.syncing ? "mr-1.5 size-3.5 animate-spin" : "mr-1.5 size-3.5"} />
+                    {sync.syncing
+                      ? "正在双向同步…"
+                      : googleReady !== true
+                        ? "授权帐号后同步"
+                        : !sheetConnected
+                          ? "绑定表格后同步"
+                          : "立即同步"}
+                  </Button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </TabsContent>
       </div>

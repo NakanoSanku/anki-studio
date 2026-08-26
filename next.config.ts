@@ -1,10 +1,15 @@
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare"
 import type { NextConfig } from "next"
 
-initOpenNextCloudflareForDev()
-
 const nextConfig: NextConfig = {
+  output: "standalone",
   serverExternalPackages: ["sql.js"],
+  allowedDevOrigins: [
+    "*.run.app",
+    "ais-dev-dsx5auzhpk6xdwoskro2ni-642037269403.asia-southeast1.run.app",
+    "ais-pre-dsx5auzhpk6xdwoskro2ni-642037269403.asia-southeast1.run.app",
+    "localhost:3000",
+    "127.0.0.1:3000",
+  ],
   async headers() {
     return [
       {

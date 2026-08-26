@@ -9,7 +9,7 @@ import {
 export const dynamic = "force-dynamic"
 
 export async function POST(request: Request) {
-  const authorization = await getGoogleSheetsAuthorization()
+  const authorization = await getGoogleSheetsAuthorization(request)
   if (!authorization.ok) return authorization.response
 
   let body: unknown
