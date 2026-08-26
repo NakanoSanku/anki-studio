@@ -199,6 +199,63 @@
   .soft-card-shadow {
     box-shadow: 0 24px 70px -38px rgb(24 24 27 / 0.32);
   }
+
+  [data-testid="notes-card-list"] {
+    border-radius: 2rem;
+    background: color-mix(in oklab, var(--card) 78%, transparent);
+    box-shadow: 0 24px 64px -48px rgb(0 0 0 / 0.72);
+  }
+
+  [data-testid="notes-card-list"] > div > :not(:last-child) {
+    border-bottom-width: 0 !important;
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"] {
+    width: calc(100% - 0.5rem);
+    margin-inline: 0.25rem;
+    border-radius: 1.2rem;
+    background: color-mix(in oklab, var(--card) 92%, var(--pastel-blue) 8%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:nth-of-type(5n + 1) {
+    background: color-mix(in oklab, var(--card) 60%, var(--pastel-blue) 40%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:nth-of-type(5n + 2) {
+    background: color-mix(in oklab, var(--card) 62%, var(--pastel-green) 38%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:nth-of-type(5n + 3) {
+    background: color-mix(in oklab, var(--card) 62%, var(--pastel-yellow) 38%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:nth-of-type(5n + 4) {
+    background: color-mix(in oklab, var(--card) 64%, var(--pastel-pink) 36%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:nth-of-type(5n) {
+    background: color-mix(in oklab, var(--card) 64%, var(--pastel-coral) 36%);
+  }
+
+  [data-testid="notes-card-list"] button[id^="card-item-"]:active {
+    transform: scale(0.985);
+  }
+
+  [data-testid="card-editor-fields"] {
+    border-radius: 2rem;
+    background: color-mix(in oklab, var(--card) 90%, transparent);
+    box-shadow: 0 24px 64px -50px rgb(0 0 0 / 0.7);
+  }
+
+  @media (max-width: 1023px) {
+    [data-testid="notes-card-list"] {
+      box-shadow: none;
+    }
+
+    [data-testid="card-editor-fields"] {
+      padding: 1rem;
+    }
+  }
 }
 
 ::selection {
