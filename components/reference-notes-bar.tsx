@@ -18,7 +18,13 @@ import {
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 
-const PICKER_ROW = 56
+const PICKER_ROW = 64
+const rowPastels = [
+  "bg-[#dff1ff] dark:bg-[#1e3b55]",
+  "bg-[#e5f8c4] dark:bg-[#314423]",
+  "bg-[#fff0b9] dark:bg-[#51431f]",
+  "bg-[#ffe0e7] dark:bg-[#512e38]",
+] as const
 
 type SharedProps = {
   cards: Card[]
@@ -49,16 +55,16 @@ export function ReferenceNotesBar({
       aria-label="选择参考笔记"
       onClick={onOpenPicker}
       className={cn(
-        "flex h-7.5 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-all active:scale-95",
+        "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black tracking-tight transition-all active:scale-[0.97]",
         count > 0
-          ? "border-primary/40 bg-primary/10 font-semibold text-primary shadow-2xs"
-          : "border-border/70 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          ? "bg-[#ffe39a] text-[#654600] shadow-[0_8px_20px_-16px_rgba(0,0,0,0.7)] dark:bg-[#68551f] dark:text-[#ffedb8]"
+          : "bg-black/[0.055] text-foreground/65 hover:bg-black/[0.08] hover:text-foreground dark:bg-white/[0.08] dark:hover:bg-white/[0.12]"
       )}
     >
-      <Sparkles className="size-3.5 text-primary" />
-      <span>参考</span>
+      <Sparkles className="size-3.5" />
+      <span>参考范例</span>
       {count > 0 ? (
-        <span className="ml-0.5 rounded-full bg-primary/20 px-1.5 font-mono text-[10px] font-bold leading-tight text-primary">
+        <span className="ml-0.5 flex min-w-5 items-center justify-center rounded-full bg-black px-1.5 font-mono text-[10px] font-black leading-5 text-white dark:bg-white dark:text-black">
           {count}
         </span>
       ) : null}
@@ -101,66 +107,71 @@ export function ReferenceNotesPicker({
     >
       <SheetContent
         side="bottom"
-        className="max-h-[85dvh] h-[85dvh] rounded-t-3xl p-0 flex flex-col sm:max-w-lg sm:mx-auto border-border/80 shadow-xl"
+        className="flex h-[88dvh] max-h-[760px] flex-col rounded-t-[2.4rem] border-0 bg-[#fffaf5] p-0 shadow-[0_-28px_80px_-46px_rgba(0,0,0,0.68)] dark:bg-[#171512] sm:mx-auto sm:max-w-lg"
       >
-        {/* Header */}
-        <SheetHeader className="border-b border-border/70 px-4 py-3 shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <SheetTitle className="text-sm font-semibold">参考笔记</SheetTitle>
-              <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                已选 {referenceIds.length} 张
-              </Badge>
+        <SheetHeader className="shrink-0 px-5 pb-3 pt-5">
+          <div className="mb-1 flex items-center justify-between gap-3 pr-8">
+            <div>
+              <div className="mb-1 inline-flex rounded-full bg-[#ff9bd6]/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-foreground">
+                style memory
+              </div>
+              <SheetTitle className="text-3xl font-black tracking-[-0.055em]">参考范例</SheetTitle>
             </div>
-
-            {referenceIds.length > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="mr-7 h-7 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => onChange([])}
-              >
-                <RotateCcw className="mr-1 size-3" />
-                清空
-              </Button>
-            ) : null}
+            <Badge className="h-8 bg-black px-3 text-xs font-black text-white dark:bg-white dark:text-black">
+              {referenceIds.length} selected
+            </Badge>
           </div>
-          <SheetDescription className="text-xs text-muted-foreground">
-            勾选笔记作为 AI 范例，补全与批量生成时自动学习其音标、释义与例句风格。
+          <SheetDescription className="max-w-md text-xs font-medium leading-5 text-muted-foreground">
+            选几张你喜欢的笔记作为 AI 范例，补全与批量生成会自动学习它们的排版、音标、释义与例句风格。
           </SheetDescription>
+          {referenceIds.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-1 h-8 w-fit px-2 text-xs font-black text-muted-foreground"
+              onClick={() => onChange([])}
+            >
+              <RotateCcw className="size-3" />
+              清空选择
+            </Button>
+          ) : null}
         </SheetHeader>
 
-        {/* Search */}
-        <div className="border-b border-border/60 bg-muted/10 px-4 py-2.5 shrink-0">
+        <div className="shrink-0 px-4 pb-3">
           <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-foreground/40" />
             <Input
               value={query}
               aria-label="搜索参考笔记"
               placeholder="搜索笔记…"
-              className="h-8.5 rounded-xl border-border/70 bg-card pr-3 pl-8.5 text-xs"
+              className="h-12 rounded-full border-0 bg-white pl-10 pr-4 text-sm font-semibold shadow-[0_10px_28px_-24px_rgba(0,0,0,0.7)] dark:bg-white/[0.07]"
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
         </div>
 
-        {/* List */}
         <div
           ref={isLargeList ? containerRef : undefined}
           data-testid="reference-notes-list"
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3"
         >
           {filtered.length === 0 ? (
-            <p className="px-2 py-10 text-center text-xs text-muted-foreground">
-              {query ? `没有匹配「${query}」的笔记` : "卡包中还没有笔记"}
-            </p>
+            <div className="mx-1 flex min-h-48 flex-col items-center justify-center rounded-[1.8rem] bg-[#dff1ff] px-6 text-center dark:bg-[#1e3b55]">
+              <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-black text-white dark:bg-white dark:text-black">
+                <Search className="size-5" />
+              </span>
+              <p className="text-sm font-black tracking-tight text-foreground">
+                {query ? `没有匹配「${query}」的笔记` : "卡包中还没有笔记"}
+              </p>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">换个关键词试试，或者先添加几张笔记。</p>
+            </div>
           ) : (
             <div
               style={isLargeList ? { paddingTop: padTop, paddingBottom: padBottom } : undefined}
-              className="space-y-1"
+              className="space-y-2"
             >
-              {items.map((card) => {
+              {items.map((card, index) => {
                 const active = selectedSet.has(card.id)
                 const label = cardLabel(card, fields)
                 const subtitle = cardSubtitle(card, fields)
@@ -170,29 +181,29 @@ export function ReferenceNotesPicker({
                     type="button"
                     aria-pressed={active}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all",
+                      "flex w-full items-center gap-3 rounded-[1.45rem] px-4 py-3 text-left transition-all active:scale-[0.985]",
                       active
-                        ? "bg-primary/10 border border-primary/30"
-                        : "hover:bg-muted/40 active:bg-muted/70 border border-transparent"
+                        ? "bg-black text-white shadow-[0_14px_34px_-26px_rgba(0,0,0,0.88)] dark:bg-white dark:text-black"
+                        : rowPastels[index % rowPastels.length]
                     )}
                     onClick={() => onChange(toggleId(referenceIds, card.id))}
                   >
                     <span
                       className={cn(
-                        "flex size-4.5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                        "flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
                         active
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/80 bg-card"
+                          ? "bg-white text-black dark:bg-black dark:text-white"
+                          : "bg-white/60 text-foreground/40 dark:bg-black/15"
                       )}
                     >
-                      {active ? <Check className="size-3 stroke-[3]" /> : null}
+                      {active ? <Check className="size-4 stroke-[3]" /> : <Sparkles className="size-3.5" />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold text-foreground">
+                      <span className={cn("block truncate text-sm font-black tracking-[-0.025em]", active ? "text-current" : "text-foreground")}>
                         {label}
                       </span>
                       {subtitle ? (
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        <span className={cn("mt-0.5 block truncate text-[11px] font-medium", active ? "text-white/65 dark:text-black/60" : "text-foreground/50")}>
                           {subtitle}
                         </span>
                       ) : null}
@@ -204,14 +215,13 @@ export function ReferenceNotesPicker({
           )}
         </div>
 
-        {/* Bottom Finish Button */}
-        <SheetFooter className="border-t border-border/70 bg-card p-3.5 shrink-0">
+        <SheetFooter className="shrink-0 bg-[#fffaf5]/96 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl dark:bg-[#171512]/96">
           <Button
             type="button"
-            className="h-9 w-full rounded-xl font-semibold shadow-xs"
+            className="h-14 w-full rounded-full bg-black text-sm font-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
             onClick={() => onOpenChange(false)}
           >
-            完成 ({referenceIds.length} 张已选)
+            完成 · {referenceIds.length} 张已选
           </Button>
         </SheetFooter>
       </SheetContent>
