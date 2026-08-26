@@ -40,22 +40,28 @@ export function CardPreview({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-3",
+        "flex min-h-0 min-w-0 flex-col gap-3 rounded-[2rem] bg-[#dff1ff] p-3 shadow-[0_22px_60px_-42px_rgba(0,0,0,0.7)] dark:bg-[#1e3b55] sm:p-4",
         fillViewport &&
           "h-[max(20rem,calc(100dvh-19.5rem))] lg:h-[max(28rem,calc(100dvh-16.5rem))]",
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 px-1">
         <div className="min-w-0">
-          <p className="text-sm font-medium">预览</p>
-          <p className="truncate text-xs text-muted-foreground">{template.name}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40 dark:text-white/45">live preview</p>
+          <p className="mt-0.5 truncate text-base font-black tracking-[-0.035em] text-foreground">{template.name}</p>
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 rounded-full bg-white/60 p-1 shadow-[0_8px_24px_-20px_rgba(0,0,0,0.65)] dark:bg-black/15">
           <Button
             type="button"
             size="sm"
-            variant={side === "front" ? "default" : "outline"}
+            variant="ghost"
+            className={cn(
+              "h-8 rounded-full px-3 text-xs font-black",
+              side === "front"
+                ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
+                : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
+            )}
             onClick={() => onSideChange("front")}
           >
             正面
@@ -63,19 +69,27 @@ export function CardPreview({
           <Button
             type="button"
             size="sm"
-            variant={side === "back" ? "default" : "outline"}
+            variant="ghost"
+            className={cn(
+              "h-8 rounded-full px-3 text-xs font-black",
+              side === "back"
+                ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
+                : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
+            )}
             onClick={() => onSideChange("back")}
           >
             背面
           </Button>
         </div>
       </div>
+
       <div
         className={cn(
-          "overflow-hidden rounded-2xl bg-white ring-1 ring-black/8",
-          fillViewport ? "min-h-0 flex-1" : "h-[280px] lg:h-[420px]"
+          "relative overflow-hidden rounded-[1.7rem] bg-white shadow-[0_24px_56px_-38px_rgba(0,0,0,0.78)] ring-1 ring-black/[0.04]",
+          fillViewport ? "min-h-0 flex-1" : "h-[300px] lg:h-[440px]"
         )}
       >
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1.5 bg-gradient-to-r from-[#c8f889] via-[#ff9bd6] to-[#ffe08d]" aria-hidden="true" />
         <iframe
           title="卡片预览"
           sandbox=""
@@ -83,8 +97,10 @@ export function CardPreview({
           className="h-full w-full border-0 bg-white"
         />
       </div>
+
       {playable.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5">
+          <span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-black/40 dark:text-white/45">audio</span>
           {playable.map((name) => {
             const tts = configs[name]
             if (!tts) return null
