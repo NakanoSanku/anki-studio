@@ -94,9 +94,22 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       <div
         role="group"
         aria-label={label}
-        className={cn("min-w-0 overflow-hidden rounded-2xl bg-[#17181d] shadow-[0_18px_42px_-30px_rgba(0,0,0,0.8)] ring-1 ring-white/10", className)}
+        className={cn(
+          "min-w-0 overflow-hidden rounded-[2rem] bg-[#111215] shadow-[0_26px_65px_-38px_rgba(0,0,0,0.9)] ring-1 ring-black/8",
+          className
+        )}
       >
-        <div className={cn("h-[280px] min-w-0 lg:h-[420px]", editorClassName)}>
+        <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="size-2.5 rounded-full bg-[#ffaaa0]" />
+            <span className="size-2.5 rounded-full bg-[#ffe08d]" />
+            <span className="size-2.5 rounded-full bg-[#c8f889]" />
+          </div>
+          <span className="truncate font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">
+            {language === "css" ? "style.css" : language === "prompt" ? "prompt" : "template"}
+          </span>
+        </div>
+        <div className={cn("h-[300px] min-w-0 lg:h-[440px]", editorClassName)}>
           <CodeMirror
             ref={editorRef}
             id={id}
@@ -126,11 +139,11 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             className="h-full max-w-full [&_.cm-editor]:h-full [&_.cm-editor]:max-w-full"
           />
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-white/8 px-3 py-1.5 font-mono text-[11px] text-slate-400">
-          <span>
+        <div className="flex items-center justify-between gap-3 border-t border-white/8 px-4 py-2 font-mono text-[10px] font-semibold text-slate-400">
+          <span className="rounded-full bg-white/[0.06] px-2 py-1">
             Ln {caret.line}, Col {caret.column}
           </span>
-          <span className="hidden sm:inline">Tab 缩进 · Shift+Tab 取消缩进</span>
+          <span className="hidden rounded-full bg-white/[0.04] px-2 py-1 sm:inline">Tab 缩进 · Shift+Tab 取消缩进</span>
         </div>
       </div>
     )
