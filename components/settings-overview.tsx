@@ -13,6 +13,8 @@ import {
 import { PATHS, SETTINGS_ROWS } from "@/lib/app-paths"
 import { fsrsOf, type Deck } from "@/lib/deck"
 import { readAiSettings } from "@/lib/ai-settings"
+import { getCachedGoogleUser } from "@/lib/firebase-auth"
+import { readGoogleSheetConnection } from "@/lib/google-sheet-connection"
 import { Badge } from "@/components/ui/badge"
 
 type SettingsOverviewProps = {
@@ -35,11 +37,31 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
     }
   }, [])
 
-  const syncBadge = useMemo(() => {
-    if (!syncMessage || syncMessage.includes("请先选择") || syncMessage === "尚未同步") {
-      return "未绑定"
+  const syncInfo = useMemo(() => {
+    const sheet = readGoogleSheetConnection()
+    const user = getCachedGoogleUser()
+    if (sheet) {
+      return {
+        badge: sheet.name,
+        subtitle: `已绑定表格：${sheet.name}`,
+      }
     }
-    return syncMessage
+    if (user?.email) {
+      return {
+        badge: "已登录",
+        subtitle: `已登录 Google (${user.email})，未绑定表格`,
+      }
+    }
+    if (syncMessage && !syncMessage.includes("请先选择") && syncMessage !== "尚未同步") {
+      return {
+        badge: syncMessage,
+        subtitle: "Google Sheets 与多端数据同步",
+      }
+    }
+    return {
+      badge: "未绑定",
+      subtitle: "Google Sheets 与多端数据同步",
+    }
   }, [syncMessage])
 
   const rowDetails: Record<
@@ -62,8 +84,8 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
       icon: BrainCircuit,
     },
     [PATHS.settingsSync]: {
-      subtitle: "Google Sheets 与多端数据同步",
-      badge: syncBadge,
+      subtitle: syncInfo.subtitle,
+      badge: syncInfo.badge,
       icon: Table2,
     },
   }
