@@ -173,12 +173,15 @@
 
   html {
     @apply font-sans;
+    background: var(--background);
     text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
     min-height: 100dvh;
+    overscroll-behavior-y: none;
   }
 
   h1,
@@ -293,6 +296,33 @@
   }
 }
 
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  header[aria-label="应用顶栏"] > div {
+    height: 3.5rem !important;
+  }
+
+  nav[aria-label="主要导航"] {
+    max-width: 24rem;
+    border-radius: 1.25rem;
+    padding: 0.3rem;
+  }
+
+  nav[aria-label="主要导航"] > a {
+    min-height: 2.65rem;
+    flex-direction: row;
+    gap: 0.35rem;
+    border-radius: 1rem;
+  }
+
+  nav[aria-label="主要导航"] > a > span:last-child {
+    font-size: 0.65rem;
+  }
+
+  section[aria-label="学习会话"] {
+    min-height: 100dvh;
+  }
+}
+
 ::selection {
   background: color-mix(in oklab, var(--pastel-blue) 58%, transparent);
   color: var(--foreground);
@@ -331,6 +361,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   ::view-transition-old(*),
   ::view-transition-new(*),
   ::view-transition-group(*) {
