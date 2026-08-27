@@ -31,7 +31,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-[80] bg-black/22 duration-150 supports-backdrop-filter:backdrop-blur-[5px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-[80] bg-black/28 duration-150 supports-backdrop-filter:backdrop-blur-[6px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -53,7 +53,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[80] grid w-full max-w-[calc(100%-1.5rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[2rem] border-0 bg-[#fffaf5] p-5 text-sm text-popover-foreground shadow-[0_32px_90px_-42px_rgba(0,0,0,0.82)] duration-150 outline-none sm:max-w-md sm:p-6 dark:bg-[#171512] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-[80] grid w-full max-w-[calc(100%-1.5rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[22px] border border-black/[0.07] bg-card p-5 text-sm text-popover-foreground shadow-[0_32px_90px_-48px_rgba(0,0,0,0.72)] duration-150 outline-none sm:max-w-md sm:p-6 dark:border-white/[0.1] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -62,8 +62,8 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
             <Button
-              variant="outline"
-              className="absolute top-3 right-3 border-0 bg-white/85 shadow-[0_10px_24px_-20px_rgba(0,0,0,0.75)] dark:bg-white/10"
+              variant="ghost"
+              className="absolute top-3 right-3 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
               size="icon-sm"
             >
               <XIcon />
@@ -121,7 +121,7 @@ function DialogTitle({
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-xl leading-[1.05] font-black tracking-[-0.045em] sm:text-2xl",
+        "font-heading text-xl leading-[1.08] font-semibold tracking-[-0.04em] sm:text-2xl",
         className
       )}
       {...props}
@@ -137,7 +137,7 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm font-medium leading-6 text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        "text-sm leading-6 text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
         className
       )}
       {...props}
