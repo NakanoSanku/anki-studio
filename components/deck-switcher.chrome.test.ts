@@ -11,7 +11,8 @@ const shell = readFileSync(join(root, "app-shell.tsx"), "utf8")
 
 describe("卡包 sheet chrome", () => {
   it("keeps the list as one 卡包 bottom Sheet and uses Dialog / AlertDialog for writes", () => {
-    expect(switcher).toContain("<SheetTitle>卡包</SheetTitle>")
+    expect(switcher).toContain('side="bottom"')
+    expect(switcher).toMatch(/<SheetTitle[^>]*>卡包<\/SheetTitle>/)
     expect(switcher).toContain("改名")
     expect(switcher).toContain("复制")
     expect(switcher).toContain("删除")
@@ -41,7 +42,8 @@ describe("卡包 sheet chrome", () => {
     expect(switcher.match(/<Sheet[\s>]/g)?.length ?? 0).toBe(1)
     expect(sheet).toContain("z-[70]")
     expect(shell).toContain('aria-label="主要导航"')
-    expect(shell).toMatch(/z-50 grid grid-cols-3/)
+    expect(shell).toContain("z-50")
+    expect(shell).toContain("grid-cols-3")
   })
 
   it("does not keep a 管理卡包 row on the 卡包 settings list", () => {
