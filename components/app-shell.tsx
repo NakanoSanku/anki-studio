@@ -147,6 +147,13 @@ export function AppShell({
         lock ? "fixed inset-0 overflow-hidden overscroll-none" : "min-h-[100dvh]"
       )}
     >
+      <a
+        href="#app-main"
+        className="fixed left-3 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[90] -translate-y-[180%] rounded-full bg-black px-4 py-2.5 text-xs font-black text-white shadow-xl transition-transform focus:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#ffe39a] dark:bg-white dark:text-black"
+      >
+        跳到主要内容
+      </a>
+
       <AnimatePresence initial={false}>
         {status ? (
           <motion.div
@@ -176,7 +183,7 @@ export function AppShell({
             {header.backHref ? (
               <button
                 type="button"
-                className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-card text-foreground shadow-[0_10px_28px_-18px_rgba(0,0,0,0.5)] ring-1 ring-black/5 transition-transform [-webkit-tap-highlight-color:transparent] active:scale-95 min-[390px]:size-11 dark:ring-white/10"
+                className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-card text-foreground shadow-[0_10px_28px_-18px_rgba(0,0,0,0.5)] ring-1 ring-black/5 transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 active:scale-95 min-[390px]:size-11 dark:ring-white/10 dark:focus-visible:ring-white/25"
                 aria-label="返回"
                 onClick={() => {
                   if (onBack) onBack()
@@ -194,7 +201,7 @@ export function AppShell({
             {header.showDeck ? (
               <button
                 type="button"
-                className="group flex min-w-0 flex-1 touch-manipulation items-center text-left [-webkit-tap-highlight-color:transparent]"
+                className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-xl text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/10 dark:focus-visible:ring-white/20"
                 onClick={onDeckClick}
               >
                 <div className="min-w-0">
@@ -210,7 +217,7 @@ export function AppShell({
             {pathname === PATHS.notes || pathname === PATHS.home ? (
               <button
                 type="button"
-                className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-foreground text-background shadow-[0_12px_26px_-16px_rgba(0,0,0,0.72)] transition-transform [-webkit-tap-highlight-color:transparent] active:scale-95 disabled:opacity-60 min-[390px]:size-11"
+                className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-foreground text-background shadow-[0_12px_26px_-16px_rgba(0,0,0,0.72)] transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ffe39a] active:scale-95 disabled:opacity-60 min-[390px]:size-11"
                 disabled={syncing}
                 aria-label={
                   syncing ? "正在同步" : dirtyCount > 0 ? `${dirtyCount} 个待同步` : syncUnavailable || "立即同步"
@@ -228,8 +235,10 @@ export function AppShell({
       ) : null}
 
       <main
+        id="app-main"
+        tabIndex={-1}
         className={cn(
-          "flex min-h-0 flex-1 flex-col",
+          "flex min-h-0 flex-1 flex-col focus:outline-none",
           lock && "overflow-hidden",
           session
             ? "p-0"
@@ -264,7 +273,7 @@ export function AppShell({
                   key={item.id}
                   href={item.href}
                   className={cn(
-                    "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[18px] text-[10px] font-bold transition-all [-webkit-tap-highlight-color:transparent] min-[390px]:min-h-12 min-[390px]:rounded-[20px] min-[390px]:text-[11px]",
+                    "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[18px] text-[10px] font-bold transition-all [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 min-[390px]:min-h-12 min-[390px]:rounded-[20px] min-[390px]:text-[11px] dark:focus-visible:ring-white/25",
                     selected
                       ? "bg-foreground text-background shadow-sm"
                       : "text-foreground/45 active:bg-black/[0.04] dark:active:bg-white/[0.06]"
