@@ -95,17 +95,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         role="group"
         aria-label={label}
         className={cn(
-          "min-w-0 overflow-hidden rounded-[2rem] bg-[#111215] shadow-[0_26px_65px_-38px_rgba(0,0,0,0.9)] ring-1 ring-black/8",
+          "min-w-0 overflow-hidden rounded-[20px] border border-black/[0.12] bg-[#111215] shadow-[0_22px_55px_-42px_rgba(0,0,0,0.82)]",
           className
         )}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-[#ffaaa0]" />
-            <span className="size-2.5 rounded-full bg-[#ffe08d]" />
-            <span className="size-2.5 rounded-full bg-[#c8f889]" />
+            <span className="size-2 rounded-full bg-energy" />
+            <span className="font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-white/38">editor</span>
           </div>
-          <span className="truncate font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">
+          <span className="truncate font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white/45">
             {language === "css" ? "style.css" : language === "prompt" ? "prompt" : "template"}
           </span>
         </div>
@@ -139,11 +138,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             className="h-full max-w-full [&_.cm-editor]:h-full [&_.cm-editor]:max-w-full"
           />
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-white/8 px-4 py-2 font-mono text-[10px] font-semibold text-slate-400">
-          <span className="rounded-full bg-white/[0.06] px-2 py-1">
-            Ln {caret.line}, Col {caret.column}
-          </span>
-          <span className="hidden rounded-full bg-white/[0.04] px-2 py-1 sm:inline">Tab 缩进 · Shift+Tab 取消缩进</span>
+        <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] px-4 py-2 font-mono text-[9px] font-medium text-slate-400">
+          <span>Ln {caret.line}, Col {caret.column}</span>
+          <span className="hidden text-white/28 sm:inline">Tab 缩进 · Shift+Tab 取消缩进</span>
         </div>
       </div>
     )
