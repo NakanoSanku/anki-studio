@@ -12,20 +12,20 @@ export const PATHS = {
   templatesLegacy: "/templates",
 } as const
 
-export const SETTINGS_STUDY_LABEL = "复习参数"
-export const DECK_TEMPLATES_LABEL = "模板"
+export const SETTINGS_STUDY_LABEL = "Study"
+export const DECK_TEMPLATES_LABEL = "Templates"
 
 export const PRIMARY_NAV = [
-  { href: PATHS.home, id: "study", label: "学习" },
-  { href: PATHS.notes, id: "notes", label: "笔记" },
-  { href: PATHS.settings, id: "settings", label: "设置" },
+  { href: PATHS.home, id: "study", label: "Study" },
+  { href: PATHS.notes, id: "notes", label: "Notes" },
+  { href: PATHS.settings, id: "settings", label: "Settings" },
 ] as const
 
 export const SETTINGS_ROWS = [
-  { href: PATHS.settingsDeck, label: "卡包" },
+  { href: PATHS.settingsDeck, label: "Deck" },
   { href: PATHS.settingsStudy, label: SETTINGS_STUDY_LABEL },
   { href: PATHS.settingsAi, label: "AI" },
-  { href: PATHS.settingsSync, label: "同步" },
+  { href: PATHS.settingsSync, label: "Sync" },
 ] as const
 
 const LEGACY_TAB_PATHS: Record<string, string> = {

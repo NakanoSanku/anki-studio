@@ -40,27 +40,27 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
 
   const syncInfo = useMemo(() => {
     const sheet = readGoogleSheetConnection()
-    if (sheet) return { value: sheet.name, subtitle: "Google Sheets 已连接" }
-    if (googleUser?.email) return { value: "已登录", subtitle: "选择表格以开启多端同步" }
-    if (syncMessage && !syncMessage.includes("请先选择") && syncMessage !== "尚未同步") {
-      return { value: syncMessage, subtitle: "Google Sheets 数据同步" }
+    if (sheet) return { value: sheet.name, subtitle: "Google Sheets connected" }
+    if (googleUser?.email) return { value: "Signed in", subtitle: "Choose a sheet to enable cross-device sync" }
+    if (syncMessage && syncMessage !== "Not synced yet") {
+      return { value: syncMessage, subtitle: "Google Sheets data sync" }
     }
-    return { value: "未连接", subtitle: "Google Sheets 数据同步" }
+    return { value: "Not connected", subtitle: "Google Sheets data sync" }
   }, [googleUser, syncMessage])
 
   const rowDetails: Record<string, RowDetail> = {
     [PATHS.settingsDeck]: {
-      subtitle: "管理、导入导出与模板",
-      value: deck ? `${deck.cards.length} 张` : "",
+      subtitle: "Manage, import, export, and templates",
+      value: deck ? `${deck.cards.length} notes` : "",
       icon: FolderCog,
     },
     [PATHS.settingsStudy]: {
-      subtitle: "FSRS 算法与学习配额",
+      subtitle: "FSRS scheduling and daily limits",
       value: `${retentionPercent}%`,
       icon: Gauge,
     },
     [PATHS.settingsAi]: {
-      subtitle: "模型、接口与提示词",
+      subtitle: "Model, endpoint, and prompts",
       value: aiModel,
       icon: BrainCircuit,
     },
@@ -72,15 +72,15 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-5 pb-10" aria-label="设置总览">
+    <div className="mx-auto w-full max-w-lg space-y-5 pb-10" aria-label="Settings overview">
       <section className="px-1 pb-1 pt-2">
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           <span className="size-2 rounded-full bg-energy" />
           Preferences
         </div>
-        <h2 className="mt-3 text-[30px] font-semibold leading-[1.03] tracking-[-0.045em]">让学习方式更适合你</h2>
+        <h2 className="mt-3 text-[30px] font-semibold leading-[1.03] tracking-[-0.045em]">Tune the way you learn</h2>
         <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          保留真正重要的选项，其余都尽量保持安静。卡包、FSRS、AI 与同步都在这里。
+          Keep the important controls close and everything else quiet. Manage your deck, FSRS, AI, and sync here.
         </p>
       </section>
 
@@ -117,11 +117,11 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold tracking-[-0.015em]">离线优先</p>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Local first</span>
+              <p className="text-sm font-semibold tracking-[-0.015em]">Local first</p>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Private by default</span>
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              卡包先保存在本机 IndexedDB；连接 Google Sheets 后，再把需要的数据同步到其他设备。
+              Decks are saved to IndexedDB first. Connect Google Sheets only when you want the same data on other devices.
             </p>
           </div>
         </div>

@@ -114,7 +114,7 @@ function StudyCard({ deck, item, revealed }: { deck: Deck; item: StudyItem; reve
   const rendered = renderCard(item.template.front, item.template.back, values)
   return (
     <iframe
-      title={revealed ? "卡片背面" : "卡片正面"}
+      title={revealed ? "Card back" : "Card front"}
       sandbox=""
       srcDoc={previewDocument(deck.css, revealed ? rendered.back : rendered.front)}
       className="h-full w-full border-0 bg-white"
@@ -135,12 +135,14 @@ function FocusHeader({
   completed,
   total,
   progress,
+  canEdit,
   onExit,
   onEdit,
 }: {
   completed: number
   total: number
   progress: number
+  canEdit: boolean
   onExit: () => void
   onEdit: () => void
 }) {
@@ -152,7 +154,7 @@ function FocusHeader({
           size="icon-lg"
           variant="outline"
           className="shadow-none"
-          aria-label="退出学习"
+          aria-label="Exit study"
           onClick={onExit}
         >
           <X className="size-4" />
@@ -170,21 +172,25 @@ function FocusHeader({
           </div>
           <Progress
             value={progress}
-            aria-label={`本轮已完成 ${completed}，共 ${total} 张`}
+            aria-label={`Completed ${completed} of ${total} cards`}
             className="h-1.5 bg-black/[0.06] [&_[data-slot=progress-indicator]]:bg-energy dark:bg-white/10"
           />
         </div>
 
-        <Button
-          type="button"
-          size="icon-lg"
-          variant="outline"
-          className="shadow-none"
-          aria-label="改这条笔记"
-          onClick={onEdit}
-        >
-          <Pencil className="size-4" />
-        </Button>
+        {canEdit ? (
+          <Button
+            type="button"
+            size="icon-lg"
+            variant="outline"
+            className="shadow-none"
+            aria-label="Edit note"
+            onClick={onEdit}
+          >
+            <Pencil className="size-4" />
+          </Button>
+        ) : (
+          <span className="size-11" aria-hidden="true" />
+        )}
       </div>
     </header>
   )
@@ -210,13 +216,13 @@ function RatingDock({
             aria-keyshortcuts="Space"
             onClick={onReveal}
           >
-            <span>显示答案</span>
+            <span>Show answer</span>
             <kbd className="ml-auto hidden rounded-[8px] border border-background/15 bg-background/8 px-2 py-1 font-mono text-[9px] font-medium text-background/60 sm:inline">
               Space
             </kbd>
           </Button>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5" aria-label="选择本次记忆难度">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5" aria-label="Rate recall">
             {options.map((option, index) => (
               <Button
                 key={option.rating}
@@ -225,7 +231,7 @@ function RatingDock({
                   "min-h-15 flex-col gap-0.5 rounded-[16px] px-2 py-2.5 shadow-none sm:min-h-16",
                   ratingStyle[option.rating]
                 )}
-                aria-label={`${option.label}，下次复习间隔 ${option.interval}，快捷键 ${index + 1}`}
+                aria-label={`${option.label}, next interval ${option.interval}, shortcut ${index + 1}`}
                 aria-keyshortcuts={`${index + 1}`}
                 onClick={() => onRate(option.rating)}
               >
@@ -331,10 +337,10 @@ export function StudySession({
   if (!current) {
     const dailyLimitReached = stats.dueNow > 0
     const completionDescription = dailyLimitReached
-      ? "今天可以学习的卡片已经全部完成。"
+      ? "You've completed every card available under today's limits."
       : stats.nextDue
-        ? `下一张将在 ${formatDueDate(stats.nextDue, now)} 到期。`
-        : "暂无计划中的复习。"
+        ? `The next card is due ${formatDueDate(stats.nextDue, now)}.`
+        : "No reviews are scheduled right now."
 
     return (
       <StudyStage>
@@ -349,7 +355,7 @@ export function StudySession({
             </div>
             <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Session clear</p>
             <h2 id="study-complete-title" className="mt-2 text-[32px] font-semibold tracking-[-0.05em] text-foreground sm:text-[36px]">
-              {completed > 0 ? `本轮完成 ${completed} 张` : "当前没有待学习卡片"}
+              {completed > 0 ? `${completed} cards complete` : "Nothing due right now"}
             </h2>
             <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
               {completionDescription}
@@ -359,7 +365,7 @@ export function StudySession({
               className="mt-8 h-[52px] w-full max-w-xs rounded-[16px]"
               onClick={onExit}
             >
-              返回学习
+              Back to study
             </Button>
           </div>
         </section>
@@ -378,11 +384,12 @@ export function StudySession({
 
   return (
     <StudyStage>
-      <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="学习会话">
+      <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="Study session">
         <FocusHeader
           completed={completed}
           total={total}
           progress={progress}
+          canEdit={revealed}
           onExit={onExit}
           onEdit={() => {
             setEditValues({ ...current.note.values })
@@ -420,7 +427,7 @@ export function StudySession({
                 type="button"
                 className="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-energy/30 focus-visible:ring-inset"
                 onClick={reveal}
-                aria-label="显示答案"
+                aria-label="Show answer"
                 aria-keyshortcuts="Space"
               />
             ) : null}
@@ -439,7 +446,7 @@ export function StudySession({
                             text={current.note.values[tts.source] ?? ""}
                             lang={tts.lang}
                             slow={tts.slow}
-                            label={`播放 ${name} · ${ttsLangLabel(tts.lang)}`}
+                            label={`Play ${name} · ${ttsLangLabel(tts.lang)}`}
                           />
                         </div>
                       </TooltipTrigger>
@@ -457,13 +464,13 @@ export function StudySession({
                         type="button"
                         size="icon-sm"
                         variant="ghost"
-                        aria-label="重看正面"
+                        aria-label="Review front"
                         onClick={conceal}
                       >
                         <RotateCcw className="size-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>重看正面</TooltipContent>
+                    <TooltipContent>Review front</TooltipContent>
                   </Tooltip>
                 </div>
               ) : null}
@@ -488,8 +495,8 @@ export function StudySession({
                 <span className="size-2 rounded-full bg-energy" />
                 Quick edit
               </div>
-              <SheetTitle className="text-2xl font-semibold tracking-[-0.04em]">改这条笔记</SheetTitle>
-              <SheetDescription>保存后回到当前卡片。</SheetDescription>
+              <SheetTitle className="text-2xl font-semibold tracking-[-0.04em]">Edit note</SheetTitle>
+              <SheetDescription>Save your changes and return to this card.</SheetDescription>
             </SheetHeader>
             <div className="flex max-h-[52dvh] flex-col gap-3 overflow-y-auto px-4">
               {textFields(deck).map((field) => {
@@ -539,7 +546,7 @@ export function StudySession({
                   setEditOpen(false)
                 }}
               >
-                保存修改
+                Save changes
               </Button>
             </SheetFooter>
           </SheetContent>

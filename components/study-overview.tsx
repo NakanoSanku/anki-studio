@@ -25,12 +25,12 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
   const todayTotal = stats.reviewedToday + queue.length
   const progress = todayTotal > 0 ? Math.min(100, Math.round((stats.reviewedToday / todayTotal) * 100)) : 100
 
-  const emptyTitle = dailyLimitReached ? "今天完成了" : stats.nextDue ? "可以休息一下" : "从第一张卡开始"
+  const emptyTitle = dailyLimitReached ? "You're done for today" : stats.nextDue ? "Take a break" : "Start with your first note"
   const emptyDescription = dailyLimitReached
-    ? "今天计划中的新卡与复习任务都已经处理完。"
+    ? "Today's new-note and review limits are complete."
     : stats.nextDue
-      ? `下一批卡片将在 ${formatDueDate(stats.nextDue, now)} 到期。`
-      : "新建卡片或导入卡包，就可以开始记忆。"
+      ? `The next cards are due ${formatDueDate(stats.nextDue, now)}.`
+      : "Create a note or import a deck to begin studying."
 
   return (
     <StudyStage>
@@ -42,9 +42,9 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
               Today
             </div>
             <h1 id="study-overview-title" className="text-[30px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[34px]">
-              今天的学习
+              Today's study
             </h1>
-            <p className="mt-2 text-sm leading-5 text-muted-foreground">少一点干扰，保持一个清晰的节奏。</p>
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">Less friction. One clear rhythm.</p>
           </div>
           {ready ? (
             <div className="mb-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-black/[0.07] bg-card px-3 py-2 text-[11px] font-medium text-muted-foreground dark:border-white/[0.09]">
@@ -63,7 +63,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
                     <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-background/50">Remaining</p>
                     <div className="mt-2 flex items-end gap-2">
                       <span className="text-[64px] font-semibold leading-none tracking-[-0.065em]">{queue.length}</span>
-                      <span className="mb-2.5 text-sm font-medium text-background/55">张待学习</span>
+                      <span className="mb-2.5 text-sm font-medium text-background/55">cards</span>
                     </div>
                   </div>
                   <div className="flex size-11 items-center justify-center rounded-full bg-energy text-sm font-bold text-black">
@@ -95,7 +95,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
                   className="mt-5 h-13 w-full rounded-[16px] bg-energy px-5 text-[15px] font-semibold text-black shadow-none hover:bg-energy/90 active:scale-[0.99]"
                   onClick={onStart}
                 >
-                  开始学习 <ArrowRight className="ml-1 size-4.5" />
+                  Start studying <ArrowRight className="ml-1 size-4.5" />
                 </Button>
               </>
             ) : (
@@ -109,7 +109,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
                 <p className="mt-2 max-w-sm text-sm leading-6 text-background/55">{emptyDescription}</p>
                 {stats.reviewedToday > 0 ? (
                   <p className="mt-5 border-t border-background/12 pt-4 text-xs font-medium text-background/55">
-                    今天已经完成 {stats.reviewedToday} 张卡片
+                    {stats.reviewedToday} cards completed today
                   </p>
                 ) : null}
               </div>
@@ -121,12 +121,12 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current deck</p>
-              <p className="mt-1.5 truncate text-[16px] font-semibold tracking-[-0.025em]">{deck.name.trim() || "未命名卡包"}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{deck.cards.length} 张卡片</p>
+              <p className="mt-1.5 truncate text-[16px] font-semibold tracking-[-0.025em]">{deck.name.trim() || "Untitled deck"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{deck.cards.length} notes</p>
             </div>
             {onAddNote ? (
               <Button type="button" variant="outline" className="h-11 shrink-0 px-4" onClick={onAddNote}>
-                <Plus className="mr-1 size-4" /> 新建
+                <Plus className="mr-1 size-4" /> New note
               </Button>
             ) : null}
           </div>

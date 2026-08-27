@@ -57,7 +57,7 @@ export function CardPreview({
         <div
           className="flex shrink-0 rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]"
           role="group"
-          aria-label="预览卡面"
+          aria-label="Preview card side"
         >
           <Button
             type="button"
@@ -72,7 +72,7 @@ export function CardPreview({
             aria-pressed={side === "front"}
             onClick={() => onSideChange("front")}
           >
-            正面
+            Front
           </Button>
           <Button
             type="button"
@@ -87,7 +87,7 @@ export function CardPreview({
             aria-pressed={side === "back"}
             onClick={() => onSideChange("back")}
           >
-            背面
+            Back
           </Button>
         </div>
       </div>
@@ -100,7 +100,7 @@ export function CardPreview({
       >
         <div className="pointer-events-none absolute left-4 top-4 z-10 size-2 rounded-full bg-energy shadow-[0_0_0_5px_rgba(199,248,90,0.14)]" aria-hidden="true" />
         <iframe
-          title="卡片预览"
+          title="Card preview"
           sandbox=""
           loading="lazy"
           referrerPolicy="no-referrer"
@@ -121,7 +121,7 @@ export function CardPreview({
                 text={values[tts.source] ?? ""}
                 lang={tts.lang}
                 slow={tts.slow}
-                label={`播放 ${name} · ${ttsLangLabel(tts.lang)}`}
+                label={`Play ${name} · ${ttsLangLabel(tts.lang)}`}
               />
             )
           })}

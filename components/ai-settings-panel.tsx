@@ -84,7 +84,7 @@ export function AiSettingsPanel() {
     }
     writeAiSettings(next)
     setSettings(next)
-    setStatus({ type: "success", message: "配置已保存" })
+    setStatus({ type: "success", message: "AI settings saved" })
   }
 
   const fetchModels = async () => {
@@ -95,14 +95,14 @@ export function AiSettingsPanel() {
       return
     }
     setBusy(true)
-    setStatus({ type: "info", message: "正在拉取在线模型列表…" })
+    setStatus({ type: "info", message: "Fetching available models…" })
     try {
       const fetched = await withBrowserCorsHint(() => listProviderModels(next))
       setModels(fetched)
       if (!next.model || !fetched.includes(next.model)) patch({ model: fetched[0] ?? next.model })
-      setStatus({ type: "success", message: `已获取 ${fetched.length} 个可用模型` })
+      setStatus({ type: "success", message: `Found ${fetched.length} available models` })
     } catch (error) {
-      setStatus({ type: "error", message: error instanceof Error ? error.message : "拉取模型失败" })
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Failed to fetch models" })
     } finally {
       setBusy(false)
     }
@@ -116,16 +116,16 @@ export function AiSettingsPanel() {
       return
     }
     setBusy(true)
-    setStatus({ type: "info", message: "正在测试连接…" })
+    setStatus({ type: "info", message: "Testing connection…" })
     const startTime = Date.now()
     try {
       await withBrowserCorsHint(async () => {
         const { runTestAi } = await import("@/lib/ai-run")
         await runTestAi(next)
       })
-      setStatus({ type: "success", message: `连接成功 (${Date.now() - startTime}ms)` })
+      setStatus({ type: "success", message: `Connected (${Date.now() - startTime}ms)` })
     } catch (error) {
-      setStatus({ type: "error", message: error instanceof Error ? error.message : "连接失败，请检查网络或密钥" })
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Connection failed. Check your endpoint and API key." })
     } finally {
       setBusy(false)
     }
@@ -136,17 +136,17 @@ export function AiSettingsPanel() {
       const text = await navigator.clipboard.readText()
       if (text) {
         patch({ apiKey: text.trim() })
-        setStatus({ type: "info", message: "已粘贴 API Key" })
+        setStatus({ type: "info", message: "API key pasted" })
       }
     } catch {
-      setStatus({ type: "error", message: "无法读取剪贴板，请手动粘贴" })
+      setStatus({ type: "error", message: "Clipboard access failed. Paste the API key manually." })
     }
   }
 
   const resetAllDefaults = () => {
     setSettings({ ...DEFAULT_AI_SETTINGS })
     setModels([])
-    setStatus({ type: "info", message: "已恢复默认配置" })
+    setStatus({ type: "info", message: "Defaults restored" })
   }
 
   const openPromptEditor = (key: PromptKey) => {
@@ -160,7 +160,7 @@ export function AiSettingsPanel() {
     patch({ [editingPromptKey]: promptDraft })
     writeAiSettings({ ...settings, [editingPromptKey]: promptDraft })
     setEditingPromptKey(null)
-    setStatus({ type: "success", message: "提示词已更新" })
+    setStatus({ type: "success", message: "Prompt updated" })
   }
 
   const insertVariable = (varName: string) => {
@@ -175,7 +175,7 @@ export function AiSettingsPanel() {
 
   return (
     <div className="mx-auto w-full max-w-xl space-y-5 pb-12">
-      <section className="px-1 pb-1 pt-2">
+      <section className="px-1 pb-1 pt-1">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             <span className="size-2 rounded-full bg-energy" />
@@ -183,18 +183,18 @@ export function AiSettingsPanel() {
           </div>
           <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs text-muted-foreground" onClick={resetAllDefaults}>
             <RotateCcw className="size-3.5" />
-            默认配置
+            Reset
           </Button>
         </div>
-        <h2 className="mt-3 text-[30px] font-semibold leading-[1.03] tracking-[-0.045em] sm:text-[34px]">把 AI 变成安静的助手</h2>
+        <h2 className="mt-3 text-[28px] font-semibold leading-[1.03] tracking-[-0.045em] sm:text-[32px]">A quiet AI assistant</h2>
         <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          连接兼容 OpenAI 的接口，用于补全、批量生成和模板编辑。配置集中在这里，其余时候尽量不打扰。
+          Connect an OpenAI-compatible endpoint for field filling, batch generation, and template editing.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-medium">
           <span className="rounded-full border border-black/[0.07] bg-card px-3 py-1.5 font-mono dark:border-white/[0.09]">
-            {settings.model.trim() || "未选择模型"}
+            {settings.model.trim() || "No model selected"}
           </span>
-          <span className="rounded-full bg-muted px-3 py-1.5 text-muted-foreground">{customPromptCount} 个自定义提示词</span>
+          <span className="rounded-full bg-muted px-3 py-1.5 text-muted-foreground">{customPromptCount} custom prompts</span>
         </div>
       </section>
 
@@ -202,11 +202,11 @@ export function AiSettingsPanel() {
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Provider</p>
-            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">模型连接</h3>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Connection</h3>
           </div>
           <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={busy} onClick={() => void testConnection()}>
             <Zap className={cn("size-3.5", busy && "animate-pulse")} />
-            {busy ? "测试中" : "测试连接"}
+            {busy ? "Testing" : "Test"}
           </Button>
         </div>
 
@@ -232,13 +232,13 @@ export function AiSettingsPanel() {
                 className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-35"
               >
                 <RefreshCw className={cn("size-3", busy && "animate-spin")} />
-                {models.length > 0 ? `${models.length} models` : "拉取模型"}
+                {models.length > 0 ? `${models.length} models` : "Fetch models"}
               </button>
             </div>
             {models.length > 0 ? (
               <Select value={settings.model} onValueChange={(model) => patch({ model })}>
                 <SelectTrigger id="model-input" className="mt-2 h-11 w-full bg-background font-mono text-xs">
-                  <SelectValue placeholder="选择模型" />
+                  <SelectValue placeholder="Select a model" />
                 </SelectTrigger>
                 <SelectContent position="popper" align="start" className="max-h-64">
                   {!models.includes(settings.model) && settings.model ? <SelectItem value={settings.model}>{settings.model}</SelectItem> : null}
@@ -260,7 +260,7 @@ export function AiSettingsPanel() {
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="apiKey-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">API Key</Label>
               <button type="button" onClick={() => void pasteApiKey()} className="text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-                从剪贴板粘贴
+                Paste from clipboard
               </button>
             </div>
             <div className="relative mt-2">
@@ -268,13 +268,13 @@ export function AiSettingsPanel() {
                 id="apiKey-input"
                 type={showApiKey ? "text" : "password"}
                 value={settings.apiKey}
-                placeholder="sk-... · 免密接口可留空"
+                placeholder="sk-… · leave blank for keyless endpoints"
                 className="h-11 bg-background pr-11 font-mono text-xs"
                 onChange={(event) => patch({ apiKey: event.target.value })}
               />
               <button
                 type="button"
-                aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                aria-label={showApiKey ? "Hide API key" : "Show API key"}
                 onClick={() => setShowApiKey((visible) => !visible)}
                 className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
@@ -303,7 +303,7 @@ export function AiSettingsPanel() {
 
         <Button type="button" className="mt-3 h-[50px] w-full rounded-[15px] text-sm" disabled={busy} onClick={save}>
           <Save className="size-4" />
-          保存 AI 配置
+          Save AI settings
         </Button>
       </section>
 
@@ -311,9 +311,9 @@ export function AiSettingsPanel() {
         <div className="mb-3 flex items-end justify-between px-1">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Prompts</p>
-            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">提示词</h3>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Prompt library</h3>
           </div>
-          <span className="text-[10px] font-medium text-muted-foreground">点击编辑</span>
+          <span className="text-[10px] font-medium text-muted-foreground">Tap to edit</span>
         </div>
 
         <div className="overflow-hidden rounded-[22px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
@@ -334,9 +334,9 @@ export function AiSettingsPanel() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold tracking-[-0.02em]">{spec.label}</span>
-                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">{modified ? "已自定义" : "使用默认提示词"}</span>
+                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">{modified ? "Customized" : "Using default prompt"}</span>
                 </span>
-                {modified ? <span className="size-2 shrink-0 rounded-full bg-energy" aria-label="已自定义" /> : null}
+                {modified ? <span className="size-2 shrink-0 rounded-full bg-energy" aria-label="Customized" /> : null}
                 <ChevronRight className="size-4 shrink-0 text-foreground/22 transition-transform duration-150 group-active:translate-x-0.5" />
               </button>
             )
@@ -354,7 +354,7 @@ export function AiSettingsPanel() {
                     <span className="size-2 rounded-full bg-energy" />
                     Prompt lab
                   </span>
-                  <Badge className="border border-black/[0.07] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground shadow-none dark:border-white/[0.09]">{promptDraft.length} 字</Badge>
+                  <Badge className="border border-black/[0.07] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground shadow-none dark:border-white/[0.09]">{promptDraft.length} chars</Badge>
                 </div>
                 <SheetTitle className="text-2xl font-semibold tracking-[-0.045em]">{activeSpec.label}</SheetTitle>
                 <SheetDescription className="max-w-md text-xs leading-5">{activeSpec.hint}</SheetDescription>
@@ -381,7 +381,7 @@ export function AiSettingsPanel() {
                   label={activeSpec.label}
                   value={promptDraft}
                   language="prompt"
-                  placeholder="在这里输入提示词…"
+                  placeholder="Write the prompt here…"
                   onChange={setPromptDraft}
                   className="h-full"
                   editorClassName="h-full min-h-[320px]"
@@ -391,7 +391,7 @@ export function AiSettingsPanel() {
               <SheetFooter className="grid grid-cols-[auto_auto_1fr] gap-2 px-4 pb-4 pt-0 sm:grid-cols-[auto_auto_1fr]">
                 <Button type="button" size="sm" variant="outline" disabled={!isDraftModified} className="h-12 px-3 text-xs" onClick={() => setPromptDraft(DEFAULT_AI_SETTINGS[activeSpec.key])}>
                   <RotateCcw className="size-3.5" />
-                  默认
+                  Default
                 </Button>
                 <Button
                   type="button"
@@ -409,11 +409,11 @@ export function AiSettingsPanel() {
                   }}
                 >
                   {copiedPrompt ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  {copiedPrompt ? "已复制" : "复制"}
+                  {copiedPrompt ? "Copied" : "Copy"}
                 </Button>
                 <Button type="button" className="h-12 text-sm" onClick={savePromptDraft}>
                   <Save className="size-4" />
-                  保存提示词
+                  Save prompt
                 </Button>
               </SheetFooter>
             </>

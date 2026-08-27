@@ -6,7 +6,7 @@ const shell = readSource("components", "app-shell.tsx")
 const editor = readSource("components", "card-editor.tsx")
 const studio = readSource("components", "studio.tsx")
 
-describe("笔记列表 chrome", () => {
+describe("notes mobile chrome", () => {
   it("locks the notes viewport and keeps the tab bar in flow", () => {
     expect(studio).toContain("lockViewport={pathname === PATHS.notes}")
     expect(shell).toContain('data-testid={lock ? "notes-shell"')
@@ -24,14 +24,34 @@ describe("笔记列表 chrome", () => {
     expect(editor).toContain('"min-h-0 flex-1"')
   })
 
-  it("pins 参考笔记 on the editor for AI complete and batch generate", () => {
+  it("moves edit/preview into one top-bar toggle and removes the body tabs", () => {
+    expect(editor).toContain("useAppHeaderAction")
+    expect(editor).toContain('data-testid="note-view-toggle"')
+    expect(editor).toContain('aria-label={editorPane === "preview" ? "Switch to editor" : "Switch to preview"}')
+    expect(editor).not.toContain('<TabsTrigger value="editor">')
+    expect(editor).not.toContain('<TabsTrigger value="preview">')
+  })
+
+  it("keeps review, AI Fill, and delete actions on one line", () => {
+    expect(editor).toContain("flex-nowrap")
+    expect(editor).toContain("whitespace-nowrap")
+    expect(editor).toContain(">AI Fill</Button>")
+    expect(editor).toContain(">Delete</Button>")
+  })
+
+  it("uses browser history for note-detail back navigation when available", () => {
+    expect(shell).toContain("noteDetail && window.history.length > 1")
+    expect(shell).toContain("router.back()")
+  })
+
+  it("keeps reference notes available for AI Fill and batch generation", () => {
     expect(editor).toContain("ReferenceNotesBar")
     expect(editor).toContain("ReferenceNotesPicker")
     expect(editor).toContain("referenceValuesForComplete")
     expect(editor).toContain("references")
   })
 
-  it("hides the batch dialog while the 参考笔记 sheet is open", () => {
+  it("hides the batch dialog while the reference-notes sheet is open", () => {
     expect(editor).toContain("batchOpen && !referencePickerOpen")
   })
 })

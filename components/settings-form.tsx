@@ -23,38 +23,10 @@ export type SyncPanelState = {
 }
 
 const SETTINGS_SECTIONS = [
-  {
-    value: "deck",
-    shortLabel: "卡包",
-    label: "卡包管理",
-    eyebrow: "Your library",
-    description: "导入、导出、切换和整理你的学习内容。",
-    icon: FolderCog,
-  },
-  {
-    value: "study",
-    shortLabel: "复习",
-    label: "复习参数",
-    eyebrow: "Study rhythm",
-    description: "调整每日上限、FSRS 参数和学习节奏。",
-    icon: Gauge,
-  },
-  {
-    value: "ai",
-    shortLabel: "AI",
-    label: "AI 设置",
-    eyebrow: "Smart helper",
-    description: "配置生成模型、提示词和智能补全能力。",
-    icon: BrainCircuit,
-  },
-  {
-    value: "sync",
-    shortLabel: "同步",
-    label: "同步与帐号",
-    eyebrow: "Stay in sync",
-    description: "连接 Google 帐号和表格，在设备之间同步卡包。",
-    icon: Table2,
-  },
+  { value: "deck", shortLabel: "Deck", icon: FolderCog },
+  { value: "study", shortLabel: "Study", icon: Gauge },
+  { value: "ai", shortLabel: "AI", icon: BrainCircuit },
+  { value: "sync", shortLabel: "Sync", icon: Table2 },
 ] as const
 
 export type SettingsSection = "deck" | "study" | "ai" | "sync"
@@ -71,28 +43,6 @@ function useDesktopSettingsLayout() {
   }, [])
 
   return desktop
-}
-
-function SectionIntro({ value }: { value: SettingsSection }) {
-  const item = SETTINGS_SECTIONS.find((section) => section.value === value)!
-  const Icon = item.icon
-  return (
-    <div className="mb-5 rounded-[20px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
-      <div className="flex items-start gap-3.5">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted text-foreground">
-          <Icon className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            <span className="size-2 rounded-full bg-energy" />
-            {item.eyebrow}
-          </div>
-          <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.04em] sm:text-[28px]">{item.label}</h2>
-          <p className="mt-1.5 max-w-xl text-sm leading-6 text-muted-foreground">{item.description}</p>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export function SettingsForm({
@@ -148,28 +98,24 @@ export function SettingsForm({
 
       <div className="min-w-0">
         <TabsContent value="deck" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <SectionIntro value="deck" />
           {deckTools ?? (
             <div className="rounded-[20px] border border-black/[0.065] bg-card p-8 text-center text-sm font-medium text-muted-foreground dark:border-white/[0.09]">
-              当前没有可管理的卡包。
+              No deck is available to manage.
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="study" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <SectionIntro value="study" />
           {fsrsSettings && deck && onDeckChange ? (
             <StudySettingsPanel deck={deck} fsrsSettings={fsrsSettings} onDeckChange={onDeckChange} />
           ) : null}
         </TabsContent>
 
         <TabsContent value="ai" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <SectionIntro value="ai" />
           <AiSettingsPanel />
         </TabsContent>
 
         <TabsContent value="sync" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <SectionIntro value="sync" />
           {sync ? (
             <div className="max-w-3xl space-y-3">
               <GoogleAccountPanel onReadyChange={setGoogleReady} />
@@ -201,17 +147,17 @@ export function SettingsForm({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[15px] font-semibold tracking-[-0.02em]">{sync.message}</p>
                         {sync.dirtyCount > 0 ? (
-                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">{sync.dirtyCount} 条本地更改</Badge>
+                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">{sync.dirtyCount} local changes</Badge>
                         ) : sync.unavailable ? (
-                          <Badge className="border border-black/[0.06] bg-muted text-[10px] font-medium text-muted-foreground shadow-none dark:border-white/[0.08]">离线</Badge>
+                          <Badge className="border border-black/[0.06] bg-muted text-[10px] font-medium text-muted-foreground shadow-none dark:border-white/[0.08]">Offline</Badge>
                         ) : (
-                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">已是最新</Badge>
+                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">Up to date</Badge>
                         )}
                       </div>
                       {sync.lastSyncAt ? (
-                        <p className="mt-1 text-xs text-muted-foreground">上次完成：{new Date(sync.lastSyncAt).toLocaleString()}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Last completed: {new Date(sync.lastSyncAt).toLocaleString()}</p>
                       ) : (
-                        <p className="mt-1 text-xs text-muted-foreground">支持离线使用；联网且绑定后自动双向同步</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Works offline and syncs both ways after Google Sheets is connected.</p>
                       )}
                       {sync.unavailable ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{sync.unavailable}</p> : null}
                     </div>
@@ -225,12 +171,12 @@ export function SettingsForm({
                   >
                     <RefreshCw className={sync.syncing ? "mr-1.5 size-3.5 animate-spin" : "mr-1.5 size-3.5"} />
                     {sync.syncing
-                      ? "正在双向同步…"
+                      ? "Syncing…"
                       : googleReady !== true
-                        ? "授权帐号后同步"
+                        ? "Connect Google first"
                         : !sheetConnected
-                          ? "绑定表格后同步"
-                          : "立即同步"}
+                          ? "Connect a sheet first"
+                          : "Sync now"}
                   </Button>
                 </div>
               </div>

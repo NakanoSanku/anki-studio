@@ -46,7 +46,7 @@ export function ReferenceNotesBar({
   return (
     <button
       type="button"
-      aria-label="选择参考笔记"
+      aria-label="Choose reference notes"
       onClick={onOpenPicker}
       className={cn(
         "flex h-8 items-center gap-1.5 rounded-[11px] border px-2.5 text-xs font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98]",
@@ -56,7 +56,7 @@ export function ReferenceNotesBar({
       )}
     >
       <Sparkles className="size-3.5" />
-      <span>参考范例</span>
+      <span>References</span>
       {count > 0 ? (
         <span className="ml-0.5 flex min-w-5 items-center justify-center rounded-[7px] bg-energy px-1.5 font-mono text-[10px] font-semibold leading-5 text-black">
           {count}
@@ -109,14 +109,14 @@ export function ReferenceNotesPicker({
                 <span className="size-2 rounded-full bg-energy" />
                 Style memory
               </div>
-              <SheetTitle className="text-[28px] font-semibold tracking-[-0.045em]">参考范例</SheetTitle>
+              <SheetTitle className="text-[28px] font-semibold tracking-[-0.045em]">Reference notes</SheetTitle>
             </div>
             <Badge className="h-8 border border-black/[0.06] bg-muted px-3 text-xs font-medium text-foreground shadow-none dark:border-white/[0.08]">
               {referenceIds.length} selected
             </Badge>
           </div>
           <SheetDescription className="max-w-md text-xs leading-5">
-            选几张你喜欢的笔记作为 AI 范例，补全与批量生成会参考它们的排版、音标、释义与例句风格。
+            Choose a few strong examples. AI Fill and batch generation will follow their formatting, pronunciation, meaning, and example style without copying the entries.
           </SheetDescription>
           {referenceIds.length > 0 ? (
             <Button
@@ -127,7 +127,7 @@ export function ReferenceNotesPicker({
               onClick={() => onChange([])}
             >
               <RotateCcw className="size-3" />
-              清空选择
+              Clear selection
             </Button>
           ) : null}
         </SheetHeader>
@@ -137,8 +137,8 @@ export function ReferenceNotesPicker({
             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              aria-label="搜索参考笔记"
-              placeholder="搜索笔记…"
+              aria-label="Search reference notes"
+              placeholder="Search notes…"
               className="h-11 bg-background pl-10 pr-4 text-sm"
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -156,9 +156,9 @@ export function ReferenceNotesPicker({
                 <Search className="size-5" />
               </span>
               <p className="text-sm font-semibold tracking-[-0.015em] text-foreground">
-                {query ? `没有匹配「${query}」的笔记` : "卡包中还没有笔记"}
+                {query ? `No notes match “${query}”` : "This deck has no notes yet"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">换个关键词试试，或者先添加几张笔记。</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try another search or add a few notes first.</p>
             </div>
           ) : (
             <div
@@ -207,7 +207,7 @@ export function ReferenceNotesPicker({
             className="h-12 w-full rounded-[15px] text-sm"
             onClick={() => onOpenChange(false)}
           >
-            完成 · {referenceIds.length} 张已选
+            Done · {referenceIds.length} selected
           </Button>
         </SheetFooter>
       </SheetContent>

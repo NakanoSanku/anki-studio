@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   DECK_TEMPLATES_LABEL,
   PATHS,
+  PRIMARY_NAV,
   SETTINGS_ROWS,
   SETTINGS_STUDY_LABEL,
   homeTabRedirect,
@@ -44,7 +45,7 @@ describe("homeTabRedirect", () => {
 })
 
 describe("resolveLegacyPathname", () => {
-  it("sends /templates and /settings/templates to the nested 模板 page", () => {
+  it("sends legacy template paths to the nested Templates page", () => {
     expect(resolveLegacyPathname("/templates")).toBe("/settings/deck/templates")
     expect(resolveLegacyPathname("/templates/")).toBe("/settings/deck/templates")
     expect(resolveLegacyPathname("/settings/templates")).toBe("/settings/deck/templates")
@@ -68,7 +69,7 @@ describe("note paths", () => {
 })
 
 describe("tabBarVisible", () => {
-  it("hides on 会话 and 笔记 editor only", () => {
+  it("hides on a study session and note editor only", () => {
     expect(tabBarVisible("/")).toBe(true)
     expect(tabBarVisible("/notes")).toBe(true)
     expect(tabBarVisible("/settings")).toBe(true)
@@ -80,7 +81,7 @@ describe("tabBarVisible", () => {
 })
 
 describe("primaryNavActive", () => {
-  it("keeps 学习 active during a 会话", () => {
+  it("keeps Study active during a session", () => {
     expect(primaryNavActive("/study", PATHS.home)).toBe(true)
     expect(primaryNavActive("/notes/abc", PATHS.notes)).toBe(true)
     expect(primaryNavActive("/settings/ai", PATHS.settings)).toBe(true)
@@ -89,12 +90,11 @@ describe("primaryNavActive", () => {
   })
 })
 
-describe("settings destinations", () => {
-  it("lists 卡包 / 复习参数 / AI / 同步 and not 模板", () => {
-    expect(SETTINGS_ROWS.map((row) => row.label)).toEqual(["卡包", SETTINGS_STUDY_LABEL, "AI", "同步"])
-    expect(PATHS.settingsStudy).toBe("/settings/study")
-    expect(PATHS.settingsTemplates).toBe("/settings/deck/templates")
-    expect(PATHS.settingsTemplatesLegacy).toBe("/settings/templates")
-    expect(DECK_TEMPLATES_LABEL).toBe("模板")
+describe("English navigation labels", () => {
+  it("uses one language across primary and settings navigation", () => {
+    expect(PRIMARY_NAV.map((row) => row.label)).toEqual(["Study", "Notes", "Settings"])
+    expect(SETTINGS_ROWS.map((row) => row.label)).toEqual(["Deck", SETTINGS_STUDY_LABEL, "AI", "Sync"])
+    expect(SETTINGS_STUDY_LABEL).toBe("Study")
+    expect(DECK_TEMPLATES_LABEL).toBe("Templates")
   })
 })
