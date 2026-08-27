@@ -40,7 +40,7 @@ export function CardPreview({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-3 rounded-[2rem] bg-[#dff1ff] p-3 shadow-[0_22px_60px_-42px_rgba(0,0,0,0.7)] dark:bg-[#1e3b55] sm:p-4",
+        "flex min-h-0 min-w-0 flex-col gap-3 rounded-[22px] border border-black/[0.065] bg-card p-3 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-4",
         fillViewport &&
           "h-[max(20rem,calc(100dvh-19.5rem))] lg:h-[max(28rem,calc(100dvh-16.5rem))]",
         className
@@ -48,11 +48,14 @@ export function CardPreview({
     >
       <div className="flex items-center justify-between gap-3 px-1">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40 dark:text-white/45">live preview</p>
-          <p className="mt-0.5 truncate text-base font-black tracking-[-0.035em] text-foreground">{template.name}</p>
+          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-energy" />
+            Live preview
+          </p>
+          <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.025em] text-foreground">{template.name}</p>
         </div>
         <div
-          className="flex shrink-0 rounded-full bg-white/60 p-1 shadow-[0_8px_24px_-20px_rgba(0,0,0,0.65)] dark:bg-black/15"
+          className="flex shrink-0 rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]"
           role="group"
           aria-label="预览卡面"
         >
@@ -61,10 +64,10 @@ export function CardPreview({
             size="sm"
             variant="ghost"
             className={cn(
-              "h-8 rounded-full px-3 text-xs font-black",
+              "h-8 rounded-[9px] px-3 text-xs font-medium",
               side === "front"
-                ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
-                : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
+                ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"
+                : "text-foreground/55 hover:bg-card/70 hover:text-foreground"
             )}
             aria-pressed={side === "front"}
             onClick={() => onSideChange("front")}
@@ -76,10 +79,10 @@ export function CardPreview({
             size="sm"
             variant="ghost"
             className={cn(
-              "h-8 rounded-full px-3 text-xs font-black",
+              "h-8 rounded-[9px] px-3 text-xs font-medium",
               side === "back"
-                ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
-                : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
+                ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"
+                : "text-foreground/55 hover:bg-card/70 hover:text-foreground"
             )}
             aria-pressed={side === "back"}
             onClick={() => onSideChange("back")}
@@ -91,11 +94,11 @@ export function CardPreview({
 
       <div
         className={cn(
-          "relative overflow-hidden rounded-[1.7rem] bg-white shadow-[0_24px_56px_-38px_rgba(0,0,0,0.78)] ring-1 ring-black/[0.04]",
+          "relative overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_22px_52px_-42px_rgba(0,0,0,0.5)] dark:border-white/[0.09]",
           fillViewport ? "min-h-0 flex-1" : "h-[300px] lg:h-[440px]"
         )}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1.5 bg-gradient-to-r from-[#c8f889] via-[#ff9bd6] to-[#ffe08d]" aria-hidden="true" />
+        <div className="pointer-events-none absolute left-4 top-4 z-10 size-2 rounded-full bg-energy shadow-[0_0_0_5px_rgba(199,248,90,0.14)]" aria-hidden="true" />
         <iframe
           title="卡片预览"
           sandbox=""
@@ -108,7 +111,7 @@ export function CardPreview({
 
       {playable.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5">
-          <span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-black/40 dark:text-white/45">audio</span>
+          <span className="mr-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Audio</span>
           {playable.map((name) => {
             const tts = configs[name]
             if (!tts) return null
