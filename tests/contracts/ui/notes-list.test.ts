@@ -32,15 +32,16 @@ describe("notes mobile chrome", () => {
     expect(editor).not.toContain('<TabsTrigger value="preview">')
   })
 
-  it("keeps review, AI Fill, and delete actions on one line", () => {
-    expect(editor).toContain("flex-nowrap")
+  it("keeps review, AI Fill, and delete actions on one compact title-row rail", () => {
+    expect(editor).toContain('data-testid="note-action-rail"')
+    expect(editor).toContain('className="flex shrink-0 items-center gap-1"')
     expect(editor).toContain("whitespace-nowrap")
     expect(editor).toContain('aria-label="AI Fill"')
     expect(editor).toContain(">Delete</Button>")
   })
 
   it("uses a deterministic note return path instead of relying on browser history", () => {
-    expect(shell).toContain("const noteReturnPathRef = useRef(PATHS.notes)")
+    expect(shell).toContain("const noteReturnPathRef = useRef<typeof PATHS.home | typeof PATHS.notes>(PATHS.notes)")
     expect(shell).toContain("previous === PATHS.home || previous === PATHS.notes")
     expect(shell).toContain("router.replace(noteReturnPathRef.current)")
     expect(shell).not.toContain("window.history.length > 1")
