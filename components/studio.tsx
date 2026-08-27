@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import dynamic from "next/dynamic"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { withAnkiIdentity } from "@/lib/anki-sync"
-import { exportApkg, importDeckFile } from "@/lib/apkg"
 import { PATHS, noteIdFromPath, notePath } from "@/lib/app-paths"
 import { studyPairTransitionTypes } from "@/lib/study-transition"
 import { deckToCsv } from "@/lib/csv"
@@ -28,7 +28,6 @@ import {
   type ImportMode,
   type ImportPreview,
 } from "@/lib/import-preview"
-import { listTtsJobs } from "@/lib/tts"
 import {
   createCard,
   createDefaultDeck,
@@ -40,23 +39,77 @@ import {
 import { shouldDiscardNoteOnLeave, withoutDiscardedNote } from "@/lib/empty-note"
 import { readEditorState } from "@/lib/editor-state"
 import { expireStatus, replaceTimer } from "@/lib/transient-status"
-import { dirtyCount, runSyncCycle } from "@/lib/sync-client"
 import { getStudyQueue } from "@/lib/fsrs"
-import { createHttpTransport } from "@/lib/sync-transport"
 import { createIdbStore } from "@/lib/studio-store-idb"
 import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 import { AppShell } from "@/components/app-shell"
-import { CardEditor } from "@/components/card-editor"
 import { DeckSwitcher } from "@/components/deck-switcher"
-import { DeckToolsPanel } from "@/components/deck-tools-panel"
-import { ImportPreviewDialog } from "@/components/import-preview-dialog"
-import { SettingsForm } from "@/components/settings-form"
-import { SettingsOverview } from "@/components/settings-overview"
-import { SyncConflictDialog } from "@/components/sync-conflict-dialog"
 import { StudyOverview } from "@/components/study-overview"
-import { StudySession } from "@/components/study-session"
-import { TemplateEditor } from "@/components/template-editor"
+
+function RouteFallback() {
+  return (
+    <div className="mx-auto w-full max-w-7xl space-y-3 py-2" aria-hidden="true">
+      <div className="h-24 animate-pulse rounded-[2rem] bg-muted/70" />
+      <div className="h-52 animate-pulse rounded-[2rem] bg-muted/45" />
+    </div>
+  )
+}
+
+const CardEditor = dynamic(
+  () => import("@/components/card-editor").then((mod) => mod.CardEditor),
+  { loading: RouteFallback }
+)
+const DeckToolsPanel = dynamic(
+  () => import("@/components/deck-tools-panel").then((mod) => mod.DeckToolsPanel),
+  { loading: RouteFallback }
+)
+const ImportPreviewDialog = dynamic(
+  () => import("@/components/import-preview-dialog").then((mod) => mod.ImportPreviewDialog)
+)
+const SettingsForm = dynamic(
+  () => import("@/components/settings-form").then((mod) => mod.SettingsForm),
+  { loading: RouteFallback }
+)
+const SettingsOverview = dynamic(
+  () => import("@/components/settings-overview").then((mod) => mod.SettingsOverview),
+  { loading: RouteFallback }
+)
+const SyncConflictDialog = dynamic(
+  () => import("@/components/sync-conflict-dialog").then((mod) => mod.SyncConflictDialog)
+)
+const StudySession = dynamic(
+  () => import("@/components/study-session").then((mod) => mod.StudySession),
+  { loading: () => <div className="h-[100dvh] bg-background" /> }
+)
+const TemplateEditor = dynamic(
+  () => import("@/components/template-editor").then((mod) => mod.TemplateEditor),
+  { loading: RouteFallback }
+)
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+  cancelIdleCallback?: (handle: number) => void
+}
+
+function scheduleIdle(callback: () => void, timeout = 900): () => void {
+  const idleWindow = window as IdleWindow
+  if (idleWindow.requestIdleCallback) {
+    const handle = idleWindow.requestIdleCallback(callback, { timeout })
+    return () => idleWindow.cancelIdleCallback?.(handle)
+  }
+  const handle = window.setTimeout(callback, 0)
+  return () => window.clearTimeout(handle)
+}
+
+async function readDirtyCount(): Promise<number> {
+  const records = await getStudioStore().listRecords()
+  let count = 0
+  for (const record of records) {
+    if (record.dirty) count += 1
+  }
+  return count
+}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -80,6 +133,7 @@ export function Studio() {
     decks: [],
   })
   const [deck, setDeck] = useState<Deck>(createDefaultDeck)
+  const deferredDeck = useDeferredValue(deck)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [selectedId, setSelectedId] = useState("")
   const [previewSide, setPreviewSide] = useState<"front" | "back">("front")
@@ -132,7 +186,10 @@ export function Studio() {
     }))
   }, [createdInSession, editorNoteId])
 
-  const previewCard = deck.cards.find((card) => card.id === (editorNoteId ?? selectedId)) ?? deck.cards[0]
+  const previewCard = useMemo(() => {
+    if (activePath !== PATHS.settingsTemplates) return undefined
+    return deck.cards.find((card) => card.id === (editorNoteId ?? selectedId)) ?? deck.cards[0]
+  }, [activePath, deck.cards, editorNoteId, selectedId])
 
   useEffect(() => () => window.clearTimeout(statusTimer.current), [])
 
@@ -159,7 +216,7 @@ export function Studio() {
     const nextLibrary = await readLibrary()
     const record = await getStudioStore().getRecord(nextLibrary.activeId)
     setLibrary(nextLibrary)
-    setDirty(await dirtyCount(getStudioStore()))
+    setDirty(await readDirtyCount())
     if (!record || record.deletedAt) return
     setDeck(record.deck)
     setSelectedId(readEditorState(nextLibrary.activeId, record.deck).selectedId)
@@ -172,6 +229,10 @@ export function Studio() {
     try {
       await persistActiveDeck(libraryRef.current, deckRef.current)
       const store = getStudioStore()
+      const [{ runSyncCycle }, { createHttpTransport }] = await Promise.all([
+        import("@/lib/sync-client"),
+        import("@/lib/sync-transport"),
+      ])
       const summary = await runSyncCycle({
         store,
         transport: createHttpTransport(),
@@ -218,18 +279,23 @@ export function Studio() {
 
   useEffect(() => {
     let cancelled = false
+    let cancelStartupSync = () => undefined
     void (async () => {
       setStudioStore(typeof indexedDB === "undefined" ? createMemoryStore() : createIdbStore())
       const session = await loadLibrarySession()
       if (cancelled) return
+      libraryRef.current = session.library
+      deckRef.current = session.deck
       setLibrary(session.library)
       setDeck(session.deck)
+      setDirty(session.library.decks.filter((entry) => entry.dirty).length)
       setSelectedId(readEditorState(session.library.activeId, session.deck).selectedId)
       setReady(true)
-      void runSync("auto")
+      cancelStartupSync = scheduleIdle(() => void runSync("auto"), 1400)
     })()
     return () => {
       cancelled = true
+      cancelStartupSync()
     }
     // Initial load only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,14 +303,21 @@ export function Studio() {
 
   useEffect(() => {
     if (!ready) return
+    let cancelIdle = () => undefined
     const timer = window.setTimeout(() => {
-      void persistActiveDeck(library, deck).then(async () => {
-        setDirty(await dirtyCount(getStudioStore()))
-      }).catch((error: unknown) => {
-        showStatus(error instanceof Error ? error.message : "本机保存失败")
-      })
-    }, 400)
-    return () => window.clearTimeout(timer)
+      cancelIdle = scheduleIdle(() => {
+        void persistActiveDeck(library, deck)
+          .then(() => readDirtyCount())
+          .then(setDirty)
+          .catch((error: unknown) => {
+            showStatus(error instanceof Error ? error.message : "本机保存失败")
+          })
+      }, 900)
+    }, 450)
+    return () => {
+      window.clearTimeout(timer)
+      cancelIdle()
+    }
   }, [deck, library, ready])
 
   useEffect(() => {
@@ -299,6 +372,7 @@ export function Studio() {
         setImportMode(defaultImportMode(preview.kind))
         return
       }
+      const { importDeckFile } = await import("@/lib/apkg")
       const imported = await importDeckFile(file, deck)
       applySession(
         await addLibraryDeck(library, deck, imported.deck),
@@ -372,6 +446,10 @@ export function Studio() {
 
     void (async () => {
       try {
+        const [{ exportApkg }, { listTtsJobs }] = await Promise.all([
+          import("@/lib/apkg"),
+          import("@/lib/tts"),
+        ])
         const jobs = await listTtsJobs(snapshot)
         if (jobs.length > 0) {
           const minutes = Math.max(1, Math.ceil((jobs.length * 1.5) / 60))
@@ -398,16 +476,16 @@ export function Studio() {
     })()
   }
 
-  const libraryView: Library = {
+  const libraryView = useMemo<Library>(() => ({
     ...library,
     decks: library.decks.map((entry) =>
       entry.id === library.activeId
         ? { ...entry, name: deck.name.trim() || entry.name, cardCount: deck.cards.length }
         : entry
     ),
-  }
+  }), [deck.cards.length, deck.name, library])
 
-  const studyQueueCount = getStudyQueue(deck).length
+  const studyQueueCount = useMemo(() => getStudyQueue(deferredDeck).length, [deferredDeck])
   const isNotesRoute =
     activePath === PATHS.notes || pathname === PATHS.notes || Boolean(editorNoteId) || Boolean(pathNoteId)
   const settingsSection =
@@ -420,6 +498,10 @@ export function Studio() {
           : activePath === PATHS.settingsSync
             ? "sync"
             : null
+  const hasTts = useMemo(
+    () => settingsSection === "deck" && Object.keys(ttsOf(deck)).length > 0,
+    [deck, settingsSection]
+  )
 
   const addNote = () => {
     const card = createCard(deck.fields)
@@ -494,7 +576,7 @@ export function Studio() {
     })
   }
 
-  const deckTools = (
+  const deckTools = settingsSection === "deck" ? (
     <DeckToolsPanel
       deckName={deck.name.trim() || "未命名卡包"}
       cardCount={deck.cards.length}
@@ -502,7 +584,7 @@ export function Studio() {
       busy={busy}
       exporting={exporting}
       exportProgress={exportProgress}
-      hasTts={Object.keys(ttsOf(deck)).length > 0}
+      hasTts={hasTts}
       onImport={() => fileRef.current?.click()}
       onExportJson={onExportJson}
       onExportCsv={onExportCsv}
@@ -510,7 +592,7 @@ export function Studio() {
       onCancelExport={cancelExport}
       onSwitchDeck={() => setSwitcherOpen(true)}
     />
-  )
+  ) : undefined
 
   return (
     <>
@@ -604,7 +686,7 @@ export function Studio() {
           <div className="mx-auto w-full max-w-7xl pb-28 sm:pb-12">
             <SettingsForm
               section={settingsSection}
-              deckTools={settingsSection === "deck" ? deckTools : undefined}
+              deckTools={deckTools}
               deck={deck}
               onDeckChange={setDeck}
               sync={{
@@ -631,23 +713,27 @@ export function Studio() {
         onDelete={removeDeck}
         onRename={renameDeck}
       />
-      <ImportPreviewDialog
-        preview={importPreview}
-        current={deck}
-        mode={importMode}
-        busy={busy}
-        onModeChange={setImportMode}
-        onCancel={() => setImportPreview(null)}
-        onConfirm={handleImportConfirm}
-      />
-      <SyncConflictDialog
-        conflict={conflict}
-        onChoose={(choice) => {
-          setConflict(null)
-          conflictWaiter.current?.(choice)
-          conflictWaiter.current = null
-        }}
-      />
+      {importPreview ? (
+        <ImportPreviewDialog
+          preview={importPreview}
+          current={deck}
+          mode={importMode}
+          busy={busy}
+          onModeChange={setImportMode}
+          onCancel={() => setImportPreview(null)}
+          onConfirm={handleImportConfirm}
+        />
+      ) : null}
+      {conflict ? (
+        <SyncConflictDialog
+          conflict={conflict}
+          onChoose={(choice) => {
+            setConflict(null)
+            conflictWaiter.current?.(choice)
+            conflictWaiter.current = null
+          }}
+        />
+      ) : null}
     </>
   )
 }
