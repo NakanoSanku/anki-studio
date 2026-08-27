@@ -51,7 +51,11 @@ export function CardPreview({
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-black/40 dark:text-white/45">live preview</p>
           <p className="mt-0.5 truncate text-base font-black tracking-[-0.035em] text-foreground">{template.name}</p>
         </div>
-        <div className="flex shrink-0 rounded-full bg-white/60 p-1 shadow-[0_8px_24px_-20px_rgba(0,0,0,0.65)] dark:bg-black/15">
+        <div
+          className="flex shrink-0 rounded-full bg-white/60 p-1 shadow-[0_8px_24px_-20px_rgba(0,0,0,0.65)] dark:bg-black/15"
+          role="group"
+          aria-label="预览卡面"
+        >
           <Button
             type="button"
             size="sm"
@@ -62,6 +66,7 @@ export function CardPreview({
                 ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
                 : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
             )}
+            aria-pressed={side === "front"}
             onClick={() => onSideChange("front")}
           >
             正面
@@ -76,6 +81,7 @@ export function CardPreview({
                 ? "bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
                 : "text-foreground/60 hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/10"
             )}
+            aria-pressed={side === "back"}
             onClick={() => onSideChange("back")}
           >
             背面
@@ -93,6 +99,8 @@ export function CardPreview({
         <iframe
           title="卡片预览"
           sandbox=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
           srcDoc={doc}
           className="h-full w-full border-0 bg-white"
         />
