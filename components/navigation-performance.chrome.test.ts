@@ -18,9 +18,13 @@ describe("primary navigation performance", () => {
   })
 
   it("warms primary route payloads and split chunks before click", () => {
-    expect(preloader).toContain("router.prefetch(PATHS.notes)")
-    expect(preloader).toContain("router.prefetch(PATHS.settings)")
-    expect(preloader).toContain("router.prefetch(PATHS.studySession)")
+    expect(preloader).toContain(
+      "const primaryRoutes = [PATHS.home, PATHS.notes, PATHS.settings, PATHS.studySession]"
+    )
+    expect(preloader).toContain("for (const route of primaryRoutes) router.prefetch(route)")
+    expect(preloader).toContain("warmWithoutWaiting(warmRoute(PATHS.notes))")
+    expect(preloader).toContain("warmWithoutWaiting(warmRoute(PATHS.settings))")
+    expect(preloader).toContain("warmWithoutWaiting(warmRoute(PATHS.studySession))")
     expect(preloader).toContain('import("@/components/card-editor")')
     expect(preloader).toContain('import("@/components/settings-overview")')
     expect(preloader).toContain('import("@/components/study-session")')
