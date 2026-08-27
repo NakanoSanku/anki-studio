@@ -150,7 +150,7 @@ export function AppShell({
   const [headerAction, setHeaderAction] = useState<ReactNode>(null)
   const showBottomNavigation = showTabBar && !softKeyboardActive
   const previousPathRef = useRef(pathname)
-  const noteReturnPathRef = useRef(PATHS.notes)
+  const noteReturnPathRef = useRef<typeof PATHS.home | typeof PATHS.notes>(PATHS.notes)
 
   useEffect(() => {
     if (noteDetail) {
