@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
+import { productSyncMessage } from "@/lib/product-copy"
 import { BrainCircuit, Cloud, CloudOff, FolderCog, Gauge, RefreshCw, Table2 } from "lucide-react"
 
 import { fsrsOf, type Deck } from "@/lib/deck"
@@ -65,6 +66,7 @@ export function SettingsForm({
   const desktopLayout = useDesktopSettingsLayout()
   const fsrsSettings = deck ? fsrsOf(deck) : null
   const defaultSection: SettingsSection = section ?? (deckTools ? "deck" : fsrsSettings ? "study" : "ai")
+  const shownSyncMessage = sync ? productSyncMessage(sync.message) : ""
 
   return (
     <Tabs
@@ -145,7 +147,7 @@ export function SettingsForm({
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-[15px] font-semibold tracking-[-0.02em]">{sync.message}</p>
+                        <p className="text-[15px] font-semibold tracking-[-0.02em]">{shownSyncMessage}</p>
                         {sync.dirtyCount > 0 ? (
                           <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">{sync.dirtyCount} local changes</Badge>
                         ) : sync.unavailable ? (

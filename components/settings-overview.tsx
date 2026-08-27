@@ -8,6 +8,7 @@ import { PATHS, SETTINGS_ROWS } from "@/lib/app-paths"
 import { fsrsOf, type Deck } from "@/lib/deck"
 import { readAiSettings } from "@/lib/ai-settings"
 import { readGoogleSheetConnection } from "@/lib/google-sheet-connection"
+import { productSyncMessage } from "@/lib/product-copy"
 
 type SettingsOverviewProps = { deck?: Deck; syncMessage?: string }
 
@@ -42,8 +43,9 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
     const sheet = readGoogleSheetConnection()
     if (sheet) return { value: sheet.name, subtitle: "Google Sheets connected" }
     if (googleUser?.email) return { value: "Signed in", subtitle: "Choose a sheet to enable cross-device sync" }
-    if (syncMessage && syncMessage !== "Not synced yet") {
-      return { value: syncMessage, subtitle: "Google Sheets data sync" }
+    const message = productSyncMessage(syncMessage)
+    if (message !== "Not synced yet") {
+      return { value: message, subtitle: "Google Sheets data sync" }
     }
     return { value: "Not connected", subtitle: "Google Sheets data sync" }
   }, [googleUser, syncMessage])

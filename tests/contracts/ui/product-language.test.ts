@@ -4,6 +4,7 @@ import { readSource } from "../helpers/source"
 
 const appShell = readSource("components", "app-shell.tsx")
 const settingsForm = readSource("components", "settings-form.tsx")
+const settingsOverview = readSource("components", "settings-overview.tsx")
 const overview = readSource("components", "study-overview.tsx")
 const templateEditor = readSource("components", "template-editor.tsx")
 const codeEditor = readSource("components", "code-editor.tsx")
@@ -19,6 +20,7 @@ const notFound = readSource("app", "not-found.tsx")
 const errorPage = readSource("app", "error.tsx")
 const authError = readSource("app", "auth", "error", "page.tsx")
 const aiSettings = readSource("lib", "ai-settings.ts")
+const productCopy = readSource("lib", "product-copy.ts")
 
 describe("mobile hierarchy and language", () => {
   it("does not repeat settings page titles inside redundant intro cards", () => {
@@ -48,6 +50,14 @@ describe("mobile hierarchy and language", () => {
     expect(templateEditor).not.toContain("代码编辑")
     expect(promptEditor).not.toContain("插入变量")
     expect(googleSheets).not.toContain("选择 Google Sheet")
+  })
+
+  it("normalizes legacy sync status before rendering it in settings", () => {
+    expect(productCopy).toContain('"尚未同步": "Not synced yet"')
+    expect(settingsForm).toContain("productSyncMessage(sync.message)")
+    expect(settingsForm).toContain("{shownSyncMessage}")
+    expect(settingsForm).not.toContain("{sync.message}")
+    expect(settingsOverview).toContain("productSyncMessage(syncMessage)")
   })
 
   it("uses English copy in the PWA shell and fallback screens", () => {
