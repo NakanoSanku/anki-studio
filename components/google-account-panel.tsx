@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { signIn, signOut } from "next-auth/react"
-import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, Sparkles, UserRound } from "lucide-react"
+import { Check, KeyRound, LoaderCircle, LogOut, ShieldAlert, UserRound } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,11 +32,7 @@ function GoogleMark({ className = "size-4" }: { className?: string }) {
   )
 }
 
-export function GoogleAccountPanel({
-  onReadyChange,
-}: {
-  onReadyChange?: (ready: boolean | undefined) => void
-}) {
+export function GoogleAccountPanel({ onReadyChange }: { onReadyChange?: (ready: boolean | undefined) => void }) {
   const [account, setAccount] = useState<AccountState>({ phase: "loading" })
   const [busy, setBusy] = useState(false)
   const onReadyChangeRef = useRef(onReadyChange)
@@ -47,7 +43,6 @@ export function GoogleAccountPanel({
 
   useEffect(() => {
     let cancelled = false
-
     const refresh = async () => {
       try {
         const response = await fetch("/api/auth/account", { cache: "no-store" })
@@ -59,22 +54,12 @@ export function GoogleAccountPanel({
           issue?: string
           user?: { name?: string | null; email?: string | null; image?: string | null }
         } | null
-
         if (cancelled) return
-
         if (data?.authenticated && data.user?.email) {
           onReadyChangeRef.current?.(data.sheetsAuthorized === true)
-          setAccount({
-            phase: "signed-in",
-            name: data.user.name ?? null,
-            email: data.user.email,
-            image: data.user.image ?? null,
-            sheetsAuthorized: data.sheetsAuthorized === true,
-            driveAuthorized: data.driveAuthorized === true,
-          })
+          setAccount({ phase: "signed-in", name: data.user.name ?? null, email: data.user.email, image: data.user.image ?? null, sheetsAuthorized: data.sheetsAuthorized === true, driveAuthorized: data.driveAuthorized === true })
           return
         }
-
         if (data && !data.configured) {
           onReadyChangeRef.current?.(undefined)
           setAccount({ phase: "unconfigured", issue: data.issue ?? "Google OAuth 尚未配置" })
@@ -88,16 +73,10 @@ export function GoogleAccountPanel({
         setAccount({ phase: "error", issue: "无法读取 Google 帐号状态" })
       }
     }
-
     void refresh()
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void refresh()
-    }
+    const onVisibility = () => { if (document.visibilityState === "visible") void refresh() }
     document.addEventListener("visibilitychange", onVisibility)
-    return () => {
-      cancelled = true
-      document.removeEventListener("visibilitychange", onVisibility)
-    }
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisibility) }
   }, [])
 
   const connect = async () => {
@@ -125,137 +104,46 @@ export function GoogleAccountPanel({
   }
 
   if (account.phase === "loading") {
-    return (
-      <div className="flex min-h-28 items-center justify-center rounded-[2rem] bg-[#dff1ff] p-5 text-sm font-bold text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]">
-        <LoaderCircle className="mr-2.5 size-4 animate-spin" />
-        正在读取 Google 帐号…
-      </div>
-    )
+    return <div className="flex min-h-28 items-center justify-center rounded-[20px] border border-black/[0.065] bg-card p-5 text-sm font-medium text-muted-foreground dark:border-white/[0.09]"><LoaderCircle className="mr-2.5 size-4 animate-spin" />正在读取 Google 帐号…</div>
   }
 
   if (account.phase === "unconfigured" || account.phase === "error") {
     return (
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#ffe39a] p-5 text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]">
-        <div className="pointer-events-none absolute -right-9 -top-9 size-28 rounded-[44%_56%_59%_41%/52%_45%_55%_48%] bg-[#ffc7b8] opacity-80 dark:bg-[#64362d]" aria-hidden="true" />
-        <div className="relative z-10 flex items-start gap-3.5">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-[1.15rem] bg-white/55 dark:bg-black/15">
-            <ShieldAlert className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-45">google account</p>
-            <h3 className="mt-1 text-lg font-black tracking-[-0.04em]">
-              {account.phase === "unconfigured" ? "OAuth 尚未配置" : "登录遇到问题"}
-            </h3>
-            <p className="mt-1.5 text-xs font-semibold leading-5 opacity-60">{account.issue}</p>
-          </div>
+      <div className="rounded-[20px] border border-black/[0.065] bg-card p-5 dark:border-white/[0.09]">
+        <div className="flex items-start gap-3.5">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted text-foreground"><ShieldAlert className="size-5" /></span>
+          <div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Google account</p><h3 className="mt-1 text-lg font-semibold tracking-[-0.03em]">{account.phase === "unconfigured" ? "OAuth 尚未配置" : "登录遇到问题"}</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">{account.issue}</p></div>
         </div>
-        {account.phase === "error" ? (
-          <Button
-            type="button"
-            className="mt-4 h-11 w-full bg-black text-xs font-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
-            disabled={busy}
-            onClick={() => void connect()}
-          >
-            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <GoogleMark />}
-            重新尝试 Google 登录
-          </Button>
-        ) : null}
+        {account.phase === "error" ? <Button type="button" className="mt-4 h-11 w-full text-xs" disabled={busy} onClick={() => void connect()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <GoogleMark />}重新尝试 Google 登录</Button> : null}
       </div>
     )
   }
 
   if (account.phase === "signed-in") {
     return (
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#d8f4aa] p-4 text-[#315f18] shadow-[0_20px_56px_-44px_rgba(0,0,0,0.7)] dark:bg-[#385528] dark:text-[#e4f8c5] sm:p-5">
-        <div className="pointer-events-none absolute -right-10 -bottom-12 size-32 rounded-[55%_45%_48%_52%/46%_56%_44%_54%] bg-[#9dceff] opacity-75 dark:bg-[#244d74]" aria-hidden="true" />
-        <div className="relative z-10 flex items-center gap-3.5">
+      <div className="rounded-[20px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
+        <div className="flex items-center gap-3.5">
           <div className="relative shrink-0">
             {account.image ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={account.image}
-                alt={account.name || "Google 头像"}
-                className="size-14 rounded-[1.3rem] border-4 border-white/65 object-cover shadow-sm dark:border-black/15"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <span className="flex size-14 items-center justify-center rounded-[1.3rem] bg-white/55 dark:bg-black/15">
-                <UserRound className="size-6" />
-              </span>
-            )}
-            <span className="absolute -bottom-1 -right-1 flex size-6 items-center justify-center rounded-full bg-black text-white ring-3 ring-[#d8f4aa] dark:bg-white dark:text-black dark:ring-[#385528]">
-              <Check className="size-3" />
-            </span>
+              <img src={account.image} alt={account.name || "Google 头像"} className="size-13 rounded-[14px] object-cover" referrerPolicy="no-referrer" />
+            ) : <span className="flex size-13 items-center justify-center rounded-[14px] bg-muted"><UserRound className="size-6" /></span>}
+            <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-energy text-black ring-3 ring-card"><Check className="size-2.5" /></span>
           </div>
-
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-45">connected</p>
-            <h3 className="mt-0.5 truncate text-xl font-black tracking-[-0.045em]">{account.name || "Google 帐号"}</h3>
-            <p className="mt-0.5 truncate text-xs font-semibold opacity-55">{account.email}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <Badge className="border-0 bg-white/55 px-2.5 py-1 text-[9px] font-black text-current shadow-none dark:bg-black/15">
-                {account.sheetsAuthorized ? <Check className="mr-1 size-2.5" /> : <KeyRound className="mr-1 size-2.5" />}
-                Sheets {account.sheetsAuthorized ? "已授权" : "待授权"}
-              </Badge>
-              <Badge className="border-0 bg-white/55 px-2.5 py-1 text-[9px] font-black text-current shadow-none dark:bg-black/15">
-                Drive {account.driveAuthorized ? "已授权" : "待授权"}
-              </Badge>
-            </div>
-          </div>
+          <div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Connected</p><h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em]">{account.name || "Google 帐号"}</h3><p className="mt-0.5 truncate text-xs text-muted-foreground">{account.email}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge className="border border-black/[0.06] bg-muted/55 px-2.5 py-1 text-[9px] font-medium text-foreground shadow-none dark:border-white/[0.08]">{account.sheetsAuthorized ? <Check className="mr-1 size-2.5" /> : <KeyRound className="mr-1 size-2.5" />}Sheets {account.sheetsAuthorized ? "已授权" : "待授权"}</Badge><Badge className="border border-black/[0.06] bg-muted/55 px-2.5 py-1 text-[9px] font-medium text-foreground shadow-none dark:border-white/[0.08]">Drive {account.driveAuthorized ? "已授权" : "待授权"}</Badge></div></div>
         </div>
-
-        <div className="relative z-10 mt-4 grid grid-cols-2 gap-2">
-          {!account.sheetsAuthorized ? (
-            <Button
-              type="button"
-              className="h-11 bg-black text-xs font-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
-              disabled={busy}
-              onClick={() => void connect()}
-            >
-              {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
-              重新授权
-            </Button>
-          ) : (
-            <div className="flex h-11 items-center justify-center rounded-full bg-white/45 text-xs font-black dark:bg-black/15">
-              <Sparkles className="mr-1.5 size-3.5" />可以同步
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 bg-white/45 text-xs font-black text-current hover:bg-white/70 hover:text-current dark:bg-black/15 dark:hover:bg-black/25"
-            disabled={busy}
-            onClick={() => void disconnect()}
-          >
-            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <LogOut className="size-3.5" />}
-            退出帐号
-          </Button>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {!account.sheetsAuthorized ? <Button type="button" className="h-11 text-xs" disabled={busy} onClick={() => void connect()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}重新授权</Button> : <div className="flex h-11 items-center justify-center rounded-[14px] border border-energy/30 bg-energy/12 text-xs font-medium"><span className="mr-2 size-2 rounded-full bg-energy" />可以同步</div>}
+          <Button type="button" variant="outline" className="h-11 text-xs" disabled={busy} onClick={() => void disconnect()}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <LogOut className="size-3.5" />}退出帐号</Button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] bg-[#dff1ff] p-5 text-[#174f85] shadow-[0_20px_56px_-44px_rgba(0,0,0,0.7)] dark:bg-[#244d74] dark:text-[#dceeff]">
-      <div className="pointer-events-none absolute -right-8 -top-10 flex size-32 items-end justify-start rounded-[44%_56%_58%_42%/57%_43%_57%_43%] bg-[#ffe39a] p-7 dark:bg-[#68551f]" aria-hidden="true">
-        <GoogleMark className="size-7" />
-      </div>
-      <div className="relative z-10 max-w-[72%]">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-45">cloud account</p>
-        <h3 className="mt-2 text-2xl font-black tracking-[-0.055em]">连接 Google</h3>
-        <p className="mt-2 text-xs font-semibold leading-5 opacity-55">
-          用你自己的 Google Drive 和 Sheets 保存卡包、模板和学习历史。
-        </p>
-      </div>
-      <Button
-        type="button"
-        className="relative z-10 mt-5 h-12 w-full bg-black text-xs font-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
-        disabled={busy}
-        onClick={() => void connect()}
-      >
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}
-        使用 Google 登录
-      </Button>
+    <div className="rounded-[20px] border border-black/[0.065] bg-card p-5 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">
+      <div className="flex items-start gap-3.5"><span className="flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted"><GoogleMark className="size-5" /></span><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Cloud account</p><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">连接 Google</h3><p className="mt-1.5 text-xs leading-5 text-muted-foreground">用你自己的 Google Drive 和 Sheets 保存卡包、模板和学习历史。</p></div></div>
+      <Button type="button" className="mt-5 h-12 w-full text-xs" disabled={busy} onClick={() => void connect()}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}使用 Google 登录</Button>
     </div>
   )
 }
