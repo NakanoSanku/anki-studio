@@ -21,10 +21,10 @@ import type { Deck } from "@/lib/deck"
 import { cn } from "@/lib/utils"
 
 const MODES = [
-  { id: "merge", label: "合并到当前", hint: "按首字段去重后追加", icon: Merge, color: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]" },
-  { id: "replace", label: "替换当前", hint: "覆盖当前卡包内容", icon: Replace, color: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]" },
-  { id: "new", label: "新建卡包", hint: "独立导入并切换过去", icon: PackagePlus, color: "bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]" },
-] as const satisfies ReadonlyArray<{ id: ImportMode; label: string; hint: string; icon: typeof Merge; color: string }>
+  { id: "merge", label: "合并到当前", hint: "按首字段去重后追加", icon: Merge },
+  { id: "replace", label: "替换当前", hint: "覆盖当前卡包内容", icon: Replace },
+  { id: "new", label: "新建卡包", hint: "独立导入并切换过去", icon: PackagePlus },
+] as const satisfies ReadonlyArray<{ id: ImportMode; label: string; hint: string; icon: typeof Merge }>
 
 type ImportPreviewDialogProps = {
   preview: ImportPreview | null
@@ -50,34 +50,33 @@ export function ImportPreviewDialog({
   const errors = preview.issues.filter((item) => item.level === "error")
   const warnings = preview.issues.filter((item) => item.level === "warning")
   const sampleFields = preview.fields.slice(0, 4)
-
   const confirm = () => onConfirm(applyTextImport(preview, current, mode))
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel() }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" showCloseButton={!busy}>
         <DialogHeader className="pr-8">
-          <div className="mb-1 flex size-11 items-center justify-center rounded-[1.15rem] bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]">
-            <FileInput className="size-5" />
+          <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+            <span className="flex size-8 items-center justify-center rounded-[11px] bg-muted text-foreground"><FileInput className="size-4" /></span>
+            Import preview
           </div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">import preview</p>
-          <DialogTitle className="text-2xl">先看看再导入</DialogTitle>
-          <DialogDescription className="font-medium">
+          <DialogTitle className="text-2xl">先确认，再导入</DialogTitle>
+          <DialogDescription>
             {preview.filename} · {preview.encodingLabel}{preview.kind === "json" ? ` · ${preview.name}` : ""}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label="字段" value={String(preview.fields.length)} color="blue" />
-          <Stat label="数据行" value={String(preview.rowCount)} color="green" />
-          <Stat label="空首字段" value={String(preview.emptyFirstField)} color="yellow" />
-          <Stat label="当前重复" value={String(preview.duplicateInCurrent)} color="pink" />
+        <div className="grid grid-cols-2 overflow-hidden rounded-[18px] border border-black/[0.06] bg-card sm:grid-cols-4 dark:border-white/[0.08]">
+          <Stat label="字段" value={String(preview.fields.length)} />
+          <Stat label="数据行" value={String(preview.rowCount)} divider />
+          <Stat label="空首字段" value={String(preview.emptyFirstField)} divider />
+          <Stat label="当前重复" value={String(preview.duplicateInCurrent)} divider />
         </div>
 
         {preview.fields.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {preview.fields.map((field) => (
-              <span key={field} className="rounded-full bg-muted px-2.5 py-1 text-[10px] font-black text-muted-foreground">{field}</span>
+              <span key={field} className="rounded-[9px] border border-black/[0.055] bg-muted/55 px-2.5 py-1 text-[10px] font-medium text-muted-foreground dark:border-white/[0.07]">{field}</span>
             ))}
           </div>
         ) : null}
@@ -86,22 +85,22 @@ export function ImportPreviewDialog({
         {warnings.length > 0 ? <IssueList title="导入前提醒" tone="warning" items={warnings.map((item) => item.message)} /> : null}
 
         {sampleFields.length > 0 && preview.sample.length > 0 ? (
-          <div className="rounded-[1.6rem] bg-card p-3 shadow-[0_16px_44px_-38px_rgba(0,0,0,0.7)]">
+          <div className="rounded-[18px] border border-black/[0.06] bg-card p-3 dark:border-white/[0.08]">
             <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-xs font-black">数据预览</span>
-              <span className="text-[10px] font-bold text-muted-foreground">前 {preview.sample.length} 行</span>
+              <span className="text-xs font-semibold">数据预览</span>
+              <span className="text-[10px] font-medium text-muted-foreground">前 {preview.sample.length} 行</span>
             </div>
-            <ScrollArea className="max-h-44 rounded-[1.2rem] bg-muted/45">
+            <ScrollArea className="max-h-44 rounded-[13px] border border-black/[0.05] bg-background/55 dark:border-white/[0.07]">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-black text-white dark:bg-white dark:text-black">
-                    {sampleFields.map((field) => <th key={field} className="px-3 py-2 font-black">{field}</th>)}
+                  <tr className="bg-foreground text-background">
+                    {sampleFields.map((field) => <th key={field} className="px-3 py-2 font-semibold">{field}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {preview.sample.map((row, index) => (
-                    <tr key={index} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.06]">
-                      {sampleFields.map((field) => <td key={field} className="max-w-36 truncate px-3 py-2 font-medium">{row[field] || "—"}</td>)}
+                    <tr key={index} className="border-b border-black/[0.045] last:border-0 dark:border-white/[0.06]">
+                      {sampleFields.map((field) => <td key={field} className="max-w-36 truncate px-3 py-2 font-medium text-foreground/75">{row[field] || "—"}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -112,7 +111,7 @@ export function ImportPreviewDialog({
 
         {preview.canImport ? (
           <fieldset>
-            <legend className="mb-2 px-1 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">choose import mode</legend>
+            <legend className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Choose import mode</legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {MODES.map((item) => {
                 const Icon = item.icon
@@ -125,15 +124,18 @@ export function ImportPreviewDialog({
                     aria-pressed={active}
                     onClick={() => onModeChange(item.id)}
                     className={cn(
-                      "relative min-h-28 rounded-[1.5rem] p-3.5 text-left transition-transform active:scale-[0.985]",
-                      item.color,
-                      active && "ring-4 ring-black dark:ring-white"
+                      "relative min-h-28 rounded-[16px] border p-3.5 text-left transition-[background-color,border-color,transform] active:scale-[0.99] disabled:opacity-50",
+                      active
+                        ? "border-energy/40 bg-energy/15"
+                        : "border-black/[0.065] bg-card hover:bg-muted/45 dark:border-white/[0.09]"
                     )}
                   >
-                    <Icon className="size-4.5" />
-                    <span className="mt-4 block text-sm font-black tracking-[-0.03em]">{item.label}</span>
-                    <span className="mt-1 block text-[10px] font-semibold leading-4 opacity-55">{item.hint}</span>
-                    {active ? <span className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-black text-white dark:bg-white dark:text-black"><Check className="size-3" /></span> : null}
+                    <span className={cn("flex size-9 items-center justify-center rounded-[11px]", active ? "bg-energy text-black" : "bg-muted text-foreground")}>
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="mt-3 block text-sm font-semibold tracking-[-0.02em]">{item.label}</span>
+                    <span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{item.hint}</span>
+                    {active ? <span className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-foreground text-background"><Check className="size-3" /></span> : null}
                   </button>
                 )
               })}
@@ -145,28 +147,18 @@ export function ImportPreviewDialog({
           <Button type="button" variant="outline" className="h-12" disabled={busy} onClick={onCancel}>
             {preview.canImport ? "取消" : "关闭"}
           </Button>
-          {preview.canImport ? (
-            <Button type="button" className="h-12 bg-black text-sm font-black text-white hover:bg-black/85 dark:bg-white dark:text-black" disabled={busy} onClick={confirm}>
-              确认导入
-            </Button>
-          ) : <div />}
+          {preview.canImport ? <Button type="button" className="h-12 text-sm" disabled={busy} onClick={confirm}>确认导入</Button> : <div />}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: "blue" | "green" | "yellow" | "pink" }) {
-  const classes = {
-    blue: "bg-[#dff1ff] text-[#174f85] dark:bg-[#244d74] dark:text-[#dceeff]",
-    green: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
-    yellow: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
-    pink: "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]",
-  }
+function Stat({ label, value, divider = false }: { label: string; value: string; divider?: boolean }) {
   return (
-    <div className={cn("rounded-[1.4rem] px-3.5 py-3", classes[color])}>
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] opacity-45">{label}</p>
-      <p className="mt-1 text-2xl font-black tracking-[-0.045em]">{value}</p>
+    <div className={cn("px-3.5 py-3", divider && "border-l border-black/[0.055] dark:border-white/[0.07]")}>
+      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-[-0.04em]">{value}</p>
     </div>
   )
 }
@@ -174,13 +166,13 @@ function Stat({ label, value, color }: { label: string; value: string; color: "b
 function IssueList({ title, tone, items }: { title: string; tone: "error" | "warning"; items: string[] }) {
   return (
     <div className={cn(
-      "rounded-[1.4rem] px-4 py-3.5",
+      "rounded-[15px] border px-4 py-3.5",
       tone === "error"
-        ? "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]"
-        : "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]"
+        ? "border-destructive/20 bg-destructive/8 text-destructive"
+        : "border-black/[0.06] bg-muted/55 text-foreground dark:border-white/[0.08]"
     )}>
-      <p className="flex items-center gap-1.5 text-xs font-black"><AlertTriangle className="size-3.5" />{title}</p>
-      <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] font-semibold leading-4 opacity-65">
+      <p className="flex items-center gap-1.5 text-xs font-semibold"><AlertTriangle className="size-3.5" />{title}</p>
+      <ul className={cn("mt-2 list-disc space-y-1 pl-4 text-[11px] leading-4", tone === "error" ? "text-destructive/75" : "text-muted-foreground")}>
         {items.map((item) => <li key={item}>{item}</li>)}
       </ul>
     </div>
