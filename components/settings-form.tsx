@@ -27,37 +27,33 @@ const SETTINGS_SECTIONS = [
     value: "deck",
     shortLabel: "卡包",
     label: "卡包管理",
-    eyebrow: "your library",
+    eyebrow: "Your library",
     description: "导入、导出、切换和整理你的学习内容。",
     icon: FolderCog,
-    tone: "bg-[#cfe6ff] text-[#194f83] dark:bg-[#244d74] dark:text-[#dceeff]",
   },
   {
     value: "study",
     shortLabel: "复习",
     label: "复习参数",
-    eyebrow: "study rhythm",
+    eyebrow: "Study rhythm",
     description: "调整每日上限、FSRS 参数和学习节奏。",
     icon: Gauge,
-    tone: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
   },
   {
     value: "ai",
     shortLabel: "AI",
     label: "AI 设置",
-    eyebrow: "smart helper",
+    eyebrow: "Smart helper",
     description: "配置生成模型、提示词和智能补全能力。",
     icon: BrainCircuit,
-    tone: "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]",
   },
   {
     value: "sync",
     shortLabel: "同步",
     label: "同步与帐号",
-    eyebrow: "stay in sync",
+    eyebrow: "Stay in sync",
     description: "连接 Google 帐号和表格，在设备之间同步卡包。",
     icon: Table2,
-    tone: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
   },
 ] as const
 
@@ -81,17 +77,18 @@ function SectionIntro({ value }: { value: SettingsSection }) {
   const item = SETTINGS_SECTIONS.find((section) => section.value === value)!
   const Icon = item.icon
   return (
-    <div className={cn("relative mb-4 overflow-hidden rounded-[2rem] p-5 sm:p-6", item.tone)}>
-      <div className="absolute -right-10 -top-10 size-32 rounded-[46%_54%_56%_44%/52%_42%_58%_48%] bg-white/28" aria-hidden="true" />
-      <div className="absolute -bottom-12 right-20 size-24 rounded-[58%_42%_43%_57%/44%_55%_45%_56%] bg-white/20" aria-hidden="true" />
-      <div className="relative flex items-start gap-4">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-[1.2rem] bg-black text-white shadow-[0_14px_30px_-22px_rgba(0,0,0,0.75)] dark:bg-white dark:text-black">
+    <div className="mb-5 rounded-[20px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
+      <div className="flex items-start gap-3.5">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted text-foreground">
           <Icon className="size-5" />
         </span>
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-55">{item.eyebrow}</p>
-          <h2 className="mt-1 text-2xl font-black tracking-[-0.05em] sm:text-3xl">{item.label}</h2>
-          <p className="mt-2 max-w-xl text-sm font-semibold leading-6 opacity-70">{item.description}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="size-2 rounded-full bg-energy" />
+            {item.eyebrow}
+          </div>
+          <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.04em] sm:text-[28px]">{item.label}</h2>
+          <p className="mt-1.5 max-w-xl text-sm leading-6 text-muted-foreground">{item.description}</p>
         </div>
       </div>
     </div>
@@ -131,7 +128,7 @@ export function SettingsForm({
     >
       {section ? null : (
         <div className="sticky top-14 z-20 -mx-4 bg-background/90 px-4 py-2 backdrop-blur-xl sm:top-16 sm:-mx-6 sm:px-6 lg:top-24 lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-          <TabsList className="grid h-12 w-full grid-cols-4 rounded-full p-1 shadow-[0_12px_28px_-24px_rgba(0,0,0,0.65)] lg:h-auto lg:grid-cols-1 lg:gap-1 lg:rounded-[1.6rem] lg:bg-card lg:p-2 lg:shadow-[0_18px_42px_-34px_rgba(0,0,0,0.65)]">
+          <TabsList className="grid h-12 w-full grid-cols-4 lg:h-auto lg:grid-cols-1 lg:gap-1 lg:p-1.5">
             {SETTINGS_SECTIONS.map((item) => {
               const Icon = item.icon
               return (
@@ -153,7 +150,7 @@ export function SettingsForm({
         <TabsContent value="deck" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           <SectionIntro value="deck" />
           {deckTools ?? (
-            <div className="rounded-[2rem] bg-card p-8 text-center text-sm font-medium text-muted-foreground shadow-[0_18px_44px_-36px_rgba(0,0,0,0.65)]">
+            <div className="rounded-[20px] border border-black/[0.065] bg-card p-8 text-center text-sm font-medium text-muted-foreground dark:border-white/[0.09]">
               当前没有可管理的卡包。
             </div>
           )}
@@ -162,11 +159,7 @@ export function SettingsForm({
         <TabsContent value="study" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           <SectionIntro value="study" />
           {fsrsSettings && deck && onDeckChange ? (
-            <StudySettingsPanel
-              deck={deck}
-              fsrsSettings={fsrsSettings}
-              onDeckChange={onDeckChange}
-            />
+            <StudySettingsPanel deck={deck} fsrsSettings={fsrsSettings} onDeckChange={onDeckChange} />
           ) : null}
         </TabsContent>
 
@@ -187,13 +180,12 @@ export function SettingsForm({
                 inventoryKey={sync.lastSyncAt}
               />
 
-              <div className="relative overflow-hidden rounded-[2rem] bg-[#cfe6ff] p-4 shadow-[0_18px_44px_-34px_rgba(0,0,0,0.65)] dark:bg-[#244d74] sm:p-5">
-                <div className="absolute -right-8 -bottom-12 size-28 rounded-full bg-white/25" aria-hidden="true" />
-                <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-[20px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
                     <span
                       className={cn(
-                        "flex size-11 shrink-0 items-center justify-center rounded-[1.1rem] bg-black text-white shadow-[0_12px_28px_-20px_rgba(0,0,0,0.75)] dark:bg-white dark:text-black",
+                        "flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted text-foreground",
                         sync.syncing && "animate-pulse"
                       )}
                     >
@@ -207,33 +199,27 @@ export function SettingsForm({
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-base font-black tracking-[-0.025em] text-current">{sync.message}</p>
+                        <p className="text-[15px] font-semibold tracking-[-0.02em]">{sync.message}</p>
                         {sync.dirtyCount > 0 ? (
-                          <Badge className="border-0 bg-black/10 text-[10px] font-black text-current shadow-none">
-                            {sync.dirtyCount} 条本地更改
-                          </Badge>
+                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">{sync.dirtyCount} 条本地更改</Badge>
                         ) : sync.unavailable ? (
-                          <Badge className="border-0 bg-black/10 text-[10px] font-black text-current shadow-none">离线</Badge>
+                          <Badge className="border border-black/[0.06] bg-muted text-[10px] font-medium text-muted-foreground shadow-none dark:border-white/[0.08]">离线</Badge>
                         ) : (
-                          <Badge className="border-0 bg-black/10 text-[10px] font-black text-current shadow-none">已是最新</Badge>
+                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">已是最新</Badge>
                         )}
                       </div>
                       {sync.lastSyncAt ? (
-                        <p className="mt-1 text-xs font-semibold opacity-60">
-                          上次完成：{new Date(sync.lastSyncAt).toLocaleString()}
-                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">上次完成：{new Date(sync.lastSyncAt).toLocaleString()}</p>
                       ) : (
-                        <p className="mt-1 text-xs font-semibold opacity-60">支持离线使用；联网且绑定后自动双向同步</p>
+                        <p className="mt-1 text-xs text-muted-foreground">支持离线使用；联网且绑定后自动双向同步</p>
                       )}
-                      {sync.unavailable ? (
-                        <p className="mt-1 text-xs font-semibold leading-relaxed opacity-70">{sync.unavailable}</p>
-                      ) : null}
+                      {sync.unavailable ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{sync.unavailable}</p> : null}
                     </div>
                   </div>
 
                   <Button
                     type="button"
-                    className="h-12 w-full shrink-0 rounded-full bg-black px-5 text-xs font-black text-white shadow-[0_12px_28px_-20px_rgba(0,0,0,0.8)] hover:bg-black/85 sm:w-auto dark:bg-white dark:text-black dark:hover:bg-white/90"
+                    className="h-11 w-full shrink-0 px-5 text-xs sm:w-auto"
                     disabled={sync.syncing || googleReady !== true || !sheetConnected}
                     onClick={onSyncNow}
                   >
