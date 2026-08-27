@@ -568,11 +568,14 @@ export function CardEditor({
             <div className="flex shrink-0 flex-col gap-2">
               {!listOnly && !detail && mobilePager}
               <div className="rounded-[18px] border border-black/[0.065] bg-card p-3.5 dark:border-white/[0.09]">
-                <div className="min-w-0"><p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground"><span className="size-1.5 rounded-full bg-energy" />Edit note · {selectedIndex}/{deck.cards.length}</p><p className="mt-1 truncate text-lg font-semibold tracking-[-0.03em] text-foreground">{cardLabel(selected, deck.fields) || "Untitled note"}</p></div>
-                <div className="mt-3 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <Button type="button" size="sm" variant={isSelectedReviewed ? "outline" : "default"} className="h-9 shrink-0 whitespace-nowrap px-3 text-xs" data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"} aria-pressed={isSelectedReviewed} aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"} title={isSelectedReviewed ? "Mark this note as needing review" : "Mark reviewed and move to the next note (Alt+↓)"} onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}>{isSelectedReviewed ? "Undo review" : "Review"}</Button>
-                  <Button type="button" size="sm" variant="outline" className="h-9 shrink-0 whitespace-nowrap px-3 text-xs" disabled={!canCompleteSelected || isBusy("card:complete")} title={!selected ? undefined : !hasFilledField ? "Fill at least one field before using AI Fill" : !hasEmptyField ? "Every field is already filled" : "Fill only the empty fields from the existing note content"} onClick={() => setCompleteOpen(true)}>AI Fill</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-9 shrink-0 whitespace-nowrap px-3 text-xs text-destructive" onClick={() => removeCard(selected.id)}>Delete</Button>
+                <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground"><span className="size-1.5 rounded-full bg-energy" />Edit note · {selectedIndex}/{deck.cards.length}</p>
+                <div className="mt-1 flex min-w-0 items-center gap-2">
+                  <p className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.03em] text-foreground">{cardLabel(selected, deck.fields) || "Untitled note"}</p>
+                  <div data-testid="note-action-rail" className="flex shrink-0 items-center gap-1">
+                    <Button type="button" size="xs" variant={isSelectedReviewed ? "outline" : "default"} className="h-8 whitespace-nowrap px-2 text-[11px]" data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"} aria-pressed={isSelectedReviewed} aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"} title={isSelectedReviewed ? "Mark this note as needing review" : "Mark reviewed and move to the next note (Alt+↓)"} onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}>{isSelectedReviewed ? "Undo" : "Review"}</Button>
+                    <Button type="button" size="xs" variant="outline" className="h-8 whitespace-nowrap px-2 text-[11px]" aria-label="AI Fill" disabled={!canCompleteSelected || isBusy("card:complete")} title={!selected ? undefined : !hasFilledField ? "Fill at least one field before using AI Fill" : !hasEmptyField ? "Every field is already filled" : "Fill only the empty fields from the existing note content"} onClick={() => setCompleteOpen(true)}>AI</Button>
+                    <Button type="button" size="xs" variant="ghost" className="h-8 whitespace-nowrap px-2 text-[11px] text-destructive" onClick={() => removeCard(selected.id)}>Delete</Button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -24,6 +24,18 @@ const RETENTION_PRESETS = [
   { value: 0.95, label: "Intense", note: "High review load" },
 ] as const
 
+const RETENTION_MIN = 70
+const RETENTION_MAX = 99
+const RETENTION_MARKS = [
+  { value: 70, label: "70 · light" },
+  { value: 90, label: "90 · balanced" },
+  { value: 99, label: "99 · strongest" },
+] as const
+
+function retentionMarkPosition(value: number): number {
+  return ((value - RETENTION_MIN) / (RETENTION_MAX - RETENTION_MIN)) * 100
+}
+
 function Stepper({
   value,
   unit,
@@ -81,8 +93,35 @@ export function StudySettingsPanel({ deck, fsrsSettings, onDeckChange }: { deck:
         <p className="mt-1.5 max-w-md text-xs leading-5 text-muted-foreground">{retentionHint}</p>
 
         <div className="mt-5 rounded-[16px] border border-black/[0.055] bg-background/55 p-3 dark:border-white/[0.07]">
-          <Slider value={[currentRetentionPercent]} min={70} max={99} step={1} onValueChange={(value) => update({ requestRetention: (value[0] ?? 90) / 100 })} className="py-2 [&_[data-slot=slider-range]]:bg-energy [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-card [&_[data-slot=slider-thumb]]:bg-foreground [&_[data-slot=slider-track]]:bg-foreground/10" />
-          <div className="mt-1 flex justify-between font-mono text-[9px] font-medium text-muted-foreground"><span>70 · light</span><span>90 · balanced</span><span>99 · strongest</span></div>
+          <Slider
+            value={[currentRetentionPercent]}
+            min={RETENTION_MIN}
+            max={RETENTION_MAX}
+            step={1}
+            aria-label="Target retention"
+            aria-valuetext={`${currentRetentionPercent}% retention`}
+            onValueChange={(value) => update({ requestRetention: (value[0] ?? 90) / 100 })}
+            className="py-2 [&_[data-slot=slider-range]]:bg-energy [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-card [&_[data-slot=slider-thumb]]:bg-foreground [&_[data-slot=slider-track]]:bg-foreground/10"
+          />
+          <div className="relative mt-1 h-5 font-mono text-[9px] font-medium text-muted-foreground" data-testid="retention-scale">
+            {RETENTION_MARKS.map((mark) => (
+              <span
+                key={mark.value}
+                data-retention-mark={mark.value}
+                style={{ left: `${retentionMarkPosition(mark.value)}%` }}
+                className={cn(
+                  "absolute top-0 whitespace-nowrap",
+                  mark.value === RETENTION_MIN
+                    ? "translate-x-0 text-left"
+                    : mark.value === RETENTION_MAX
+                      ? "-translate-x-full text-right"
+                      : "-translate-x-1/2 text-center"
+                )}
+              >
+                {mark.label}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 

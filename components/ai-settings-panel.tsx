@@ -39,7 +39,6 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -345,35 +344,45 @@ export function AiSettingsPanel() {
       </section>
 
       <Sheet open={Boolean(editingPromptKey)} onOpenChange={(open) => !open && setEditingPromptKey(null)}>
-        <SheetContent side="bottom" className="mx-auto flex h-[92dvh] max-h-[820px] flex-col p-0 sm:max-w-xl">
+        <SheetContent
+          side="bottom"
+          className="mx-auto flex h-[92dvh] max-h-[820px] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+        >
           {activeSpec ? (
             <>
-              <SheetHeader className="px-5 pb-3 pt-5">
-                <div className="mb-2 flex items-center gap-2 pr-8">
+              <SheetHeader className="shrink-0 border-b border-black/[0.055] px-4 pb-3 pt-4 pr-12 dark:border-white/[0.07] sm:px-5 sm:pt-5">
+                <div className="mb-1.5 flex items-center gap-2">
                   <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     <span className="size-2 rounded-full bg-energy" />
                     Prompt lab
                   </span>
-                  <Badge className="border border-black/[0.07] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground shadow-none dark:border-white/[0.09]">{promptDraft.length} chars</Badge>
+                  <Badge className="border border-black/[0.07] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground shadow-none dark:border-white/[0.09]">
+                    {promptDraft.length} chars
+                  </Badge>
                 </div>
-                <SheetTitle className="text-2xl font-semibold tracking-[-0.045em]">{activeSpec.label}</SheetTitle>
+                <SheetTitle className="text-[22px] font-semibold tracking-[-0.04em] sm:text-2xl">{activeSpec.label}</SheetTitle>
                 <SheetDescription className="max-w-md text-xs leading-5">{activeSpec.hint}</SheetDescription>
               </SheetHeader>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto px-5 pb-3">
-                {activeSpec.vars.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => insertVariable(item.id)}
-                    className="shrink-0 rounded-[10px] border border-black/[0.07] bg-card px-2.5 py-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-[background-color,color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/[0.09]"
-                  >
-                    + {`{{${item.id}}}`}
-                  </button>
-                ))}
-              </div>
+              {activeSpec.vars.length > 0 ? (
+                <div
+                  data-testid="prompt-variable-rail"
+                  className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/[0.05] bg-muted/25 px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-white/[0.06] sm:px-5"
+                >
+                  {activeSpec.vars.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => insertVariable(item.id)}
+                      className="shrink-0 rounded-[10px] border border-black/[0.07] bg-card px-2.5 py-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-[background-color,color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/[0.09]"
+                    >
+                      + {`{{${item.id}}}`}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-              <div className="min-h-0 flex-1 px-4 pb-3">
+              <div className="min-h-0 flex-1 p-3 sm:p-4">
                 <CodeEditor
                   key={activeSpec.key}
                   ref={editorRef}
@@ -383,21 +392,31 @@ export function AiSettingsPanel() {
                   language="prompt"
                   placeholder="Write the prompt here…"
                   onChange={setPromptDraft}
-                  className="h-full"
-                  editorClassName="h-full min-h-[320px]"
+                  className="h-full min-h-0 rounded-[16px] shadow-none"
+                  editorClassName="!h-full !min-h-0 lg:!h-full"
                 />
               </div>
 
-              <SheetFooter className="grid grid-cols-[auto_auto_1fr] gap-2 px-4 pb-4 pt-0 sm:grid-cols-[auto_auto_1fr]">
-                <Button type="button" size="sm" variant="outline" disabled={!isDraftModified} className="h-12 px-3 text-xs" onClick={() => setPromptDraft(DEFAULT_AI_SETTINGS[activeSpec.key])}>
+              <div
+                data-testid="prompt-editor-actions"
+                className="grid shrink-0 grid-cols-[auto_auto_minmax(0,1fr)] gap-2 border-t border-black/[0.055] bg-card px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-white/[0.07] sm:px-4 sm:pb-4"
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!isDraftModified}
+                  className="h-11 whitespace-nowrap px-3 text-xs"
+                  onClick={() => setPromptDraft(DEFAULT_AI_SETTINGS[activeSpec.key])}
+                >
                   <RotateCcw className="size-3.5" />
-                  Default
+                  Reset
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-12 px-3 text-xs"
+                  className="h-11 whitespace-nowrap px-3 text-xs"
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(promptDraft)
@@ -411,11 +430,11 @@ export function AiSettingsPanel() {
                   {copiedPrompt ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                   {copiedPrompt ? "Copied" : "Copy"}
                 </Button>
-                <Button type="button" className="h-12 text-sm" onClick={savePromptDraft}>
+                <Button type="button" className="h-11 min-w-0 text-sm" onClick={savePromptDraft}>
                   <Save className="size-4" />
                   Save prompt
                 </Button>
-              </SheetFooter>
+              </div>
             </>
           ) : null}
         </SheetContent>

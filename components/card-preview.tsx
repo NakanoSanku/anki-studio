@@ -98,7 +98,6 @@ export function CardPreview({
           fillViewport ? "min-h-0 flex-1" : "h-[300px] lg:h-[440px]"
         )}
       >
-        <div className="pointer-events-none absolute left-4 top-4 z-10 size-2 rounded-full bg-energy shadow-[0_0_0_5px_rgba(199,248,90,0.14)]" aria-hidden="true" />
         <iframe
           title="Card preview"
           sandbox=""
