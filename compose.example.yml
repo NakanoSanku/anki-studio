@@ -1,0 +1,9 @@
+services:
+  anki-studio:
+    image: ${ANKI_STUDIO_IMAGE:-ghcr.io/nakanosanku/anki-studio:latest}
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
