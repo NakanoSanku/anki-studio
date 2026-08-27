@@ -11,6 +11,13 @@ const promptEditor = readSource("components", "prompt-editor.tsx")
 const googleSheets = readSource("components", "google-sheet-picker-panel.tsx")
 const importPreview = readSource("components", "import-preview-dialog.tsx")
 const syncConflict = readSource("components", "sync-conflict-dialog.tsx")
+const bootScreen = readSource("components", "studio-loader.tsx")
+const offlineBanner = readSource("components", "offline-banner.tsx")
+const rootLayout = readSource("app", "layout.tsx")
+const manifest = readSource("app", "manifest.ts")
+const notFound = readSource("app", "not-found.tsx")
+const errorPage = readSource("app", "error.tsx")
+const authError = readSource("app", "auth", "error", "page.tsx")
 const aiSettings = readSource("lib", "ai-settings.ts")
 
 describe("mobile hierarchy and language", () => {
@@ -41,6 +48,18 @@ describe("mobile hierarchy and language", () => {
     expect(templateEditor).not.toContain("代码编辑")
     expect(promptEditor).not.toContain("插入变量")
     expect(googleSheets).not.toContain("选择 Google Sheet")
+  })
+
+  it("uses English copy in the PWA shell and fallback screens", () => {
+    expect(rootLayout).toContain('<html lang="en"')
+    expect(rootLayout).toContain("Create and review your own flashcards")
+    expect(manifest).toContain('lang: "en"')
+    expect(manifest).toContain('name: "Start studying"')
+    expect(bootScreen).toContain("Preparing your study space")
+    expect(offlineBanner).toContain("Offline · changes are saved on this device")
+    expect(notFound).toContain("This card isn’t here")
+    expect(errorPage).toContain("We hit a problem")
+    expect(authError).toContain("Couldn’t connect your Google account")
   })
 
   it("ships English default AI prompts", () => {

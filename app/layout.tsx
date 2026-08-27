@@ -12,7 +12,7 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "Anki Studio",
   applicationName: "Anki Studio",
-  description: "用 FSRS、模板与 AI 制作并复习自己的闪卡。",
+  description: "Create and review your own flashcards with FSRS, templates, and AI.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -38,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
