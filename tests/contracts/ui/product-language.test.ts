@@ -52,12 +52,17 @@ describe("mobile hierarchy and language", () => {
     expect(googleSheets).not.toContain("选择 Google Sheet")
   })
 
-  it("normalizes legacy sync status before rendering it in settings", () => {
+  it("normalizes legacy operation and sync copy at presentation boundaries", () => {
     expect(productCopy).toContain('"尚未同步": "Not synced yet"')
+    expect(productCopy).toContain('"已切换卡包": "Deck switched"')
+    expect(productCopy).toContain("export function productStatusMessage")
     expect(settingsForm).toContain("productSyncMessage(sync.message)")
     expect(settingsForm).toContain("{shownSyncMessage}")
     expect(settingsForm).not.toContain("{sync.message}")
     expect(settingsOverview).toContain("productSyncMessage(syncMessage)")
+    expect(appShell).toContain("const shownStatus = productStatusMessage(status)")
+    expect(appShell).toContain("{shownStatus}")
+    expect(appShell).not.toContain("{status}")
   })
 
   it("uses English copy in the PWA shell and fallback screens", () => {

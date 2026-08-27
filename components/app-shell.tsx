@@ -31,6 +31,7 @@ import {
   primaryNavActive,
   tabBarVisible,
 } from "@/lib/app-paths"
+import { productStatusMessage } from "@/lib/product-copy"
 import { cn } from "@/lib/utils"
 
 const NAV_ICONS = {
@@ -142,6 +143,8 @@ export function AppShell({
   const header = headerMeta(pathname)
   const name = deckName.trim() || "Untitled deck"
   const view = viewName(pathname)
+  const shownStatus = productStatusMessage(status)
+  const shownSyncUnavailable = syncUnavailable ? productStatusMessage(syncUnavailable) : undefined
   const [softKeyboardActive, setSoftKeyboardActive] = useState(false)
   const [headerAction, setHeaderAction] = useState<ReactNode>(null)
   const showBottomNavigation = showTabBar && !softKeyboardActive
@@ -223,7 +226,7 @@ export function AppShell({
         </a>
 
         <AnimatePresence initial={false}>
-          {status ? (
+          {shownStatus ? (
             <motion.div
               key="status-toast"
               role="status"
@@ -235,7 +238,7 @@ export function AppShell({
               className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.65rem)] z-[70] mx-auto flex w-fit max-w-[min(30rem,calc(100vw-1.5rem))] items-center gap-2 rounded-[14px] border border-black/[0.07] bg-card/95 px-3.5 py-2.5 text-center text-xs font-semibold text-foreground shadow-[0_16px_36px_-24px_rgba(0,0,0,0.5)] backdrop-blur-2xl sm:inset-x-4 sm:top-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-white/[0.1]"
             >
               <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-energy" />
-              {status}
+              {shownStatus}
             </motion.div>
           ) : null}
         </AnimatePresence>
@@ -302,11 +305,11 @@ export function AppShell({
                   className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 disabled:opacity-50 min-[390px]:size-11 dark:border-white/[0.09]"
                   disabled={syncing}
                   aria-label={
-                    syncing ? "Syncing" : dirtyCount > 0 ? `${dirtyCount} changes waiting to sync` : syncUnavailable || "Sync now"
+                    syncing ? "Syncing" : dirtyCount > 0 ? `${dirtyCount} changes waiting to sync` : shownSyncUnavailable || "Sync now"
                   }
                   onClick={onSync}
                 >
-                  <SyncIcon syncing={syncing} syncUnavailable={syncUnavailable} />
+                  <SyncIcon syncing={syncing} syncUnavailable={shownSyncUnavailable} />
                   {dirtyCount > 0 ? (
                     <span className="absolute right-1 top-1 size-2.5 rounded-full border-2 border-card bg-energy min-[390px]:right-1.5 min-[390px]:top-1.5" />
                   ) : null}
