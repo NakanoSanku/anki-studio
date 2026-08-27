@@ -1,183 +1,114 @@
-# Anki Studio 项目文件结构与架构指南
+# Anki Studio 项目结构
 
-本文档全面梳理了 **Anki Studio** 项目的文件目录组织、核心模块分层、数据流向以及开发规范。
+Anki Studio 按“运行时代码、测试代码、文档与静态资源”分区。最重要的边界是：**产品目录不混放测试文件，测试统一进入 `tests/`。**
 
----
+## 目录总览
 
-## 1. 目录总览
-
-```
+```text
 anki-studio/
-├── app/                  # Next.js App Router 页面与 API 路由
-│   ├── (app)/            # 主应用路由组（带顶部/底部导航与布局外壳）
-│   │   ├── notes/        # 笔记列表与单卡编辑路由 (/notes, /notes/[id])
-│   │   ├── settings/     # 设置子页面 (/settings, /settings/ai, /settings/deck, /settings/study, /settings/sync)
-│   │   ├── study/        # 全屏学习会话路由 (/study)
-│   │   ├── templates/    # 模板路由（重定向到 /settings/deck/templates）
-│   │   ├── layout.tsx    # 主应用外壳布局
-│   │   └── page.tsx      # 学习主页（复习概览与今日学习入口）
-│   ├── api/              # 服务端 API 接口（认证、Google Sheets、同步、TTS 等）
-│   │   ├── auth/         # NextAuth 认证端点 (/api/auth/[...nextauth], /api/auth/account)
-│   │   ├── google-sheets/# Google Sheets 选表与连接接口 (/connect, /create, /list, /picker)
-│   │   ├── sync/         # 卡包同步与状态管理接口 (/sync, /sync/decks/[id], /sync/sheets, /sync/status)
-│   │   └── tts/          # 文本转语音端点 (/api/tts)
-│   ├── auth/             # 认证异常处理页面 (/auth/error)
-│   ├── globals.css       # 全局样式与 Tailwind CSS v4 样式表
-│   ├── icon.svg          # 矢量图标
-│   ├── layout.tsx        # 根布局（字体、主题初始化、元信息）
-│   └── manifest.ts       # PWA Web App Manifest 动态清单
+├── app/                         # Next.js App Router：页面、布局、Route Handlers、PWA 元信息
+│   ├── (app)/                   # 学习 / 笔记 / 设置等用户界面路由壳
+│   ├── api/                     # NextAuth、Google Sheets、同步、TTS API
+│   └── auth/                    # 认证错误页面
 │
-├── components/           # React 组件库
-│   ├── ui/               # 原子级 UI 组件库（基于 shadcn/ui 与 Radix UI）
-│   │   ├── alert-dialog.tsx, badge.tsx, button.tsx, card.tsx, dialog.tsx,
-│   │   ├── dropdown-menu.tsx, input.tsx, label.tsx, progress.tsx,
-│   │   ├── scroll-area.tsx, select.tsx, separator.tsx, sheet.tsx,
-│   │   └── slider.tsx, tabs.tsx, textarea.tsx, tooltip.tsx
-│   ├── card-editor.tsx               # 笔记/卡片核心编辑器
-│   ├── card-preview.tsx              # 闪卡正反面实时渲染预览
-│   ├── code-editor.tsx               # 基于 CodeMirror 的模板 HTML/CSS 编辑器
-│   ├── prompt-editor.tsx             # AI 提示词与批量生成配置器
-│   ├── reference-notes-bar.tsx       # 参考笔记快速选取栏
-│   ├── template-editor.tsx           # 模板设计与管理面板
-│   ├── study-overview.tsx            # 学习概览与卡包待学统计卡片
-│   ├── study-stage.tsx               # 学习答题卡片与正反面翻转舞台
-│   ├── study-session.tsx             # 完整全屏学习流程控制器
-│   ├── study-settings-panel.tsx      # FSRS 复习参数配置抽屉
-│   ├── deck-switcher.tsx             # 卡包快速切换选择器
-│   ├── deck-tools-panel.tsx          # 卡包新建、导出、导入与删除工具
-│   ├── import-preview-dialog.tsx     # CSV / APKG 导入确认与字段映射对话框
-│   ├── sync-conflict-dialog.tsx      # 云同步版本冲突选择与解决对话框
-│   ├── google-account-panel.tsx      # Google 帐号授权与绑定面板（NextAuth 驱动）
-│   ├── google-sheet-picker-panel.tsx # Google Drive / Sheets 文件选择器面板
-│   ├── ai-settings-panel.tsx         # AI 接口服务商与 API Key 配置面板
-│   ├── settings-overview.tsx         # 设置主菜单导航列表
-│   ├── settings-form.tsx             # 设置各子模块表单外壳
-│   ├── app-shell.tsx                 # 应用全局上下文与 SessionProvider 外壳
-│   ├── studio.tsx                    # 状态总调度与视图分发中心
-│   ├── studio-shell.tsx              # 页面级响应式外壳
-│   ├── studio-loader.tsx             # 启动加载指示器
-│   ├── system-theme.tsx              # 系统暗黑/明亮主题自动检测与同步
-│   ├── offline-banner.tsx            # 离线工作状态提示条
-│   ├── motion-provider.tsx           # 页面过渡动画 Provider
-│   ├── pwa-register.tsx              # Service Worker 注册器
-│   ├── tts-play-button.tsx           # TTS 语音播放触发按钮
-│   ├── use-virtual-window.ts         # 虚拟长列表滚动 Hook
-│   └── *.chrome.test.ts              # 界面集成与交互行为测试
+├── components/                  # React 展示与交互层
+│   ├── ui/                      # shadcn/Radix 基础组件
+│   ├── card-editor.tsx          # 笔记编辑器
+│   ├── study-session.tsx        # 学习会话
+│   ├── template-editor.tsx      # 模板设计器
+│   ├── settings-*.tsx           # 设置相关视图
+│   ├── app-shell.tsx            # 顶栏、底部导航、安全区与页面外壳
+│   └── studio.tsx               # 客户端状态编排与视图分发
 │
-├── lib/                  # 核心业务逻辑、数据模型、算法与工具库
-│   ├── 1. 存储与状态 (Storage & State)
-│   │   ├── studio-store.ts           # 存储层抽象接口与类型定义
-│   │   ├── studio-store-idb.ts       # 本机 IndexedDB 持久化实现（真实数据源）
-│   │   ├── editor-state.ts           # 笔记编辑器状态管理与草稿快照
-│   │   ├── committed-draft.ts        # 提交态与草稿态一致性比对
-│   │   └── transient-status.ts       # 瞬态提示与通知状态
-│   │
-│   ├── 2. 闪卡与 FSRS 算法 (Core Cards & FSRS)
-│   │   ├── fsrs.ts                   # FSRS 间隔重复算法与调度逻辑
-│   │   ├── deck.ts                   # 卡包与笔记的数据模型操作
-│   │   ├── library.ts                # 卡包集合管理与切换
-│   │   ├── template.ts               # Mustache 语法解析与模板渲染
-│   │   ├── empty-note.ts             # 空笔记创建与初始字段生成
-│   │   └── import-preview.ts         # 导入差异比对与校验
-│   │
-│   ├── 3. 云同步与 Google 表格 (Sync & Google Sheets)
-│   │   ├── google-sheets-sync.ts     # Google Sheets 双向同步核心算法
-│   │   ├── sync-client.ts            # 前端同步状态机与合并请求
-│   │   ├── sync-server.ts            # 服务端同步请求处理与冲突判定
-│   │   ├── sync-payload.ts           # 分块 Payload 序列化与反序列化
-│   │   ├── sync-plan.ts              # 同步计划与变更集计算
-│   │   ├── google-auth.ts            # NextAuth / Google OAuth 令牌与权限管理
-│   │   ├── google-sheet-connection.ts# 表格连接状态与元信息
-│   │   ├── google-picker-config.ts   # Google Picker 配置生成（环境变量驱动）
-│   │   ├── google-sheet-id.ts        # 表格 URL 解析与 ID 提取
-│   │   ├── sync-transport.ts         # 网络传输封装
-│   │   └── sync-types.ts             # 同步协议类型定义
-│   │
-│   ├── 4. Anki 兼容与导入导出 (Anki & APKG)
-│   │   ├── apkg.ts                   # APKG 导出（SQLite + ZIP 打包）
-│   │   ├── anki-sync.ts              # 增量导出逻辑与 guid 跟踪
-│   │   ├── csv.ts                    # CSV 解析与格式化
-│   │   └── encoding.ts               # 文件编码探测（UTF-8, GBK 等）
-│   │
-│   ├── 5. AI 与大模型交互 (AI & LLMs)
-│   │   ├── ai.ts                     # AI 补全与批量卡片生成入口
-│   │   ├── ai-run.ts                 # 运行时调用调度
-│   │   ├── ai-settings.ts            # AI 供应商（OpenAI 兼容/Gemini）配置
-│   │   ├── ai-compat.ts              # 多厂商请求响应格式抹平
-│   │   └── ai-upstream.ts            # 上游 API 校验与连通性测试
-│   │
-│   └── 6. 界面交互与公共工具 (UI Utils & Navigation)
-│       ├── app-paths.ts              # 路由路径常量与重定向解析
-│       ├── card-nav.ts               # 上一张/下一张/未审卡片导航计算
-│       ├── card-motion.ts            # 卡片翻转与滑动手势动画参数
-│       ├── study-transition.ts       # 学习进度过渡动效
-│       ├── virtual-window.ts         # 虚拟列表视口计算纯函数
-│       ├── rate-gate.ts              # 频率限制门控（防抖/限流）
-│       ├── tts.ts                    # Google Translate TTS 音频合成与缓存
-│       ├── codemirror.ts             # CodeMirror 语法高亮扩展
-│       └── utils.ts                  # Tailwind 类名合并等通用函数
+├── lib/                         # 与 React 展示解耦的业务/基础设施代码
+│   ├── deck.ts / library.ts     # 卡包、笔记、模板模型与本机库管理
+│   ├── fsrs.ts                  # FSRS 调度
+│   ├── editor-state.ts          # 编辑器状态
+│   ├── sync-*.ts                # 同步计划、协议、服务端/客户端流程
+│   ├── google-*.ts              # Google OAuth / Sheets / Picker
+│   ├── apkg.ts / anki-sync.ts   # Anki 导入导出
+│   ├── ai*.ts                   # AI 请求、兼容层、Prompt 配置
+│   └── *-utils / navigation     # 路由、动画、虚拟列表等纯工具
 │
-├── docs/                 # 架构设计与文档
-│   ├── adr/              # 架构决策记录 (ADR 0001 - 0010)
-│   └── PROJECT_STRUCTURE.md # 本项目结构说明文件
+├── tests/                       # 所有自动化测试
+│   ├── unit/
+│   │   └── lib/                 # lib 业务逻辑单元测试
+│   ├── contracts/
+│   │   ├── helpers/             # 契约测试辅助工具
+│   │   └── ui/                  # UI/导航/性能源码契约测试
+│   └── README.md                # 测试分层与新增测试约定
 │
-├── public/               # 静态资源
-│   ├── sql-wasm.wasm     # SQLite WASM 二进制引擎（用于 APKG 导出与解析）
-│   ├── sw.js             # PWA Service Worker 脚本
-│   ├── apple-touch-icon.png, icon-192.png, icon-512.png
+├── public/                      # Service Worker、WASM、PWA 静态资源
+├── docs/                        # 架构说明与 ADR
+│   ├── adr/
+│   └── PROJECT_STRUCTURE.md
 │
-└── 配置文件
-    ├── package.json          # 依赖管理与常用运行脚本
-    ├── tsconfig.json         # TypeScript 编译配置
-    ├── next.config.ts        # Next.js 配置（动态路由、Turbopack）
-    ├── vitest.config.mts     # Vitest 单元测试配置
-    ├── eslint.config.mjs     # ESLint 代码规范配置
-    ├── components.json       # shadcn/ui 组件库配置
-    ├── .env.example          # 环境变量示例文件
-    ├── CONTEXT.md            # 核心业务术语与命名规范约束
-    ├── AGENTS.md             # Next.js 智能体编码准则
-    └── README.md             # 项目简介、部署说明与开发指南
+├── package.json                 # 开发、构建、测试脚本
+├── tsconfig.json                # 产品代码 TypeScript 配置（排除 tests）
+├── tsconfig.test.json           # 测试代码 TypeScript 配置
+├── vitest.config.mts            # 仅扫描 tests/**/*.test.ts
+├── next.config.ts               # Next.js 配置
+└── eslint.config.mjs            # ESLint 配置
 ```
 
----
+## 分层职责
 
-## 2. 核心架构与数据流
+### `app/` — 路由与服务端边界
 
-### 2.1 本地优先（Local-First）原则
-1. **本机数据源（IndexedDB）** 是唯一的真实数据源（Source of Truth）。
-2. 用户在界面上的所有编辑（修改笔记、切换卡包、调整模板）首先实时写入本地 IndexedDB，即便离线也能正常学习与编辑。
-3. 外部同步（Google Sheets）与导出（APKG）均为本地数据的增量投影。
+只负责 Next.js 路由、布局、Route Handler 和框架级入口。复杂业务逻辑应下沉到 `lib/`，可复用 UI 下沉到 `components/`。
 
-### 2.2 云同步（Google Sheets Sync）机制
-- **可见工作表**：以卡包名命名，包含明文字段内容，允许用户在 Google Sheets 网页端直接阅读与编辑。
-- **隐藏工作表（`_anki_studio_sync`）**：保存稳定卡包映射、字段哈希、删除墓碑与分块加密 Payload。
-- **冲突检测**：在设备同步时自动比对本地时间戳与远端版本，发生冲突时通过 `SyncConflictDialog` 提供“保留本地 / 使用云端 / 另存为副本”选项。
+### `components/` — React 交互与展示
 
-### 2.3 学习会话（FSRS 算法）
-- 基于 `ts-fsrs` 算法进行间隔重复调度。
-- 每次答题（Again / Hard / Good / Easy）后计算下一次复习时间，并即时更新卡片状态持久化到 IndexedDB。
+负责界面、用户交互以及把业务能力组合成页面。组件可以调用 `lib/`，但不应把可独立测试的领域算法重新实现在 JSX 中。
 
----
+### `lib/` — 业务与基础设施
 
-## 3. 脚本与开发命令
+这里放与 React 组件树解耦的模型、算法、存储、同步、导入导出和 API 辅助逻辑。测试从 `tests/unit/lib` 通过 `@/lib/...` 引用这些模块。
 
-| 命令 | 描述 |
-| :--- | :--- |
-| `npm run dev` | 启动 Next.js 本地开发服务器（默认端口 3000） |
-| `npm run build` | 执行 Next.js 生产环境构建 |
-| `npm run typecheck` | 执行 TypeScript 静态类型检查 |
-| `npm run lint` | 执行 ESLint 代码检查 |
-| `npm test` | 执行 Vitest 自动化单元测试集 |
-| `npm run test:watch` | 以监视模式运行 Vitest 单元测试 |
+### `tests/unit/` — 单元测试
 
----
+验证纯函数、业务规则、数据迁移、FSRS、同步计划、Google Sheets 适配、APKG 等。测试位置不再与产品模块同目录绑定。
 
-## 4. 术语与命名准则
+### `tests/contracts/` — 结构与回归契约
 
-请严格遵循 `CONTEXT.md` 中的标准术语：
-- **卡包**（Deck）：由笔记、模板与学习记录组成的集合。（避免使用“牌组”或“书库”）
-- **笔记**（Note）：可编辑的数据记录，包含稳定 ID、GUID 与各字段值。（避免用“卡片”称呼此数据记录）
-- **卡片**（Card）：通过模板渲染笔记后生成的正反两面。（避免用“笔记”称呼呈现面）
-- **学习**（Study）：针对到期与新卡片的 FSRS 学习会话。（避免用“复习”代指整个活动）
-- **模板**（Template）：负责将笔记转化为卡片正反面的 HTML/CSS。
-- **参考笔记**（Reference Notes）：用户在卡包中置顶作为 AI 编写范例的笔记。
+用于保护跨文件、源码结构或框架配置层的约束，例如：
+
+- 主导航必须保持静态路由和预加载策略；
+- Notes 列表必须保持内部滚动与 viewport lock；
+- Study Session 必须保留关键可访问性和 motion wiring；
+- 卡包 Sheet 不得重新引入嵌套 Sheet 或旧管理入口。
+
+这类测试与真正的浏览器 E2E 不同，因此单独命名为 `contracts`，避免和普通单元测试混在一起。
+
+## 依赖方向
+
+```text
+app ───────► components ───────► lib
+  └────────────────────────────► lib
+
+tests/unit ────────────────────► lib
+tests/contracts ───────────────► app / components / config（只做测试侧检查）
+```
+
+产品代码不得反向依赖 `tests/`。
+
+## 测试与类型检查
+
+```bash
+npm run typecheck        # 产品 + 测试 TypeScript
+npm run typecheck:app    # 仅产品代码
+npm run typecheck:tests  # 仅 tests/
+npm test                 # 全部 Vitest
+npm run test:unit        # 仅 tests/unit
+npm run test:contracts   # 仅 tests/contracts
+```
+
+Vitest 的扫描范围固定为 `tests/**/*.test.ts`。新增测试不要放回 `app/`、`components/` 或 `lib/`。
+
+## 开发原则
+
+1. 页面入口保持薄：框架路由留在 `app/`，业务下沉。
+2. React 组件专注展示和交互，可测试的算法进入 `lib/`。
+3. 所有测试集中在 `tests/`，用 `unit` 与 `contracts` 表达测试类型，而不是通过和产品代码混放表达关联。
+4. 产品代码使用 `@/...` 别名跨目录引用；单元测试使用 `@/lib/...`，降低物理目录耦合。
+5. 结构调整后必须通过 lint、产品/测试 typecheck、完整测试和 production build。
