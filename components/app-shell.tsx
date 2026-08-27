@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
@@ -47,6 +47,7 @@ type AppShellProps = {
 }
 
 const SYNC_ICON_DURATION_S = 0.15
+const EDITABLE_SELECTOR = "input, textarea, select, [contenteditable=true], .cm-content"
 
 function SyncIcon({ syncing, syncUnavailable }: { syncing: boolean; syncUnavailable?: string }) {
   const state = syncing ? "syncing" : syncUnavailable ? "unavailable" : "idle"
@@ -120,6 +121,8 @@ export function AppShell({
   const header = headerMeta(pathname)
   const name = deckName.trim() || "未命名卡包"
   const view = viewName(pathname)
+  const [softKeyboardActive, setSoftKeyboardActive] = useState(false)
+  const showBottomNavigation = showTabBar && !softKeyboardActive
 
   useEffect(() => {
     if (!lock) return
@@ -138,10 +141,40 @@ export function AppShell({
     }
   }, [lock])
 
+  useEffect(() => {
+    const coarsePointer = window.matchMedia("(pointer: coarse)")
+    const visualViewport = window.visualViewport
+
+    const update = () => {
+      const active = document.activeElement as HTMLElement | null
+      const editing = Boolean(active?.matches(EDITABLE_SELECTOR) || active?.closest(EDITABLE_SELECTOR))
+      const viewportCompressed = visualViewport
+        ? visualViewport.height < window.innerHeight - 96
+        : false
+      setSoftKeyboardActive(coarsePointer.matches && editing && (viewportCompressed || document.hasFocus()))
+    }
+
+    const onFocusOut = () => window.setTimeout(update, 0)
+    update()
+    document.addEventListener("focusin", update)
+    document.addEventListener("focusout", onFocusOut)
+    visualViewport?.addEventListener("resize", update)
+    visualViewport?.addEventListener("scroll", update)
+    coarsePointer.addEventListener("change", update)
+    return () => {
+      document.removeEventListener("focusin", update)
+      document.removeEventListener("focusout", onFocusOut)
+      visualViewport?.removeEventListener("resize", update)
+      visualViewport?.removeEventListener("scroll", update)
+      coarsePointer.removeEventListener("change", update)
+    }
+  }, [])
+
   return (
     <div
       data-testid={lock ? "notes-shell" : undefined}
       data-app-view={view}
+      data-soft-keyboard={softKeyboardActive ? "active" : undefined}
       className={cn(
         "flex flex-col bg-background text-foreground",
         lock ? "fixed inset-0 overflow-hidden overscroll-none" : "min-h-[100dvh]"
@@ -149,7 +182,7 @@ export function AppShell({
     >
       <a
         href="#app-main"
-        className="fixed left-3 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[90] -translate-y-[180%] rounded-full bg-black px-4 py-2.5 text-xs font-black text-white shadow-xl transition-transform focus:translate-y-0 focus:outline-none focus:ring-4 focus:ring-[#ffe39a] dark:bg-white dark:text-black"
+        className="fixed left-3 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[90] -translate-y-24 rounded-full bg-foreground px-4 py-2.5 text-sm font-black text-background shadow-xl transition-transform focus:translate-y-0 focus:outline-none focus:ring-4 focus:ring-pastel-blue/70"
       >
         跳到主要内容
       </a>
@@ -183,7 +216,7 @@ export function AppShell({
             {header.backHref ? (
               <button
                 type="button"
-                className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-card text-foreground shadow-[0_10px_28px_-18px_rgba(0,0,0,0.5)] ring-1 ring-black/5 transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 active:scale-95 min-[390px]:size-11 dark:ring-white/10 dark:focus-visible:ring-white/25"
+                className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-card text-foreground shadow-[0_10px_28px_-18px_rgba(0,0,0,0.5)] ring-1 ring-black/5 transition-transform [-webkit-tap-highlight-color:transparent] active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pastel-blue/70 min-[390px]:size-11 dark:ring-white/10"
                 aria-label="返回"
                 onClick={() => {
                   if (onBack) onBack()
@@ -201,7 +234,7 @@ export function AppShell({
             {header.showDeck ? (
               <button
                 type="button"
-                className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-xl text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/10 dark:focus-visible:ring-white/20"
+                className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-xl text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pastel-blue/70"
                 onClick={onDeckClick}
               >
                 <div className="min-w-0">
@@ -217,7 +250,7 @@ export function AppShell({
             {pathname === PATHS.notes || pathname === PATHS.home ? (
               <button
                 type="button"
-                className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-foreground text-background shadow-[0_12px_26px_-16px_rgba(0,0,0,0.72)] transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#ffe39a] active:scale-95 disabled:opacity-60 min-[390px]:size-11"
+                className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-foreground text-background shadow-[0_12px_26px_-16px_rgba(0,0,0,0.72)] transition-transform [-webkit-tap-highlight-color:transparent] active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pastel-blue/70 disabled:opacity-60 min-[390px]:size-11"
                 disabled={syncing}
                 aria-label={
                   syncing ? "正在同步" : dirtyCount > 0 ? `${dirtyCount} 个待同步` : syncUnavailable || "立即同步"
@@ -244,7 +277,7 @@ export function AppShell({
             ? "p-0"
             : lock
               ? "px-3 pb-2 pt-1 min-[390px]:px-4 min-[390px]:pb-3 sm:px-6"
-              : showTabBar
+              : showBottomNavigation
                 ? "px-3 pb-28 pt-1 min-[390px]:px-4 sm:px-6 sm:pt-3"
                 : "px-3 py-3 min-[390px]:px-4 min-[390px]:py-4 sm:px-6 sm:py-6"
         )}
@@ -252,7 +285,7 @@ export function AppShell({
         {children}
       </main>
 
-      {showTabBar ? (
+      {showBottomNavigation ? (
         <div
           className={cn(
             "pointer-events-none z-50 px-2.5 min-[390px]:px-3",
@@ -273,7 +306,7 @@ export function AppShell({
                   key={item.id}
                   href={item.href}
                   className={cn(
-                    "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[18px] text-[10px] font-bold transition-all [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 min-[390px]:min-h-12 min-[390px]:rounded-[20px] min-[390px]:text-[11px] dark:focus-visible:ring-white/25",
+                    "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[18px] text-[10px] font-bold transition-all [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pastel-blue/70 min-[390px]:min-h-12 min-[390px]:rounded-[20px] min-[390px]:text-[11px]",
                     selected
                       ? "bg-foreground text-background shadow-sm"
                       : "text-foreground/45 active:bg-black/[0.04] dark:active:bg-white/[0.06]"
