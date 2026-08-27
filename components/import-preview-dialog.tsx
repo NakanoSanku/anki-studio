@@ -21,9 +21,9 @@ import type { Deck } from "@/lib/deck"
 import { cn } from "@/lib/utils"
 
 const MODES = [
-  { id: "merge", label: "合并到当前", hint: "按首字段去重后追加", icon: Merge },
-  { id: "replace", label: "替换当前", hint: "覆盖当前卡包内容", icon: Replace },
-  { id: "new", label: "新建卡包", hint: "独立导入并切换过去", icon: PackagePlus },
+  { id: "merge", label: "Merge into current", hint: "Append after deduplicating by the first field", icon: Merge },
+  { id: "replace", label: "Replace current", hint: "Overwrite the current deck content", icon: Replace },
+  { id: "new", label: "Create new deck", hint: "Import separately and switch to it", icon: PackagePlus },
 ] as const satisfies ReadonlyArray<{ id: ImportMode; label: string; hint: string; icon: typeof Merge }>
 
 type ImportPreviewDialogProps = {
@@ -60,17 +60,17 @@ export function ImportPreviewDialog({
             <span className="flex size-8 items-center justify-center rounded-[11px] bg-muted text-foreground"><FileInput className="size-4" /></span>
             Import preview
           </div>
-          <DialogTitle className="text-2xl">先确认，再导入</DialogTitle>
+          <DialogTitle className="text-2xl">Review before importing</DialogTitle>
           <DialogDescription>
             {preview.filename} · {preview.encodingLabel}{preview.kind === "json" ? ` · ${preview.name}` : ""}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 overflow-hidden rounded-[18px] border border-black/[0.06] bg-card sm:grid-cols-4 dark:border-white/[0.08]">
-          <Stat label="字段" value={String(preview.fields.length)} />
-          <Stat label="数据行" value={String(preview.rowCount)} divider />
-          <Stat label="空首字段" value={String(preview.emptyFirstField)} divider />
-          <Stat label="当前重复" value={String(preview.duplicateInCurrent)} divider />
+          <Stat label="Fields" value={String(preview.fields.length)} />
+          <Stat label="Rows" value={String(preview.rowCount)} divider />
+          <Stat label="Empty keys" value={String(preview.emptyFirstField)} divider />
+          <Stat label="Duplicates" value={String(preview.duplicateInCurrent)} divider />
         </div>
 
         {preview.fields.length > 0 ? (
@@ -81,14 +81,14 @@ export function ImportPreviewDialog({
           </div>
         ) : null}
 
-        {errors.length > 0 ? <IssueList title="这些问题会阻止导入" tone="error" items={errors.map((item) => item.message)} /> : null}
-        {warnings.length > 0 ? <IssueList title="导入前提醒" tone="warning" items={warnings.map((item) => item.message)} /> : null}
+        {errors.length > 0 ? <IssueList title="These issues block the import" tone="error" items={errors.map((item) => item.message)} /> : null}
+        {warnings.length > 0 ? <IssueList title="Review these warnings first" tone="warning" items={warnings.map((item) => item.message)} /> : null}
 
         {sampleFields.length > 0 && preview.sample.length > 0 ? (
           <div className="rounded-[18px] border border-black/[0.06] bg-card p-3 dark:border-white/[0.08]">
             <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-xs font-semibold">数据预览</span>
-              <span className="text-[10px] font-medium text-muted-foreground">前 {preview.sample.length} 行</span>
+              <span className="text-xs font-semibold">Data preview</span>
+              <span className="text-[10px] font-medium text-muted-foreground">First {preview.sample.length} rows</span>
             </div>
             <ScrollArea className="max-h-44 rounded-[13px] border border-black/[0.05] bg-background/55 dark:border-white/[0.07]">
               <table className="w-full text-left text-xs">
@@ -145,9 +145,9 @@ export function ImportPreviewDialog({
 
         <DialogFooter className="grid grid-cols-2 sm:grid-cols-2">
           <Button type="button" variant="outline" className="h-12" disabled={busy} onClick={onCancel}>
-            {preview.canImport ? "取消" : "关闭"}
+            {preview.canImport ? "Cancel" : "Close"}
           </Button>
-          {preview.canImport ? <Button type="button" className="h-12 text-sm" disabled={busy} onClick={confirm}>确认导入</Button> : <div />}
+          {preview.canImport ? <Button type="button" className="h-12 text-sm" disabled={busy} onClick={confirm}>Import</Button> : <div />}
         </DialogFooter>
       </DialogContent>
     </Dialog>

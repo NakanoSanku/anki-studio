@@ -51,10 +51,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           return
         }
         const { from, to } = view.state.selection.main
-        view.dispatch({
-          changes: { from, to, insert: snippet },
-          selection: { anchor: from + snippet.length },
-        })
+        view.dispatch({ changes: { from, to, insert: snippet }, selection: { anchor: from + snippet.length } })
         view.focus()
       },
       wrap(before: string, after: string) {
@@ -68,10 +65,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         const insert = `${before}${selected}${after}`
         view.dispatch({
           changes: { from, to, insert },
-          selection: {
-            anchor: from + before.length,
-            head: from + before.length + selected.length,
-          },
+          selection: { anchor: from + before.length, head: from + before.length + selected.length },
         })
         view.focus()
       },
@@ -85,9 +79,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       const pos = update.state.selection.main.head
       const line = update.state.doc.lineAt(pos)
       const next = { line: line.number, column: pos - line.from + 1 }
-      setCaret((prev) =>
-        prev.line === next.line && prev.column === next.column ? prev : next
-      )
+      setCaret((prev) => prev.line === next.line && prev.column === next.column ? prev : next)
     }, [])
 
     return (
@@ -119,19 +111,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             indentWithTab
             placeholder={
               placeholder ??
-              (language === "css"
-                ? ".card { }"
-                : language === "prompt"
-                  ? "在这里写提示词"
-                  : "{{Word}}")
+              (language === "css" ? ".card { }" : language === "prompt" ? "Write the prompt here" : "{{Word}}")
             }
-            extensions={
-              language === "css"
-                ? cssExtensions
-                : language === "prompt"
-                  ? promptExtensions
-                  : templateExtensions
-            }
+            extensions={language === "css" ? cssExtensions : language === "prompt" ? promptExtensions : templateExtensions}
             basicSetup={basicSetup}
             onChange={onChange}
             onUpdate={onUpdate}
@@ -140,7 +122,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] px-4 py-2 font-mono text-[9px] font-medium text-slate-400">
           <span>Ln {caret.line}, Col {caret.column}</span>
-          <span className="hidden text-white/28 sm:inline">Tab 缩进 · Shift+Tab 取消缩进</span>
+          <span className="hidden text-white/28 sm:inline">Tab indent · Shift+Tab outdent</span>
         </div>
       </div>
     )

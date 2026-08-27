@@ -1,17 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import {
-  BookOpen,
-  Boxes,
-  Check,
-  Copy,
-  Cpu,
-  FileCode,
-  Info,
-  RotateCcw,
-  Sparkles,
-} from "lucide-react"
+import { BookOpen, Boxes, Check, Copy, Cpu, FileCode, Info, RotateCcw, Sparkles } from "lucide-react"
 
 import {
   DEFAULT_AI_SETTINGS,
@@ -24,47 +14,41 @@ import { Button } from "@/components/ui/button"
 import { CodeEditor, type CodeEditorHandle } from "@/components/code-editor"
 import { cn } from "@/lib/utils"
 
-const PROMPT_META: Record<
-  PromptKey,
-  {
-    icon: typeof Sparkles
-    surface: string
-    iconSurface: string
-    description: string
-  }
-> = {
+const PROMPT_META: Record<PromptKey, { icon: typeof Sparkles; description: string }> = {
   cardCompletePrompt: {
     icon: Sparkles,
-    surface: "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
-    iconSurface: "bg-white/55 text-[#654600] dark:bg-white/10 dark:text-[#ffedb8]",
-    description: "在卡片编辑页，只补齐当前笔记中仍为空白的字段。",
+    description: "Fill only the fields that are still empty in the current note.",
   },
   batchPrompt: {
     icon: Boxes,
-    surface: "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
-    iconSurface: "bg-white/55 text-[#315f18] dark:bg-white/10 dark:text-[#e4f8c5]",
-    description: "根据主题、词表或长文本，一次生成一组结构一致的新笔记。",
+    description: "Generate a consistent set of new notes from a topic, word list, or source text.",
   },
   templateEditPrompt: {
     icon: FileCode,
-    surface: "bg-[#cfe6ff] text-[#194f83] dark:bg-[#244d74] dark:text-[#dceeff]",
-    iconSurface: "bg-white/55 text-[#194f83] dark:bg-white/10 dark:text-[#dceeff]",
-    description: "让 AI 根据自然语言修改模板 HTML、CSS 与字段排版。",
+    description: "Use natural language to adjust template HTML, CSS, and field layout.",
   },
   systemPrompt: {
     icon: Cpu,
-    surface: "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]",
-    iconSurface: "bg-white/55 text-[#761c31] dark:bg-white/10 dark:text-[#ffdce3]",
-    description: "所有 AI 请求都会继承的基础角色、语气与生成规则。",
+    description: "The shared role, tone, and generation rules inherited by every AI request.",
   },
 }
 
 const VAR_EXPLANATIONS: Record<string, string> = {
-  key: "本张卡片的核心主键字段（如英文单词、题目等）",
-  fields: "当前卡包模板支持填写的全部字段名称列表",
-  notes: "卡片模板中为各个字段配置的填写备注与指导提示",
-  context: "当前卡片已经录入的所有已有字段内容",
-  references: "从已有卡片库中抽取的参考笔记范例（指导排版与学法）",
+  key: "The primary key field for a card, such as the word or question.",
+  fields: "All field names available in the current deck template.",
+  notes: "Field notes that explain expected content and formatting.",
+  context: "All existing field values in the current note.",
+  references: "Selected reference notes used to guide style without copying content.",
+  topic: "The topic, source text, or word list used for batch generation.",
+  count: "The requested number of notes to generate.",
+  existing: "Existing key values that generation must avoid duplicating.",
+  instruction: "The user's natural-language template change request.",
+  pane: "The currently active template pane.",
+  tts: "The available text-to-speech field definitions.",
+  sample: "A sample card used as context for the template.",
+  front: "The current front template source.",
+  back: "The current back template source.",
+  css: "The current template stylesheet.",
 }
 
 export function PromptEditor({
@@ -93,13 +77,9 @@ export function PromptEditor({
     }
   }
 
-  const resetCurrent = () => {
-    onChange(spec.key, DEFAULT_AI_SETTINGS[spec.key])
-  }
-
   return (
     <section className="flex min-w-0 flex-col gap-4" aria-label="Prompt Lab">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="提示词类型">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Prompt type">
         {PROMPT_SPECS.map((item) => {
           const itemMeta = PROMPT_META[item.key]
           const Icon = itemMeta.icon
@@ -113,134 +93,89 @@ export function PromptEditor({
               aria-selected={active}
               onClick={() => setKey(item.key)}
               className={cn(
-                "relative flex min-h-16 touch-manipulation items-center gap-2.5 rounded-[1.35rem] px-3 py-3 text-left transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 active:scale-[0.985] dark:focus-visible:ring-white/20",
+                "relative flex min-h-16 items-center gap-2.5 rounded-[16px] border px-3 py-3 text-left transition-[background-color,border-color,transform] active:scale-[0.99]",
                 active
-                  ? "bg-black text-white shadow-[0_18px_38px_-28px_rgba(0,0,0,0.9)] dark:bg-white dark:text-black"
-                  : itemMeta.surface
+                  ? "border-foreground/12 bg-foreground text-background"
+                  : "border-black/[0.065] bg-card hover:bg-muted/45 dark:border-white/[0.09]"
               )}
             >
-              <span
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-full",
-                  active ? "bg-white/15 text-white dark:bg-black/10 dark:text-black" : itemMeta.iconSurface
-                )}
-              >
+              <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-[11px]", active ? "bg-background/10" : "bg-muted")}>
                 <Icon className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-black tracking-[-0.02em]">{item.label}</span>
-                <span className={cn("mt-0.5 block text-[9px] font-bold uppercase tracking-[0.12em]", active ? "opacity-55" : "opacity-55")}>
+                <span className="block truncate text-xs font-semibold tracking-[-0.02em]">{item.label}</span>
+                <span className="mt-0.5 block text-[9px] font-medium uppercase tracking-[0.12em] opacity-55">
                   {modified ? "custom" : "default"}
                 </span>
               </span>
-              {modified ? (
-                <span
-                  className={cn(
-                    "absolute right-2.5 top-2.5 size-2 rounded-full",
-                    active ? "bg-[#ffe39a] dark:bg-[#654600]" : "bg-current opacity-65"
-                  )}
-                  title="已自定义修改"
-                />
-              ) : null}
+              {modified ? <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-energy" title="Customized" /> : null}
             </button>
           )
         })}
       </div>
 
-      <div className={cn("overflow-hidden rounded-[1.85rem] p-4 sm:p-5", meta.surface)}>
+      <div className="rounded-[20px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09] sm:p-5">
         <div className="flex items-start gap-3">
-          <span className={cn("flex size-12 shrink-0 items-center justify-center rounded-full", meta.iconSurface)}>
-            <meta.icon className="size-5" />
-          </span>
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted"><meta.icon className="size-5" /></span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-55">prompt workspace</p>
-            <h3 className="mt-1 text-2xl font-black tracking-[-0.05em] sm:text-3xl">{spec.label}</h3>
-            <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 opacity-70 sm:text-sm">{meta.description}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Prompt workspace</p>
+            <h3 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">{spec.label}</h3>
+            <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground sm:text-sm">{meta.description}</p>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Badge className="border-0 bg-white/55 px-2.5 py-1 font-mono text-[10px] font-bold text-current shadow-none dark:bg-white/10">
-            {currentContent.length} 字
+          <Badge className="border border-black/[0.06] bg-muted px-2.5 py-1 font-mono text-[10px] font-medium text-foreground shadow-none dark:border-white/[0.08]">
+            {currentContent.length} chars
           </Badge>
-          <Badge className="border-0 bg-white/55 px-2.5 py-1 text-[10px] font-black text-current shadow-none dark:bg-white/10">
-            {isModified ? "已自定义" : "使用默认"}
+          <Badge className="border border-black/[0.06] bg-muted px-2.5 py-1 text-[10px] font-medium text-foreground shadow-none dark:border-white/[0.08]">
+            {isModified ? "Customized" : "Default"}
           </Badge>
           <div className="ml-auto flex gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-9 rounded-full bg-white/55 px-3 font-black text-current hover:bg-white/75 hover:text-current dark:bg-white/10 dark:hover:bg-white/15"
-              onClick={copyPrompt}
-            >
+            <Button type="button" size="sm" variant="outline" className="h-9 px-3" onClick={copyPrompt}>
               {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              {copied ? "已复制" : "复制"}
+              {copied ? "Copied" : "Copy"}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={!isModified}
-              className="h-9 rounded-full bg-white/55 px-3 font-black text-current hover:bg-white/75 hover:text-current disabled:opacity-35 dark:bg-white/10 dark:hover:bg-white/15"
-              onClick={resetCurrent}
-            >
+            <Button type="button" size="sm" variant="outline" disabled={!isModified} className="h-9 px-3" onClick={() => onChange(spec.key, DEFAULT_AI_SETTINGS[spec.key])}>
               <RotateCcw className="size-3.5" />
-              恢复
+              Reset
             </Button>
           </div>
         </div>
       </div>
 
       {spec.vars.length > 0 ? (
-        <div className="rounded-[1.7rem] bg-white/75 p-3.5 shadow-[0_18px_42px_-36px_rgba(0,0,0,0.72)] ring-1 ring-black/[0.035] dark:bg-white/[0.055] dark:ring-white/[0.08] sm:p-4">
+        <div className="rounded-[18px] border border-black/[0.06] bg-card p-3.5 dark:border-white/[0.08] sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="flex items-center gap-1.5 text-xs font-black tracking-[-0.02em]">
-                <Sparkles className="size-3.5" />
-                插入变量
-              </p>
-              <p className="mt-0.5 text-[10px] font-semibold text-muted-foreground">点击后会插入到当前光标位置</p>
+              <p className="flex items-center gap-1.5 text-xs font-semibold tracking-[-0.02em]"><Sparkles className="size-3.5" />Insert variables</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Click a variable to insert it at the current cursor.</p>
             </div>
-            <button
-              type="button"
-              className="touch-manipulation rounded-full bg-[#cfe6ff] px-3 py-1.5 text-[10px] font-black text-[#194f83] transition-transform active:scale-95 dark:bg-[#244d74] dark:text-[#dceeff]"
-              aria-expanded={showGuide}
-              onClick={() => setShowGuide((prev) => !prev)}
-            >
-              <span className="flex items-center gap-1">
-                <BookOpen className="size-3" />
-                {showGuide ? "收起说明" : "变量说明"}
-              </span>
-            </button>
+            <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-[10px]" aria-expanded={showGuide} onClick={() => setShowGuide((prev) => !prev)}>
+              <BookOpen className="size-3" />
+              {showGuide ? "Hide guide" : "Variable guide"}
+            </Button>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            {spec.vars.map((item, index) => {
+            {spec.vars.map((item) => {
               const isIncluded = currentContent.includes(`{{${item.id}}}`)
-              const variableSurfaces = [
-                "bg-[#ffe39a] text-[#654600] dark:bg-[#68551f] dark:text-[#ffedb8]",
-                "bg-[#d8f4aa] text-[#315f18] dark:bg-[#385528] dark:text-[#e4f8c5]",
-                "bg-[#cfe6ff] text-[#194f83] dark:bg-[#244d74] dark:text-[#dceeff]",
-                "bg-[#ffd8df] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]",
-                "bg-[#ffc7b8] text-[#743421] dark:bg-[#673b2c] dark:text-[#ffdcd1]",
-              ] as const
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => editorRef.current?.insert(`{{${item.id}}}`)}
-                  title={VAR_EXPLANATIONS[item.id] || `点击插入 {{${item.id}}}：${item.label}`}
+                  title={VAR_EXPLANATIONS[item.id] || `Insert {{${item.id}}}: ${item.label}`}
                   className={cn(
-                    "flex min-h-10 touch-manipulation items-center gap-2 rounded-full px-3 py-2 text-xs font-bold transition-transform [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-black/15 active:scale-95",
+                    "flex min-h-9 items-center gap-2 rounded-[11px] border px-2.5 py-1.5 text-xs font-medium transition-[background-color,border-color,transform] active:scale-[0.98]",
                     isIncluded
-                      ? "bg-black text-white dark:bg-white dark:text-black"
-                      : variableSurfaces[index % variableSurfaces.length]
+                      ? "border-energy/35 bg-energy/15"
+                      : "border-black/[0.06] bg-background/55 hover:bg-muted dark:border-white/[0.08]"
                   )}
                 >
-                  {isIncluded ? <Check className="size-3.5 shrink-0" /> : <span className="size-1.5 shrink-0 rounded-full bg-current opacity-55" />}
-                  <span className="font-mono text-[11px] font-black">{`{{${item.id}}}`}</span>
-                  <span className="opacity-65">{item.label}</span>
+                  {isIncluded ? <Check className="size-3.5 shrink-0" /> : <span className="size-1.5 shrink-0 rounded-full bg-current opacity-45" />}
+                  <span className="font-mono text-[11px]">{`{{${item.id}}}`}</span>
+                  <span className="text-muted-foreground">{item.label}</span>
                 </button>
               )
             })}
@@ -248,42 +183,29 @@ export function PromptEditor({
 
           {showGuide ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {spec.vars.map((item, index) => {
-                const guideSurfaces = ["bg-[#fff3c6]", "bg-[#eaf9d2]", "bg-[#e8f3ff]", "bg-[#ffe9ee]", "bg-[#ffe9df]"] as const
-                return (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "rounded-[1.15rem] p-3 text-black dark:bg-white/[0.07] dark:text-white",
-                      guideSurfaces[index % guideSurfaces.length]
-                    )}
-                  >
-                    <span className="font-mono text-[11px] font-black">{`{{${item.id}}}`}</span>
-                    <p className="mt-1 text-[11px] font-semibold leading-5 opacity-65">
-                      {VAR_EXPLANATIONS[item.id] || item.label}
-                    </p>
-                  </div>
-                )
-              })}
+              {spec.vars.map((item) => (
+                <div key={item.id} className="rounded-[13px] border border-black/[0.055] bg-background/55 p-3 dark:border-white/[0.07]">
+                  <span className="font-mono text-[11px] font-semibold">{`{{${item.id}}}`}</span>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{VAR_EXPLANATIONS[item.id] || item.label}</p>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>
       ) : (
-        <div className="flex items-start gap-2.5 rounded-[1.45rem] bg-[#cfe6ff] px-4 py-3 text-[#194f83] dark:bg-[#244d74] dark:text-[#dceeff]">
+        <div className="flex items-start gap-2.5 rounded-[15px] border border-black/[0.06] bg-muted/45 px-4 py-3 dark:border-white/[0.08]">
           <Info className="mt-0.5 size-4 shrink-0" />
-          <p className="text-xs font-semibold leading-5">
-            全局系统提示词无需插值变量，会作为基础 System Prompt 应用于所有 AI 请求。
-          </p>
+          <p className="text-xs leading-5 text-muted-foreground">The system prompt does not need interpolation variables. It is applied as the base System Prompt for every AI request.</p>
         </div>
       )}
 
-      <div className="min-w-0 overflow-hidden rounded-[1.8rem] bg-[#ffd8df] p-2.5 dark:bg-[#6a2835] sm:p-3">
+      <div className="min-w-0 overflow-hidden rounded-[20px] border border-black/[0.065] bg-card p-2.5 dark:border-white/[0.09] sm:p-3">
         <div className="mb-2 flex items-center justify-between gap-3 px-1.5 pt-1">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#761c31]/55 dark:text-[#ffdce3]/55">prompt source</p>
-            <p className="mt-0.5 text-xs font-black text-[#761c31] dark:text-[#ffdce3]">直接编辑提示词</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Prompt source</p>
+            <p className="mt-0.5 text-xs font-semibold">Edit prompt directly</p>
           </div>
-          <span className="rounded-full bg-white/55 px-2.5 py-1 font-mono text-[9px] font-bold text-[#761c31] dark:bg-white/10 dark:text-[#ffdce3]">
+          <span className="rounded-[8px] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground">
             {isModified ? "CUSTOM" : "DEFAULT"}
           </span>
         </div>
@@ -294,7 +216,7 @@ export function PromptEditor({
           label={spec.label}
           value={settings[spec.key]}
           language="prompt"
-          placeholder="在这里编写提示词；也可以点击上方变量直接插入到光标处…"
+          placeholder="Write the prompt here, or click a variable above to insert it at the cursor…"
           onChange={(value) => onChange(spec.key, value)}
         />
       </div>
