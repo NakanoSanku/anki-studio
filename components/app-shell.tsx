@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -148,6 +149,18 @@ export function AppShell({
   const [softKeyboardActive, setSoftKeyboardActive] = useState(false)
   const [headerAction, setHeaderAction] = useState<ReactNode>(null)
   const showBottomNavigation = showTabBar && !softKeyboardActive
+  const previousPathRef = useRef(pathname)
+  const noteReturnPathRef = useRef(PATHS.notes)
+
+  useEffect(() => {
+    if (noteDetail) {
+      const previous = previousPathRef.current
+      if (previous === PATHS.home || previous === PATHS.notes) {
+        noteReturnPathRef.current = previous
+      }
+    }
+    previousPathRef.current = pathname
+  }, [noteDetail, pathname])
 
   useEffect(() => {
     if (!lock) return
@@ -196,8 +209,8 @@ export function AppShell({
   }, [])
 
   const goBack = () => {
-    if (noteDetail && window.history.length > 1) {
-      router.back()
+    if (noteDetail) {
+      router.replace(noteReturnPathRef.current)
       return
     }
     if (onBack) {

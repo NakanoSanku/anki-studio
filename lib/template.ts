@@ -44,9 +44,16 @@ export function previewDocument(css: string, html: string): string {
         margin: 0;
         min-height: 100%;
         width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
         -webkit-text-size-adjust: 100%;
       }
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
       body.card {
+        max-width: 100%;
+        overflow-x: hidden;
         overflow-wrap: anywhere;
       }
       img, video, svg, canvas {

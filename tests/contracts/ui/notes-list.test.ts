@@ -32,20 +32,19 @@ describe("notes mobile chrome", () => {
     expect(editor).not.toContain('<TabsTrigger value="preview">')
   })
 
-  it("keeps note actions on the same compact title row", () => {
-    expect(editor).toContain('data-testid="note-action-rail"')
-    expect(editor).toContain('className="mt-1 flex min-w-0 items-center gap-2"')
-    expect(editor).toContain('className="min-w-0 flex-1 truncate text-lg')
-    expect(editor).toContain('>{isSelectedReviewed ? "Undo" : "Review"}</Button>')
+  it("keeps review, AI Fill, and delete actions on one line", () => {
+    expect(editor).toContain("flex-nowrap")
+    expect(editor).toContain("whitespace-nowrap")
     expect(editor).toContain('aria-label="AI Fill"')
-    expect(editor).toContain('>AI</Button>')
-    expect(editor).toContain('>Delete</Button>')
-    expect(editor).not.toContain("overflow-x-auto pb-0.5")
+    expect(editor).toContain(">Delete</Button>")
   })
 
-  it("uses browser history for note-detail back navigation when available", () => {
-    expect(shell).toContain("noteDetail && window.history.length > 1")
-    expect(shell).toContain("router.back()")
+  it("uses a deterministic note return path instead of relying on browser history", () => {
+    expect(shell).toContain("const noteReturnPathRef = useRef(PATHS.notes)")
+    expect(shell).toContain("previous === PATHS.home || previous === PATHS.notes")
+    expect(shell).toContain("router.replace(noteReturnPathRef.current)")
+    expect(shell).not.toContain("window.history.length > 1")
+    expect(shell).not.toContain("router.back()")
   })
 
   it("keeps reference notes available for AI Fill and batch generation", () => {
