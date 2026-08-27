@@ -13,7 +13,9 @@ describe("笔记列表 chrome", () => {
     expect(studio).toContain("lockViewport={pathname === PATHS.notes}")
     expect(shell).toContain('data-testid={lock ? "notes-shell"')
     expect(shell).toContain("fixed inset-0 overflow-hidden overscroll-none")
-    expect(shell).toContain('lock ? "shrink-0" : "fixed inset-x-0 bottom-0"')
+    expect(shell).toContain('"shrink-0 pb-[max(')
+    expect(shell).toContain('"fixed inset-x-0 bottom-0 pb-[max(')
+    expect(shell).toContain("env(safe-area-inset-bottom)")
     expect(shell).toContain("html.style.overflow = \"hidden\"")
   })
 
