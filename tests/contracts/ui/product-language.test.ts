@@ -19,7 +19,7 @@ describe("mobile hierarchy and language", () => {
   })
 
   it("uses English copy for the primary study experience", () => {
-    expect(overview).toContain("Today's study")
+    expect(overview).toContain("Today’s study")
     expect(overview).toContain("Start studying")
     expect(overview).toContain("New note")
   })

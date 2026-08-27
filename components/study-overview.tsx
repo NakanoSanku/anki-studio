@@ -42,7 +42,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
               Today
             </div>
             <h1 id="study-overview-title" className="text-[30px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[34px]">
-              Today's study
+              Today’s study
             </h1>
             <p className="mt-2 text-sm leading-5 text-muted-foreground">Less friction. One clear rhythm.</p>
           </div>
