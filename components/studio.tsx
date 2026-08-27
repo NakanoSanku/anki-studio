@@ -279,7 +279,7 @@ export function Studio() {
 
   useEffect(() => {
     let cancelled = false
-    let cancelStartupSync = () => undefined
+    let cancelStartupSync: () => void = () => {}
     void (async () => {
       setStudioStore(typeof indexedDB === "undefined" ? createMemoryStore() : createIdbStore())
       const session = await loadLibrarySession()
@@ -303,7 +303,7 @@ export function Studio() {
 
   useEffect(() => {
     if (!ready) return
-    let cancelIdle = () => undefined
+    let cancelIdle: () => void = () => {}
     const timer = window.setTimeout(() => {
       cancelIdle = scheduleIdle(() => {
         void persistActiveDeck(library, deck)
