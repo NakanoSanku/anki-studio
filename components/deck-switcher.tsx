@@ -60,14 +60,6 @@ type DeckStep =
   | { kind: "duplicate"; entry: LibraryEntry }
   | { kind: "delete"; entry: LibraryEntry }
 
-const deckPastels = [
-  "bg-[#cfe6ff] text-[#194f83]",
-  "bg-[#d8f4aa] text-[#315f18]",
-  "bg-[#ffe39a] text-[#654600]",
-  "bg-[#ffd8df] text-[#761c31]",
-  "bg-[#ffc7b8] text-[#743421]",
-] as const
-
 function nameTitle(kind: DeckStep["kind"]): string {
   if (kind === "create") return "新建"
   if (kind === "rename") return "改名"
@@ -134,49 +126,60 @@ export function DeckSwitcher({
       >
         <SheetContent
           side="bottom"
-          className="max-h-[86dvh] rounded-t-[2.25rem] border-0 bg-[#fffaf5] pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-24px_70px_-42px_rgba(0,0,0,0.65)] dark:bg-[#171512]"
+          className="max-h-[86dvh] rounded-t-[28px] border-x-0 border-b-0 border-t border-black/[0.07] bg-card pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-22px_60px_-42px_rgba(0,0,0,0.55)] dark:border-white/[0.1]"
           onInteractOutside={blockSheetDismiss}
           onFocusOutside={blockSheetDismiss}
           onEscapeKeyDown={blockSheetDismiss}
         >
-          <SheetHeader className="pb-2">
-            <div className="mb-1 inline-flex w-fit rounded-full bg-[#cfe6ff] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#194f83] dark:bg-[#244d74] dark:text-[#dceeff]">
-              your decks
+          <SheetHeader className="pb-3">
+            <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="size-2 rounded-full bg-energy" />
+              Library
             </div>
-            <SheetTitle className="text-3xl font-black tracking-[-0.055em]">卡包</SheetTitle>
+            <div className="flex items-end justify-between gap-4">
+              <SheetTitle className="text-[28px] font-semibold tracking-[-0.045em]">卡包</SheetTitle>
+              <span className="pb-1 text-xs text-muted-foreground">{library.decks.length} 个</span>
+            </div>
           </SheetHeader>
 
           <ul className="grid gap-2 overflow-y-auto px-3 pb-3">
-            {library.decks.map((entry, index) => {
+            {library.decks.map((entry) => {
               const active = entry.id === library.activeId
               return (
                 <li key={entry.id} className="flex items-stretch gap-2">
                   <button
                     type="button"
                     className={cn(
-                      "group flex min-w-0 flex-1 items-center gap-3 rounded-[1.45rem] px-4 py-4 text-left transition-transform active:scale-[0.985]",
+                      "group flex min-w-0 flex-1 items-center gap-3 rounded-[18px] border px-4 py-3.5 text-left transition-[background-color,border-color,transform] duration-150 active:scale-[0.99]",
                       active
-                        ? "bg-black text-white shadow-[0_18px_42px_-30px_rgba(0,0,0,0.85)] dark:bg-white dark:text-black"
-                        : deckPastels[index % deckPastels.length]
+                        ? "border-foreground/12 bg-foreground text-background"
+                        : "border-black/[0.065] bg-background/45 text-foreground hover:bg-muted/55 dark:border-white/[0.09]"
                     )}
                     onClick={() => {
                       if (active) onOpenChange(false)
                       else onSwitch(entry.id)
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate text-base font-black tracking-[-0.025em]">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-2.5 shrink-0 rounded-full",
+                        active ? "bg-energy" : "bg-foreground/18"
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.02em]">
                       {displayName(entry)}
                     </span>
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums",
-                        active ? "bg-white/15 text-white dark:bg-black/10 dark:text-black" : "bg-white/45 text-current"
+                        "font-mono text-[11px] font-medium tabular-nums",
+                        active ? "text-background/55" : "text-muted-foreground"
                       )}
                     >
                       {entry.cardCount}
                     </span>
                     {active ? (
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-black dark:text-white">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-energy text-black">
                         <Check className="size-3.5" />
                       </span>
                     ) : null}
@@ -188,15 +191,15 @@ export function DeckSwitcher({
                         type="button"
                         size="icon-lg"
                         variant="outline"
-                        className="my-auto border-0 bg-white shadow-[0_10px_28px_-22px_rgba(0,0,0,0.75)] dark:bg-white/10"
+                        className="my-auto shadow-none"
                         aria-label="更多"
                       >
                         <MoreHorizontal className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-32 rounded-2xl p-1.5">
+                    <DropdownMenuContent align="end" className="min-w-32 rounded-[16px] p-1.5">
                       <DropdownMenuItem
-                        className="rounded-xl"
+                        className="rounded-[12px]"
                         onSelect={(event) => {
                           event.preventDefault()
                           startNameStep({ kind: "rename", entry }, displayName(entry))
@@ -205,7 +208,7 @@ export function DeckSwitcher({
                         改名
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="rounded-xl"
+                        className="rounded-[12px]"
                         onSelect={(event) => {
                           event.preventDefault()
                           startNameStep(
@@ -218,7 +221,7 @@ export function DeckSwitcher({
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"
-                        className="rounded-xl"
+                        className="rounded-[12px]"
                         disabled={!canDelete}
                         onSelect={(event) => {
                           event.preventDefault()
@@ -237,7 +240,7 @@ export function DeckSwitcher({
           <div className="px-4 pb-2 pt-1">
             <Button
               type="button"
-              className="h-14 w-full rounded-full bg-black text-sm font-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/90"
+              className="h-[52px] w-full rounded-[16px] bg-foreground text-sm font-semibold text-background hover:bg-foreground/90"
               onClick={() => startNameStep({ kind: "create" }, "")}
             >
               <Plus className="size-4" />
@@ -256,13 +259,14 @@ export function DeckSwitcher({
         <DialogContent
           showCloseButton={false}
           aria-describedby={undefined}
-          className="rounded-[2rem] border-0 bg-[#fffaf5] p-5 dark:bg-[#171512]"
+          className="rounded-[22px] border border-black/[0.07] bg-card p-5 dark:border-white/[0.1]"
         >
           <DialogHeader>
-            <div className="mb-1 inline-flex w-fit rounded-full bg-[#ff9bd6]/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em]">
-              deck name
+            <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="size-2 rounded-full bg-energy" />
+              Deck name
             </div>
-            <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+            <DialogTitle className="text-[24px] font-semibold tracking-[-0.04em]">
               {step ? nameTitle(step.kind) : ""}
             </DialogTitle>
           </DialogHeader>
@@ -272,7 +276,7 @@ export function DeckSwitcher({
             autoFocus
             data-testid="deck-name-input"
             aria-label={step ? nameTitle(step.kind) : "名称"}
-            className="h-12 bg-white text-base font-semibold dark:bg-white/[0.06]"
+            className="h-12 bg-background text-base font-medium"
             onChange={(event) => setNameValue(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" || !nameReady) return
@@ -285,7 +289,7 @@ export function DeckSwitcher({
             </Button>
             <Button
               type="button"
-              className="h-12 flex-1 bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black"
+              className="h-12 flex-1"
               disabled={!nameReady}
               onClick={submitName}
             >
@@ -302,25 +306,23 @@ export function DeckSwitcher({
         }}
       >
         <AlertDialogContent
-          className="rounded-[2rem] border-0 bg-[#fffaf5] dark:bg-[#171512]"
+          className="rounded-[22px] border border-black/[0.07] bg-card dark:border-white/[0.1]"
           onEscapeKeyDown={(event) => event.preventDefault()}
         >
           <AlertDialogHeader>
-            <div className="mb-1 inline-flex w-fit rounded-full bg-[#ffd8df] px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#761c31] dark:bg-[#6a2835] dark:text-[#ffdce3]">
-              careful
-            </div>
-            <AlertDialogTitle className="text-2xl font-black tracking-[-0.04em]">删除卡包？</AlertDialogTitle>
-            <AlertDialogDescription className="font-medium leading-6">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-destructive/75">Careful</div>
+            <AlertDialogTitle className="text-[24px] font-semibold tracking-[-0.04em]">删除卡包？</AlertDialogTitle>
+            <AlertDialogDescription className="leading-6">
               {step?.kind === "delete"
                 ? `确定删除「${displayName(step.entry)}」？本机数据无法恢复。`
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row gap-2">
-            <AlertDialogCancel className="h-12 flex-1 rounded-full">取消</AlertDialogCancel>
+            <AlertDialogCancel className="h-12 flex-1 rounded-[14px]">取消</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              className="h-12 flex-1 rounded-full"
+              className="h-12 flex-1 rounded-[14px]"
               onClick={() => {
                 if (step?.kind === "delete") onDelete(step.entry.id)
               }}
