@@ -31,7 +31,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-[70] bg-black/22 duration-150 supports-backdrop-filter:backdrop-blur-[5px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 z-[70] bg-black/28 duration-150 supports-backdrop-filter:backdrop-blur-[6px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -58,7 +58,7 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-[70] flex flex-col gap-4 border-0 bg-[#fffaf5] bg-clip-padding text-sm text-popover-foreground shadow-[0_30px_90px_-45px_rgba(0,0,0,0.8)] transition duration-200 ease-out dark:bg-[#171512] data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:rounded-t-[2.25rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-[88%] data-[side=left]:rounded-r-[2rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-[88%] data-[side=right]:rounded-l-[2rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:rounded-b-[2.25rem] data-[side=left]:sm:max-w-md data-[side=right]:sm:max-w-md data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-10 data-[side=left]:data-open:slide-in-from-left-10 data-[side=right]:data-open:slide-in-from-right-10 data-[side=top]:data-open:slide-in-from-top-10 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-10 data-[side=left]:data-closed:slide-out-to-left-10 data-[side=right]:data-closed:slide-out-to-right-10 data-[side=top]:data-closed:slide-out-to-top-10",
+          "fixed z-[70] flex flex-col gap-4 border border-black/[0.07] bg-card bg-clip-padding text-sm text-popover-foreground shadow-[0_30px_90px_-48px_rgba(0,0,0,0.72)] transition duration-180 ease-out dark:border-white/[0.1] data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:rounded-t-[28px] data-[side=bottom]:border-x-0 data-[side=bottom]:border-b-0 data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-[88%] data-[side=left]:rounded-r-[24px] data-[side=left]:border-y-0 data-[side=left]:border-l-0 data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-[88%] data-[side=right]:rounded-l-[24px] data-[side=right]:border-y-0 data-[side=right]:border-r-0 data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:rounded-b-[28px] data-[side=top]:border-x-0 data-[side=top]:border-t-0 data-[side=left]:sm:max-w-md data-[side=right]:sm:max-w-md data-open:animate-in data-open:fade-in-0 data-[side=bottom]:data-open:slide-in-from-bottom-8 data-[side=left]:data-open:slide-in-from-left-8 data-[side=right]:data-open:slide-in-from-right-8 data-[side=top]:data-open:slide-in-from-top-8 data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:data-closed:slide-out-to-bottom-8 data-[side=left]:data-closed:slide-out-to-left-8 data-[side=right]:data-closed:slide-out-to-right-8 data-[side=top]:data-closed:slide-out-to-top-8",
           className
         )}
         {...props}
@@ -67,8 +67,8 @@ function SheetContent({
         {showCloseButton && (
           <SheetPrimitive.Close data-slot="sheet-close" asChild>
             <Button
-              variant="outline"
-              className="absolute top-3 right-3 border-0 bg-white/85 shadow-[0_10px_24px_-20px_rgba(0,0,0,0.75)] dark:bg-white/10"
+              variant="ghost"
+              className="absolute top-3 right-3 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
               size="icon-sm"
             >
               <XIcon />
@@ -109,7 +109,7 @@ function SheetTitle({
     <SheetPrimitive.Title
       data-slot="sheet-title"
       className={cn(
-        "font-heading text-2xl font-black tracking-[-0.045em] text-foreground",
+        "font-heading text-2xl font-semibold tracking-[-0.04em] text-foreground",
         className
       )}
       {...props}
@@ -124,7 +124,7 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-sm font-medium leading-6 text-muted-foreground", className)}
+      className={cn("text-sm leading-6 text-muted-foreground", className)}
       {...props}
     />
   )
