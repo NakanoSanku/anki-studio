@@ -15,46 +15,83 @@ export default function AppleIcon() {
           justifyContent: "center",
           position: "relative",
           overflow: "hidden",
-          background: "#fffaf5",
+          background: "#F8F7F3",
           borderRadius: 38,
         }}
       >
-        <div style={{ position: "absolute", width: 86, height: 72, borderRadius: 999, background: "#c8f889", left: -24, top: 16, transform: "rotate(-18deg)" }} />
-        <div style={{ position: "absolute", width: 82, height: 72, borderRadius: 999, background: "#ffaaa0", right: -22, top: 31, transform: "rotate(18deg)" }} />
-        <div style={{ position: "absolute", width: 78, height: 72, borderRadius: 999, background: "#9dceff", left: -20, bottom: 10, transform: "rotate(22deg)" }} />
-        <div style={{ position: "absolute", width: 76, height: 68, borderRadius: 999, background: "#ffe08d", right: -15, bottom: 4, transform: "rotate(-12deg)" }} />
+        <div
+          style={{
+            position: "absolute",
+            width: 92,
+            height: 92,
+            borderRadius: 999,
+            background: "rgba(199, 248, 90, 0.16)",
+            left: -30,
+            top: -24,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 104,
+            height: 104,
+            borderRadius: 999,
+            background: "rgba(21, 21, 21, 0.05)",
+            right: -38,
+            bottom: -34,
+          }}
+        />
 
         <div
           style={{
-            width: 90,
-            height: 112,
-            borderRadius: 29,
-            background: "#090909",
+            position: "absolute",
+            width: 82,
+            height: 98,
+            borderRadius: 23,
+            background: "#D9DDD8",
+            transform: "translate(-4px, 5px) rotate(-7deg)",
+          }}
+        />
+        <div
+          style={{
+            width: 82,
+            height: 98,
+            borderRadius: 23,
+            background: "#151515",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            transform: "rotate(-5deg)",
+            position: "relative",
           }}
         >
           <div
             style={{
-              width: 70,
-              height: 91,
-              borderRadius: 22,
-              background: "#fffdf9",
+              width: 64,
+              height: 78,
+              borderRadius: 17,
+              background: "#F8F7F3",
               display: "flex",
               flexDirection: "column",
-              alignItems: "center",
               justifyContent: "center",
-              gap: 13,
+              padding: "0 12px",
+              gap: 7,
             }}
           >
-            <div style={{ display: "flex", gap: 20 }}>
-              <div style={{ width: 7, height: 7, borderRadius: 999, background: "#090909" }} />
-              <div style={{ width: 7, height: 7, borderRadius: 999, background: "#090909" }} />
-            </div>
-            <div style={{ width: 29, height: 12, borderBottom: "5px solid #090909", borderRadius: 999 }} />
+            <div style={{ width: 39, height: 5, borderRadius: 999, background: "#151515" }} />
+            <div style={{ width: 28, height: 4, borderRadius: 999, background: "#7D837E" }} />
+            <div style={{ width: 34, height: 4, borderRadius: 999, background: "#B7BBB7" }} />
           </div>
+          <div
+            style={{
+              position: "absolute",
+              width: 15,
+              height: 15,
+              borderRadius: 999,
+              background: "#C7F85A",
+              right: 13,
+              top: 13,
+            }}
+          />
         </div>
       </div>
     ),
