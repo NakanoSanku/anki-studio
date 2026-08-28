@@ -54,7 +54,7 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository }}:build-${{ github.sha }}-${{ matrix.arch }}
+          tags: ${{ env.IMAGE_NAME }}:build-${{ github.sha }}-${{ matrix.arch }}
           cache-from: type=gha,scope=docker-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
           provenance: false
