@@ -21,16 +21,16 @@ describe("AI Voice Tutor", () => {
     expect(settings).toContain("<GeminiLiveSetup />")
   })
 
-  it("mints a short-lived token and uses the constrained Live endpoint", () => {
-    expect(tokenRoute).toContain("/v1beta/auth_tokens")
+  it("mints a short-lived v1alpha token and uses the constrained Live endpoint", () => {
+    expect(tokenRoute).toContain("/v1alpha/auth_tokens")
     expect(tokenRoute).toContain('"x-goog-api-key": apiKey')
     expect(tokenRoute).toContain("uses: 1")
     expect(tokenRoute).toContain('"Cache-Control": "no-store"')
     expect(tokenRoute).not.toContain("liveConnectConstraints")
-    expect(tutor).toContain("BidiGenerateContentConstrained")
+    expect(tutor).toContain("v1alpha.GenerativeService.BidiGenerateContentConstrained")
     expect(tutor).toContain("?access_token=${encodeURIComponent(token)}")
     expect(tutor).not.toContain("?key=${")
-    expect(tutor).not.toContain("GenerativeService.BidiGenerateContent\"")
+    expect(tutor).not.toContain("v1beta.GenerativeService.BidiGenerateContentConstrained")
   })
 
   it("streams microphone PCM, receives every audio part, and clears playback on interruption", () => {
