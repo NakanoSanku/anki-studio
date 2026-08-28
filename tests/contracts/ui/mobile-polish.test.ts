@@ -9,6 +9,9 @@ const sheet = readSource("components", "ui", "sheet.tsx")
 const studySettings = readSource("components", "study-settings-panel.tsx")
 const textarea = readSource("components", "ui", "textarea.tsx")
 const cardPreview = readSource("components", "card-preview.tsx")
+const googleAccount = readSource("components", "google-account-panel.tsx")
+const googleSheets = readSource("components", "google-sheet-picker-panel.tsx")
+const settingsForm = readSource("components", "settings-form.tsx")
 const template = readSource("lib", "template.ts")
 
 describe("mobile visual polish regressions", () => {
@@ -30,6 +33,19 @@ describe("mobile visual polish regressions", () => {
     expect(dialog).toContain("p-4")
     expect(dialog).toContain("min-[400px]:p-5")
     expect(textarea).toContain("min-w-0 w-full max-w-full resize-y")
+  })
+
+  it("keeps the connected sync surface focused on account, destination, and sync action", () => {
+    expect(settingsForm).toContain("mx-auto max-w-2xl space-y-2.5")
+    expect(settingsForm).toContain("Sync status")
+    expect(googleAccount).toContain("Google connected")
+    expect(googleAccount).not.toContain("Sheets authorized")
+    expect(googleAccount).not.toContain("Ready to sync")
+    expect(googleSheets).toContain("Sync destination")
+    expect(googleSheets).toContain("Open spreadsheet")
+    expect(googleSheets).not.toContain("Inventory")
+    expect(googleSheets).not.toContain("Check structure")
+    expect(googleSheets).not.toContain("Google Drive <ExternalLink")
   })
 
   it("lets bottom sheets honor explicit viewport heights instead of forcing height auto", () => {
@@ -70,6 +86,12 @@ describe("mobile visual polish regressions", () => {
     expect(cardPreview).not.toContain("TtsPlayButton")
     expect(cardPreview).not.toContain("ttsFieldsOnSide")
     expect(cardPreview).not.toContain(">Audio</span>")
+  })
+
+  it("lets viewport previews use the whole page instead of nesting another card shell", () => {
+    expect(cardPreview).toContain("h-[calc(100dvh-5.75rem)]")
+    expect(cardPreview).toContain("rounded-none border-0 bg-transparent p-0 shadow-none")
+    expect(cardPreview).toContain('fillViewport ? "flex-1 rounded-[20px]"')
   })
 
   it("prevents generated preview documents from overflowing horizontally", () => {
