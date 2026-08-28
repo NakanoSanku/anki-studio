@@ -9,8 +9,8 @@ const tokenRoute = readSource("app", "api", "gemini-live", "token", "route.ts")
 
 describe("AI Voice Tutor", () => {
   it("keeps the entry simple and available from the home study screen", () => {
-    expect(overview).toContain("AI Tutor")
-    expect(overview).toContain("Start voice tutor")
+    expect(overview).toContain("Voice tutor")
+    expect(overview).toContain("setTutorOpen(true)")
     expect(overview).toContain("<AiTutor deck={deck}")
     expect(overview).not.toContain("Role-play")
     expect(overview).not.toContain("Pronunciation Coach")
