@@ -185,7 +185,7 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
     if (samples.length === 0) return
 
     const buffer = context.createBuffer(1, samples.length, OUTPUT_RATE)
-    buffer.copyToChannel(samples, 0)
+    buffer.getChannelData(0).set(samples)
     const source = context.createBufferSource()
     source.buffer = buffer
     source.connect(context.destination)
