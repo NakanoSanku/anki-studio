@@ -44,6 +44,12 @@ export async function POST(request: Request) {
         uses: 1,
         expireTime,
         newSessionExpireTime,
+        liveConnectConstraints: {
+          model: `models/${GEMINI_LIVE_MODEL}`,
+          config: {
+            responseModalities: ["AUDIO"],
+          },
+        },
       }),
       cache: "no-store",
     })
