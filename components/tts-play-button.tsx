@@ -12,7 +12,7 @@ export function TtsPlayButton({
   text,
   lang,
   slow,
-  label = "播放",
+  label = "Play",
   className,
   iconOnly = false,
 }: {
@@ -35,7 +35,7 @@ export function TtsPlayButton({
       const clip = await getTtsClip({ text, lang, slow })
       await playTtsAudio(clip.blob)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "播放失败")
+      setError(caught instanceof Error ? caught.message : "Playback failed")
     } finally {
       setBusy(false)
     }
@@ -58,7 +58,7 @@ export function TtsPlayButton({
         onClick={() => void play()}
       >
         {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Volume2 className="size-3.5" />}
-        {!iconOnly ? <span>{busy ? "加载中" : label}</span> : null}
+        {!iconOnly ? <span>{busy ? "Loading" : label}</span> : null}
       </Button>
       {error ? (
         <p
