@@ -30,6 +30,14 @@ describe("AI Voice Tutor", () => {
     expect(tutor).not.toContain("?key=${")
   })
 
+  it("falls back to the stable token payload when a Gemini backend rejects Live constraints", () => {
+    expect(tokenRoute).toContain("isUnsupportedConstraint")
+    expect(tokenRoute).toContain("liveConnectConstraints")
+    expect(tokenRoute).toContain('constraintsCapability = "unsupported"')
+    expect(tokenRoute).toContain("requestToken(apiKey, baseRequest)")
+    expect(tokenRoute).toContain("Unknown name")
+  })
+
   it("streams microphone PCM, receives every audio part, and clears playback on interruption", () => {
     expect(tutor).toContain('mimeType: `audio/pcm;rate=${INPUT_RATE}`')
     expect(tutor).toContain("inputAudioTranscription: {}")
