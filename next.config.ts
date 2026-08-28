@@ -1,7 +1,9 @@
 import type { NextConfig } from "next"
 
+const isDockerBuild = process.env.DOCKER_BUILD === "1"
+
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(isDockerBuild ? { output: "standalone" as const } : {}),
   serverExternalPackages: ["sql.js"],
   allowedDevOrigins: [
     "*.run.app",

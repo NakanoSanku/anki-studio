@@ -13,6 +13,7 @@ FROM base AS builder
 RUN apk add --no-cache libc6-compat
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV DOCKER_BUILD=1
 RUN npm run build
 
 FROM node:22-alpine AS runner
