@@ -1,14 +1,14 @@
-import { PATHS } from "@/lib/app-paths"
-
-/** Shared-element name for the 学习 overview card ↔ 会话 stage morph. */
+/**
+ * Legacy shared-element name kept for compatibility with older callers/tests.
+ * Study navigation no longer opts into a route-level View Transition because
+ * the extra morph made Start studying feel delayed on mobile.
+ */
 export const STUDY_STAGE_NAME = "study-stage"
 
 /**
- * Transition types for the `/` ↔ `/study` pair only.
- * Other route pairs return undefined so they stay untyped (no directional VT).
+ * Home ↔ Study is intentionally untyped now. Passing no transition type keeps
+ * Next navigation immediate and avoids waiting on the shared-element morph.
  */
-export function studyPairTransitionTypes(from: string, to: string): string[] | undefined {
-  if (from === PATHS.home && to === PATHS.studySession) return ["nav-forward"]
-  if (from === PATHS.studySession && to === PATHS.home) return ["nav-back"]
+export function studyPairTransitionTypes(_from: string, _to: string): string[] | undefined {
   return undefined
 }

@@ -1,5 +1,5 @@
-// Pure decision logic for the study-card slide transitions. Components stay
-// thin: they pick an action and a reduced-motion flag, and render the pose.
+// Pure decision logic for study-card transitions. Reveal/conceal deliberately
+// avoid spatial motion so switching faces reads as an immediate content change.
 
 export type CardMotionAction = "reveal" | "conceal" | "advance"
 
@@ -9,15 +9,11 @@ export type CardMotionPose = {
   exit: { x: number; opacity: number }
 }
 
-/** Single shared duration so reveal, conceal, and advance feel like one system. */
-export const CARD_MOTION_DURATION_S = 0.22
+/** Keep card feedback short enough to feel responsive on touch devices. */
+export const CARD_MOTION_DURATION_S = 0.12
 
-const SLIDE_PX = 32
+const ADVANCE_PX = 12
 
-/**
- * Forward actions (揭示答案, 评分推进) read as page turns: content enters
- * from the right and leaves to the left. 重看正面 reverses it.
- */
 export function cardMotionDirection(action: CardMotionAction): 1 | -1 {
   return action === "conceal" ? -1 : 1
 }
@@ -30,10 +26,18 @@ export function cardMotionPose(action: CardMotionAction, reducedMotion: boolean)
       exit: { x: 0, opacity: 0 },
     }
   }
-  const dir = cardMotionDirection(action)
+
+  if (action === "advance") {
+    return {
+      initial: { x: ADVANCE_PX, opacity: 0 },
+      animate: { x: 0, opacity: 1 },
+      exit: { x: -ADVANCE_PX, opacity: 0 },
+    }
+  }
+
   return {
-    initial: { x: SLIDE_PX * dir, opacity: 0 },
+    initial: { x: 0, opacity: 0 },
     animate: { x: 0, opacity: 1 },
-    exit: { x: -SLIDE_PX * dir, opacity: 0 },
+    exit: { x: 0, opacity: 0 },
   }
 }
