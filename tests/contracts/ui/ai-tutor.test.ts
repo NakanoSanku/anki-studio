@@ -35,7 +35,7 @@ describe("AI Voice Tutor", () => {
     expect(tokenRoute).toContain("liveConnectConstraints")
     expect(tokenRoute).toContain('constraintsCapability = "unsupported"')
     expect(tokenRoute).toContain("requestToken(apiKey, baseRequest)")
-    expect(tokenRoute).toContain("Unknown name")
+    expect(tokenRoute).toContain("unknown name")
   })
 
   it("streams microphone PCM, receives every audio part, and clears playback on interruption", () => {
