@@ -4,6 +4,7 @@ import { readSource } from "../helpers/source"
 
 const aiSettings = readSource("components", "ai-settings-panel.tsx")
 const codeEditor = readSource("components", "code-editor.tsx")
+const sheet = readSource("components", "ui", "sheet.tsx")
 const studySettings = readSource("components", "study-settings-panel.tsx")
 const cardPreview = readSource("components", "card-preview.tsx")
 const template = readSource("lib", "template.ts")
@@ -17,6 +18,11 @@ describe("mobile visual polish regressions", () => {
     expect(aiSettings).toContain('data-testid="prompt-editor-actions"')
     expect(aiSettings).toContain("pb-[max(0.75rem,env(safe-area-inset-bottom))]")
     expect(aiSettings).not.toContain("<SheetFooter")
+  })
+
+  it("lets bottom sheets honor explicit viewport heights instead of forcing height auto", () => {
+    expect(sheet).toContain("fixed z-[70] flex min-h-0 flex-col")
+    expect(sheet).not.toContain("data-[side=bottom]:h-auto")
   })
 
   it("lets full-height CodeMirror workspaces shrink between their chrome instead of covering actions", () => {
