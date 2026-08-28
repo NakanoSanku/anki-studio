@@ -123,13 +123,14 @@ export function CardPreview({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-3 rounded-[22px] border border-black/[0.065] bg-card p-3 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-4",
-        fillViewport &&
-          "h-[max(20rem,calc(100dvh-19.5rem))] lg:h-[max(28rem,calc(100dvh-16.5rem))]",
+        "flex min-h-0 min-w-0 flex-col",
+        fillViewport
+          ? "h-[calc(100dvh-5.75rem)] gap-2 rounded-none border-0 bg-transparent p-0 shadow-none sm:p-0 lg:h-[calc(100dvh-7rem)]"
+          : "gap-3 rounded-[22px] border border-black/[0.065] bg-card p-3 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-4",
         className
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-1">
+      <div className={cn("flex shrink-0 items-center justify-between gap-3", fillViewport ? "px-1" : "px-1")}> 
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
             <span className="size-1.5 rounded-full bg-energy" />
@@ -177,14 +178,13 @@ export function CardPreview({
 
       <div
         className={cn(
-          "relative overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_22px_52px_-42px_rgba(0,0,0,0.5)] dark:border-white/[0.09]",
-          fillViewport ? "min-h-0 flex-1" : "h-[300px] lg:h-[440px]"
+          "relative min-h-0 overflow-hidden border border-black/[0.07] bg-white shadow-[0_22px_52px_-42px_rgba(0,0,0,0.5)] dark:border-white/[0.09]",
+          fillViewport ? "flex-1 rounded-[20px]" : "h-[300px] rounded-[18px] lg:h-[440px]"
         )}
       >
         <iframe
           title="Card preview"
           sandbox="allow-same-origin"
-          loading="lazy"
           referrerPolicy="no-referrer"
           srcDoc={doc}
           onLoad={wireFrame}
