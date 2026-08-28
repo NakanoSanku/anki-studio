@@ -10,6 +10,7 @@ import { fsrsOf, type Deck } from "@/lib/deck"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AiSettingsPanel } from "@/components/ai-settings-panel"
+import { GeminiLiveSetup } from "@/components/gemini-live-setup"
 import { GoogleAccountPanel } from "@/components/google-account-panel"
 import { GoogleSheetPickerPanel } from "@/components/google-sheet-picker-panel"
 import { StudySettingsPanel } from "@/components/study-settings-panel"
@@ -135,7 +136,10 @@ export function SettingsForm({
         </TabsContent>
 
         <TabsContent value="ai" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <AiSettingsPanel />
+          <div className="space-y-5">
+            <AiSettingsPanel />
+            <GeminiLiveSetup />
+          </div>
         </TabsContent>
 
         <TabsContent value="sync" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
