@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 const TTS_BUTTON_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`
 
 function previewTtsButton(name: string): string {
-  return `<button type="button" data-preview-tts="${encodeURIComponent(name)}" aria-label="Play audio" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:4px;border:1px solid rgba(25,79,131,.10);border-radius:10px;background:#e8f3ff;color:#194f83;box-shadow:none;cursor:pointer;vertical-align:middle;-webkit-tap-highlight-color:transparent;">${TTS_BUTTON_ICON}</button>`
+  return `<button type="button" data-preview-tts="${encodeURIComponent(name)}" aria-label="Play audio" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:4px;border:1px solid rgba(65,75,110,.10);border-radius:9px;background:#f1f3f8;color:#5067d9;box-shadow:none;cursor:pointer;vertical-align:middle;-webkit-tap-highlight-color:transparent;">${TTS_BUTTON_ICON}</button>`
 }
 
 type CardPreviewProps = {
@@ -107,8 +107,8 @@ export function CardPreview({
               window.setTimeout(() => {
                 if (!button.isConnected) return
                 button.dataset.state = "idle"
-                button.style.background = "#e8f3ff"
-                button.style.color = "#194f83"
+                button.style.background = "#f1f3f8"
+                button.style.color = "#5067d9"
               }, 1800)
             })
             .finally(() => {
@@ -126,20 +126,20 @@ export function CardPreview({
         "flex min-h-0 min-w-0 flex-col",
         fillViewport
           ? "h-[calc(100dvh-5.75rem)] gap-2 rounded-none border-0 bg-transparent p-0 shadow-none sm:p-0 lg:h-[calc(100dvh-7rem)]"
-          : "gap-3 rounded-[22px] border border-black/[0.065] bg-card p-3 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-4",
+          : "gap-3 rounded-[18px] border border-foreground/[0.07] bg-card/90 p-3 shadow-[0_14px_36px_-34px_rgba(15,23,42,0.24)] backdrop-blur-xl sm:p-4",
         className
       )}
     >
-      <div className={cn("flex shrink-0 items-center justify-between gap-3", fillViewport ? "px-1" : "px-1")}> 
+      <div className={cn("flex shrink-0 items-center justify-between gap-3", fillViewport ? "px-1" : "px-1")}>
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-energy" />
+            <span className="h-1.5 w-4 rounded-full bg-signal" />
             Live preview
           </p>
           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.025em] text-foreground">{template.name}</p>
         </div>
         <div
-          className="flex shrink-0 rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]"
+          className="flex shrink-0 rounded-[11px] border border-foreground/[0.06] bg-muted/50 p-1"
           role="group"
           aria-label="Preview card side"
         >
@@ -148,10 +148,10 @@ export function CardPreview({
             size="sm"
             variant="ghost"
             className={cn(
-              "h-8 rounded-[9px] px-3 text-xs font-medium",
+              "h-8 rounded-[8px] px-3 text-xs font-medium",
               side === "front"
-                ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"
-                : "text-foreground/55 hover:bg-card/70 hover:text-foreground"
+                ? "bg-card text-foreground shadow-[0_8px_18px_-16px_rgba(15,23,42,0.3)]"
+                : "text-foreground/52 hover:bg-card/68 hover:text-foreground"
             )}
             aria-pressed={side === "front"}
             onClick={() => onSideChange("front")}
@@ -163,10 +163,10 @@ export function CardPreview({
             size="sm"
             variant="ghost"
             className={cn(
-              "h-8 rounded-[9px] px-3 text-xs font-medium",
+              "h-8 rounded-[8px] px-3 text-xs font-medium",
               side === "back"
-                ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"
-                : "text-foreground/55 hover:bg-card/70 hover:text-foreground"
+                ? "bg-card text-foreground shadow-[0_8px_18px_-16px_rgba(15,23,42,0.3)]"
+                : "text-foreground/52 hover:bg-card/68 hover:text-foreground"
             )}
             aria-pressed={side === "back"}
             onClick={() => onSideChange("back")}
@@ -178,8 +178,8 @@ export function CardPreview({
 
       <div
         className={cn(
-          "relative min-h-0 overflow-hidden border border-black/[0.07] bg-white shadow-[0_22px_52px_-42px_rgba(0,0,0,0.5)] dark:border-white/[0.09]",
-          fillViewport ? "flex-1 rounded-[20px]" : "h-[300px] rounded-[18px] lg:h-[440px]"
+          "relative min-h-0 overflow-hidden border border-foreground/[0.07] bg-white shadow-[0_12px_32px_-30px_rgba(15,23,42,0.26)]",
+          fillViewport ? "flex-1 rounded-[18px]" : "h-[300px] rounded-[16px] lg:h-[440px]"
         )}
       >
         <iframe
