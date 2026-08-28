@@ -50,118 +50,126 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
   return (
     <>
       <StudyStage>
-        <section className="mx-auto flex w-full max-w-lg flex-col gap-4 pb-3 pt-2 sm:py-6" aria-labelledby="study-overview-title">
-          <div className="flex items-end justify-between gap-4 px-1">
+        <section className="mx-auto flex w-full max-w-xl flex-col gap-5 pb-4 pt-2 sm:gap-6 sm:py-7" aria-labelledby="study-overview-title">
+          <div className="flex items-end justify-between gap-4 px-0.5">
             <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                <span className="size-2 rounded-full bg-energy" />
+              <div className="mb-2.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="h-1.5 w-5 rounded-full bg-signal" />
                 Today
               </div>
-              <h1 id="study-overview-title" className="text-[30px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[34px]">
-                Today’s study
+              <h1 id="study-overview-title" className="text-[31px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[36px]">
+                Focus on what’s due.
               </h1>
-              <p className="mt-2 text-sm leading-5 text-muted-foreground">Less friction. One clear rhythm.</p>
+              <p className="mt-2.5 max-w-md text-sm leading-6 text-muted-foreground">
+                A quiet workspace for one deliberate learning session.
+              </p>
             </div>
             {ready ? (
-              <div className="mb-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-black/[0.07] bg-card px-3 py-2 text-[11px] font-medium text-muted-foreground dark:border-white/[0.09]">
+              <div className="mb-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/[0.07] bg-card/78 px-3 py-2 text-[11px] font-medium text-muted-foreground backdrop-blur-xl">
                 <Clock3 className="size-3.5" />
                 {estimatedMinutes} min
               </div>
             ) : null}
           </div>
 
-          <div className="overflow-hidden rounded-[28px] bg-foreground text-background shadow-[0_24px_60px_-42px_rgba(0,0,0,0.8)]">
-            <div className="px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
-              {ready ? (
-                <>
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-background/50">Remaining</p>
-                      <div className="mt-2 flex items-end gap-2">
-                        <span className="text-[64px] font-semibold leading-none tracking-[-0.065em]">{queue.length}</span>
-                        <span className="mb-2.5 text-sm font-medium text-background/55">cards</span>
-                      </div>
-                    </div>
-                    <div className="flex size-11 items-center justify-center rounded-full bg-energy text-sm font-bold text-black">
-                      {progress}%
+          <div className="overflow-hidden rounded-[22px] border border-foreground/[0.07] bg-card/94 shadow-[0_16px_42px_-36px_rgba(15,23,42,0.28)] backdrop-blur-xl">
+            {ready ? (
+              <div className="p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Remaining</p>
+                    <div className="mt-2 flex items-end gap-2.5">
+                      <span className="text-[62px] font-semibold leading-none tracking-[-0.065em] text-foreground">{queue.length}</span>
+                      <span className="mb-2 text-sm font-medium text-muted-foreground">cards</span>
                     </div>
                   </div>
-
-                  <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-background/12" aria-hidden="true">
-                    <div className="h-full rounded-full bg-energy transition-[width] duration-300" style={{ width: `${Math.max(6, progress)}%` }} />
+                  <div className="rounded-full bg-accent px-3 py-1.5 text-[11px] font-semibold text-accent-foreground">
+                    {progress}% done
                   </div>
-
-                  <div className="mt-5 grid grid-cols-3 divide-x divide-background/12 border-y border-background/12 py-4">
-                    <div className="pr-3">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">Review</p>
-                      <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{reviewCount}</p>
-                    </div>
-                    <div className="px-3">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">New</p>
-                      <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{newCount}</p>
-                    </div>
-                    <div className="pl-3">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">Done</p>
-                      <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{stats.reviewedToday}</p>
-                    </div>
-                  </div>
-
-                  <Button
-                    size="lg"
-                    className="mt-5 h-13 w-full rounded-[16px] bg-energy px-5 text-[15px] font-semibold text-black shadow-none hover:bg-energy/90 active:scale-[0.99]"
-                    onClick={startStudy}
-                  >
-                    Start studying <ArrowRight className="ml-1 size-4.5" />
-                  </Button>
-                </>
-              ) : (
-                <div className="py-3">
-                  <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-background/50">
-                    <span className="size-2 rounded-full bg-energy" />
-                    Clear
-                  </div>
-                  <div className="mt-6 flex size-12 items-center justify-center rounded-full bg-energy text-xl font-bold text-black">✓</div>
-                  <h2 className="mt-5 text-[30px] font-semibold tracking-[-0.045em]">{emptyTitle}</h2>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-background/55">{emptyDescription}</p>
-                  {stats.reviewedToday > 0 ? (
-                    <p className="mt-5 border-t border-background/12 pt-4 text-xs font-medium text-background/55">
-                      {stats.reviewedToday} cards completed today
-                    </p>
-                  ) : null}
                 </div>
-              )}
-            </div>
-          </div>
 
-          <div className="rounded-[22px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.42)] dark:border-white/[0.09]">
-            <div className="flex items-center gap-3.5">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-[14px] bg-energy/18 text-foreground">
-                <AudioLines className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">AI Tutor</p>
-                <p className="mt-1 text-[16px] font-semibold tracking-[-0.025em]">Practice with your deck</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">Gemini leads a hands-free voice lesson from your current cards.</p>
-              </div>
-            </div>
-            <Button type="button" variant="outline" className="mt-4 h-11 w-full justify-center" onClick={() => setTutorOpen(true)}>
-              <AudioLines className="size-4" />
-              Start voice tutor
-            </Button>
-          </div>
+                <div className="mt-5 h-1 overflow-hidden rounded-full bg-foreground/[0.075]" aria-hidden="true">
+                  <div className="h-full rounded-full bg-signal transition-[width] duration-300" style={{ width: `${Math.max(5, progress)}%` }} />
+                </div>
 
-          <div className="rounded-[22px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current deck</p>
-                <p className="mt-1.5 truncate text-[16px] font-semibold tracking-[-0.025em]">{deck.name.trim() || "Untitled deck"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{deck.cards.length} notes</p>
-              </div>
-              {onAddNote ? (
-                <Button type="button" variant="outline" className="h-11 shrink-0 px-4" onClick={onAddNote}>
-                  <Plus className="mr-1 size-4" /> New note
+                <div className="mt-5 grid grid-cols-3 border-y border-foreground/[0.06] py-4">
+                  <div className="pr-3">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Review</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.035em]">{reviewCount}</p>
+                  </div>
+                  <div className="border-x border-foreground/[0.06] px-3">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">New</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.035em]">{newCount}</p>
+                  </div>
+                  <div className="pl-3">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Completed</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.035em]">{stats.reviewedToday}</p>
+                  </div>
+                </div>
+
+                <Button size="lg" className="mt-5 h-12 w-full justify-between px-4.5 text-[14px]" onClick={startStudy}>
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className="size-1.5 rounded-full bg-signal" />
+                    Start session
+                  </span>
+                  <ArrowRight className="size-4.5" />
                 </Button>
-              ) : null}
+              </div>
+            ) : (
+              <div className="p-5 sm:p-6">
+                <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  <span className="h-1.5 w-5 rounded-full bg-signal" />
+                  Clear
+                </div>
+                <div className="mt-6 flex size-10 items-center justify-center rounded-full bg-accent text-base font-semibold text-accent-foreground">✓</div>
+                <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.04em]">{emptyTitle}</h2>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{emptyDescription}</p>
+                {stats.reviewedToday > 0 ? (
+                  <p className="mt-5 border-t border-foreground/[0.06] pt-4 text-xs font-medium text-muted-foreground">
+                    {stats.reviewedToday} cards completed today
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-2.5 flex items-center justify-between px-0.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Workspace</p>
+              <span className="text-[10px] font-medium text-muted-foreground/70">{deck.cards.length} notes</span>
+            </div>
+
+            <div className="overflow-hidden rounded-[18px] border border-foreground/[0.07] bg-card/82 backdrop-blur-xl">
+              <div className="flex items-center gap-3.5 px-4 py-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-accent text-signal">
+                  <AudioLines className="size-[18px]" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold tracking-[-0.02em]">Voice tutor</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">Practice your current deck with Gemini.</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => setTutorOpen(true)}>
+                  Open
+                </Button>
+              </div>
+
+              <div className="mx-4 border-t border-foreground/[0.055]" />
+
+              <div className="flex items-center gap-3.5 px-4 py-4">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-muted text-[13px] font-semibold text-foreground/70">
+                  {deck.name.trim().slice(0, 1).toUpperCase() || "D"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold tracking-[-0.02em]">{deck.name.trim() || "Untitled deck"}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Current deck</p>
+                </div>
+                {onAddNote ? (
+                  <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onAddNote}>
+                    <Plus className="size-4" />
+                    New note
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         </section>
