@@ -30,13 +30,13 @@ describe("mobile hierarchy and language", () => {
   })
 
   it("gives the home wordmark stronger hierarchy", () => {
-    expect(appShell).toContain('home ? "h-[80px]')
-    expect(appShell).toContain('text-[25px] min-[390px]:text-[27px] sm:text-[29px]')
+    expect(appShell).toContain('home ? "h-[76px] min-[390px]:h-[80px] sm:h-[84px]"')
+    expect(appShell).toContain('text-[24px] min-[390px]:text-[25px] sm:text-[27px]')
   })
 
   it("uses English copy for the primary study experience", () => {
-    expect(overview).toContain("Today’s study")
-    expect(overview).toContain("Start studying")
+    expect(overview).toContain("Focus on what’s due.")
+    expect(overview).toContain("Start session")
     expect(overview).toContain("New note")
   })
 
