@@ -9,6 +9,8 @@ export const STUDY_STAGE_NAME = "study-stage"
  * Home ↔ Study is intentionally untyped now. Passing no transition type keeps
  * Next navigation immediate and avoids waiting on the shared-element morph.
  */
-export function studyPairTransitionTypes(_from: string, _to: string): string[] | undefined {
+export function studyPairTransitionTypes(from: string, to: string): string[] | undefined {
+  void from
+  void to
   return undefined
 }

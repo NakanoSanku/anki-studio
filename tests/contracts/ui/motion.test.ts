@@ -16,20 +16,22 @@ describe("hand-written motion wiring", () => {
     expect(readComponent("offline-banner.tsx")).toContain("AnimatePresence")
   })
 
-  it("pairs `/` and `/study` with the same shared-element stage", () => {
+  it("keeps the StudyStage wrapper inert so route entry does not wait on a morph", () => {
     const overview = readComponent("study-overview.tsx")
     const session = readComponent("study-session.tsx")
     const stage = readComponent("study-stage.tsx")
     expect(overview).toContain("StudyStage")
     expect(session).toContain("StudyStage")
-    expect(stage).toContain("STUDY_STAGE_NAME")
-    expect(stage).toContain("ViewTransition")
-    expect(stage).toContain('share: "morph"')
+    expect(stage).not.toContain("ViewTransition")
+    expect(stage).not.toContain('share: "morph"')
+    expect(stage).toContain("return children")
   })
 
-  it("tags only the home ↔ session navigations", () => {
+  it("keeps the existing router call shape while disabling Study transition types", () => {
     const studio = readComponent("studio.tsx")
+    const transition = readSource("lib", "study-transition.ts")
     expect(studio).toContain("studyPairTransitionTypes")
     expect(studio).toContain("transitionTypes")
+    expect(transition).toContain("return undefined")
   })
 })
