@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
 import {
   CheckCircle2,
@@ -10,7 +10,6 @@ import {
 } from "lucide-react"
 
 import { StudyStage } from "@/components/study-stage"
-import { TtsPlayButton } from "@/components/tts-play-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,7 +24,7 @@ import {
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { notesOf, previewValues, setCardField, textFields, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
+import { notesOf, setCardField, textFields, ttsOf, type Deck } from "@/lib/deck"
 import { CARD_MOTION_DURATION_S, cardMotionPose, type CardMotionAction } from "@/lib/card-motion"
 import {
   Rating,
@@ -37,7 +36,7 @@ import {
   type StudyItem,
 } from "@/lib/fsrs"
 import { previewDocument, renderCard } from "@/lib/template"
-import { ttsFieldsOnSide } from "@/lib/tts"
+import { getTtsClip, playTtsAudio } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 
 type StudySessionProps = {
@@ -109,14 +108,118 @@ function touchFeedback(pattern: number | number[]) {
   if ("vibrate" in navigator) navigator.vibrate(pattern)
 }
 
-function StudyCard({ deck, item, revealed }: { deck: Deck; item: StudyItem; revealed: boolean }) {
-  const values = previewValues(deck, item.note.values)
-  const rendered = renderCard(item.template.front, item.template.back, values)
+const TTS_BUTTON_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`
+
+function studyTtsButton(name: string): string {
+  return `<button type="button" data-study-tts="${encodeURIComponent(name)}" aria-label="Play audio" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:4px;border:1px solid rgba(25,79,131,.10);border-radius:10px;background:#e8f3ff;color:#194f83;box-shadow:none;cursor:pointer;vertical-align:middle;-webkit-tap-highlight-color:transparent;">${TTS_BUTTON_ICON}</button>`
+}
+
+function StudyCard({
+  deck,
+  item,
+  revealed,
+  onReveal,
+}: {
+  deck: Deck
+  item: StudyItem
+  revealed: boolean
+  onReveal: () => void
+}) {
+  const configs = useMemo(() => ttsOf(deck), [deck])
+  const srcDoc = useMemo(() => {
+    const values = { ...item.note.values }
+    for (const [name, tts] of Object.entries(configs)) {
+      values[name] = (item.note.values[tts.source] ?? "").trim() ? studyTtsButton(name) : ""
+    }
+    const rendered = renderCard(item.template.front, item.template.back, values)
+    return previewDocument(deck.css, revealed ? rendered.back : rendered.front)
+  }, [configs, deck.css, item.note.values, item.template.back, item.template.front, revealed])
+
+  const wireFrame = useCallback(
+    (event: SyntheticEvent<HTMLIFrameElement>) => {
+      const doc = event.currentTarget.contentDocument
+      if (!doc) return
+
+      doc.body.style.cursor = revealed ? "default" : "pointer"
+      doc.body.onclick = (bodyEvent) => {
+        const target = bodyEvent.target
+        if (target instanceof Element && target.closest("[data-study-tts]")) return
+        if (!revealed) onReveal()
+      }
+
+      for (const button of doc.querySelectorAll<HTMLButtonElement>("[data-study-tts]")) {
+        const encodedName = button.dataset.studyTts
+        if (!encodedName) {
+          button.remove()
+          continue
+        }
+
+        let name = ""
+        try {
+          name = decodeURIComponent(encodedName)
+        } catch {
+          button.remove()
+          continue
+        }
+
+        const tts = configs[name]
+        const text = tts ? item.note.values[tts.source] ?? "" : ""
+        if (!tts || !text.trim()) {
+          button.remove()
+          continue
+        }
+
+        button.setAttribute("aria-label", `Play ${name}`)
+        button.onclick = (buttonEvent) => {
+          buttonEvent.preventDefault()
+          buttonEvent.stopPropagation()
+          if (button.disabled) return
+
+          button.disabled = true
+          button.dataset.state = "loading"
+          button.style.opacity = "0.58"
+          button.style.cursor = "progress"
+          button.removeAttribute("title")
+
+          void getTtsClip({ text, lang: tts.lang, slow: tts.slow })
+            .then((clip) => playTtsAudio(clip.blob))
+            .then(() => {
+              if (!button.isConnected) return
+              button.dataset.state = "idle"
+              button.style.opacity = "1"
+              button.style.cursor = "pointer"
+            })
+            .catch((caught: unknown) => {
+              if (!button.isConnected) return
+              const message = caught instanceof Error ? caught.message : "Audio playback failed"
+              button.dataset.state = "error"
+              button.title = message
+              button.style.opacity = "1"
+              button.style.cursor = "pointer"
+              button.style.background = "#fff0f0"
+              button.style.color = "#b42318"
+              window.setTimeout(() => {
+                if (!button.isConnected) return
+                button.dataset.state = "idle"
+                button.style.background = "#e8f3ff"
+                button.style.color = "#194f83"
+              }, 1800)
+            })
+            .finally(() => {
+              if (button.isConnected) button.disabled = false
+            })
+        }
+      }
+    },
+    [configs, item.note.values, onReveal, revealed]
+  )
+
   return (
     <iframe
       title={revealed ? "Card back" : "Card front"}
-      sandbox=""
-      srcDoc={previewDocument(deck.css, revealed ? rendered.back : rendered.front)}
+      sandbox="allow-same-origin"
+      srcDoc={srcDoc}
+      onLoad={wireFrame}
       className="h-full w-full border-0 bg-white"
     />
   )
@@ -135,14 +238,12 @@ function FocusHeader({
   completed,
   total,
   progress,
-  canEdit,
   onExit,
   onEdit,
 }: {
   completed: number
   total: number
   progress: number
-  canEdit: boolean
   onExit: () => void
   onEdit: () => void
 }) {
@@ -177,20 +278,16 @@ function FocusHeader({
           />
         </div>
 
-        {canEdit ? (
-          <Button
-            type="button"
-            size="icon-lg"
-            variant="outline"
-            className="shadow-none"
-            aria-label="Edit note"
-            onClick={onEdit}
-          >
-            <Pencil className="size-4" />
-          </Button>
-        ) : (
-          <span className="size-11" aria-hidden="true" />
-        )}
+        <Button
+          type="button"
+          size="icon-lg"
+          variant="outline"
+          className="shadow-none"
+          aria-label="Edit note"
+          onClick={onEdit}
+        >
+          <Pencil className="size-4" />
+        </Button>
       </div>
     </header>
   )
@@ -374,9 +471,7 @@ export function StudySession({
   }
 
   const side = revealed ? "back" : "front"
-  const playable = ttsFieldsOnSide(deck, side, current.template.id)
-  const configs = ttsOf(deck)
-  const slideVariants: Variants = {
+  const cardVariants: Variants = {
     enter: (cardAction: CardMotionAction) => cardMotionPose(cardAction, reducedMotion).initial,
     center: { x: 0, opacity: 1 },
     exit: (cardAction: CardMotionAction) => cardMotionPose(cardAction, reducedMotion).exit,
@@ -389,7 +484,6 @@ export function StudySession({
           completed={completed}
           total={total}
           progress={progress}
-          canEdit={revealed}
           onExit={onExit}
           onEdit={() => {
             setEditValues({ ...current.note.values })
@@ -401,80 +495,41 @@ export function StudySession({
         <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-5 sm:py-3">
           <StudyBackdrop />
           <div className="relative z-10 mx-auto h-full w-full max-w-5xl overflow-hidden rounded-[24px] border border-black/[0.065] bg-white shadow-[0_24px_60px_-46px_rgba(0,0,0,0.55)] dark:border-white/[0.09]">
-            <AnimatePresence
-              initial={false}
-              mode="popLayout"
-              custom={action}
-            >
+            <AnimatePresence initial={false} mode="sync" custom={action}>
               <motion.div
                 key={`${current.id}:${side}`}
                 custom={action}
-                variants={slideVariants}
+                variants={cardVariants}
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{ duration: CARD_MOTION_DURATION_S, ease: "easeOut" }}
+                transition={{ duration: CARD_MOTION_DURATION_S, ease: [0.22, 1, 0.36, 1] }}
                 data-card-motion=""
                 data-card-face={side}
                 className="absolute inset-0 h-full w-full overflow-hidden rounded-[inherit]"
               >
-                <StudyCard deck={deck} item={current} revealed={revealed} />
+                <StudyCard deck={deck} item={current} revealed={revealed} onReveal={reveal} />
               </motion.div>
             </AnimatePresence>
 
-            {!revealed ? (
-              <button
-                type="button"
-                className="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-energy/30 focus-visible:ring-inset"
-                onClick={reveal}
-                aria-label="Show answer"
-                aria-keyshortcuts="Space"
-              />
-            ) : null}
-
-            <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-3 sm:inset-x-5 sm:bottom-5">
-              <div className="pointer-events-auto flex max-w-[70%] flex-wrap gap-1.5">
-                {playable.map((name) => {
-                  const tts = configs[name]
-                  if (!tts) return null
-                  return (
-                    <Tooltip key={name}>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <TtsPlayButton
-                            iconOnly
-                            text={current.note.values[tts.source] ?? ""}
-                            lang={tts.lang}
-                            slow={tts.slow}
-                            label={`Play ${name} · ${ttsLangLabel(tts.lang)}`}
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>{name} · {ttsLangLabel(tts.lang)}</TooltipContent>
-                    </Tooltip>
-                  )
-                })}
+            {revealed ? (
+              <div className="pointer-events-auto absolute bottom-3 right-3 z-20 rounded-[14px] border border-black/[0.07] bg-card p-0.5 text-foreground shadow-[0_12px_28px_-22px_rgba(0,0,0,0.45)] sm:bottom-5 sm:right-5 dark:border-white/[0.1]">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Review front"
+                      onClick={conceal}
+                    >
+                      <RotateCcw className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Review front</TooltipContent>
+                </Tooltip>
               </div>
-
-              {revealed ? (
-                <div className="pointer-events-auto rounded-[14px] border border-black/[0.07] bg-card p-0.5 text-foreground shadow-[0_12px_28px_-22px_rgba(0,0,0,0.45)] dark:border-white/[0.1]">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Review front"
-                        onClick={conceal}
-                      >
-                        <RotateCcw className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Review front</TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : null}
-            </div>
+            ) : null}
           </div>
         </div>
 

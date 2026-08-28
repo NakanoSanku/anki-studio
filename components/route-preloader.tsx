@@ -59,6 +59,12 @@ function warmWithoutWaiting(promise: Promise<unknown> | null) {
   void promise.catch(() => undefined)
 }
 
+// Study is the latency-sensitive primary action. Start downloading its split
+// chunk as soon as this persistent client module is evaluated, rather than
+// waiting for the first effect after paint.
+const eagerStudyWarmup = typeof window === "undefined" ? null : warmRoute(PATHS.studySession)
+warmWithoutWaiting(eagerStudyWarmup)
+
 export function RoutePreloader() {
   const router = useRouter()
   const pathname = usePathname() ?? PATHS.home
@@ -73,9 +79,9 @@ export function RoutePreloader() {
     const primaryRoutes = [PATHS.home, PATHS.notes, PATHS.settings, PATHS.studySession]
     for (const route of primaryRoutes) router.prefetch(route)
 
-    // Start fetching the three latency-sensitive workspaces immediately after paint.
-    // They remain split from the initial Studio bundle, but are normally resident
-    // before the user taps the primary navigation.
+    // Notes and Settings stay split from the initial Studio bundle. Study was
+    // already warmed at module evaluation above; this cached call is harmless
+    // and documents that it remains a primary workspace.
     warmWithoutWaiting(warmRoute(PATHS.notes))
     warmWithoutWaiting(warmRoute(PATHS.settings))
     warmWithoutWaiting(warmRoute(PATHS.studySession))

@@ -7,7 +7,7 @@ import {
 } from "@/lib/card-motion"
 
 describe("cardMotionDirection", () => {
-  it("moves forward for reveal and advance, backward for conceal", () => {
+  it("keeps the legacy direction helper stable", () => {
     expect(cardMotionDirection("reveal")).toBe(1)
     expect(cardMotionDirection("advance")).toBe(1)
     expect(cardMotionDirection("conceal")).toBe(-1)
@@ -15,26 +15,25 @@ describe("cardMotionDirection", () => {
 })
 
 describe("cardMotionPose", () => {
-  it("slides forward when advancing: next card enters from the right", () => {
+  it("cross-fades reveal and conceal without horizontal travel", () => {
+    for (const action of ["reveal", "conceal"] as const) {
+      const pose = cardMotionPose(action, false)
+      expect(pose.initial.x).toBe(0)
+      expect(pose.exit.x).toBe(0)
+      expect(pose.initial.opacity).toBe(0)
+      expect(pose.animate).toEqual({ x: 0, opacity: 1 })
+    }
+  })
+
+  it("keeps only a small directional cue when advancing to the next card", () => {
     const pose = cardMotionPose("advance", false)
     expect(pose.initial.x).toBeGreaterThan(0)
+    expect(pose.initial.x).toBeLessThanOrEqual(16)
     expect(pose.exit.x).toBeLessThan(0)
-    expect(pose.animate).toEqual({ x: 0, opacity: 1 })
+    expect(Math.abs(pose.exit.x)).toBeLessThanOrEqual(16)
   })
 
-  it("slides backward when concealing: front face returns from the left", () => {
-    const pose = cardMotionPose("conceal", false)
-    expect(pose.initial.x).toBeLessThan(0)
-    expect(pose.exit.x).toBeGreaterThan(0)
-  })
-
-  it("reveals in the forward direction", () => {
-    const pose = cardMotionPose("reveal", false)
-    expect(pose.initial.x).toBeGreaterThan(0)
-    expect(pose.exit.x).toBeLessThan(0)
-  })
-
-  it("keeps horizontal travel but not opacity under reduced motion", () => {
+  it("removes all spatial motion under reduced motion", () => {
     for (const action of ["reveal", "conceal", "advance"] as const) {
       const pose = cardMotionPose(action, true)
       expect(pose.initial.x).toBe(0)
@@ -45,8 +44,8 @@ describe("cardMotionPose", () => {
     }
   })
 
-  it("stays within the 300ms motion budget", () => {
-    expect(CARD_MOTION_DURATION_S * 1000).toBeLessThanOrEqual(300)
+  it("keeps card feedback within a 150ms interaction budget", () => {
+    expect(CARD_MOTION_DURATION_S * 1000).toBeLessThanOrEqual(150)
     expect(CARD_MOTION_DURATION_S * 1000).toBeGreaterThan(0)
   })
 })

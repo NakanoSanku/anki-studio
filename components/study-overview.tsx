@@ -4,6 +4,7 @@ import { ArrowRight, Clock3, Plus } from "lucide-react"
 
 import { StudyStage } from "@/components/study-stage"
 import { Button } from "@/components/ui/button"
+import { PATHS } from "@/lib/app-paths"
 import type { Deck } from "@/lib/deck"
 import { formatDueDate, getStudyQueue, getStudyStats } from "@/lib/fsrs"
 
@@ -31,6 +32,17 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
     : stats.nextDue
       ? `The next cards are due ${formatDueDate(stats.nextDue, now)}.`
       : "Create a note or import a deck to begin studying."
+
+  const startStudy = () => {
+    // `/study` is only a URL state for the persistent client-side Studio shell.
+    // Native History API calls are integrated with Next App Router hooks, so
+    // this updates usePathname immediately without waiting for an RSC request.
+    try {
+      window.history.pushState(null, "", PATHS.studySession)
+    } catch {
+      onStart()
+    }
+  }
 
   return (
     <StudyStage>
@@ -93,7 +105,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
                 <Button
                   size="lg"
                   className="mt-5 h-13 w-full rounded-[16px] bg-energy px-5 text-[15px] font-semibold text-black shadow-none hover:bg-energy/90 active:scale-[0.99]"
-                  onClick={onStart}
+                  onClick={startStudy}
                 >
                   Start studying <ArrowRight className="ml-1 size-4.5" />
                 </Button>

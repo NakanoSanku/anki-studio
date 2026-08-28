@@ -4,14 +4,9 @@ import { PATHS } from "@/lib/app-paths"
 import { STUDY_STAGE_NAME, studyPairTransitionTypes } from "@/lib/study-transition"
 
 describe("studyPairTransitionTypes", () => {
-  it("tags home → session as forward and session → home as back", () => {
-    const forward = studyPairTransitionTypes(PATHS.home, PATHS.studySession)
-    const back = studyPairTransitionTypes(PATHS.studySession, PATHS.home)
-    expect(forward).toBeDefined()
-    expect(back).toBeDefined()
-    expect(forward).not.toEqual(back)
-    expect(forward![0]).toContain("forward")
-    expect(back![0]).toContain("back")
+  it("keeps Home ↔ Study untyped so navigation does not wait on a route morph", () => {
+    expect(studyPairTransitionTypes(PATHS.home, PATHS.studySession)).toBeUndefined()
+    expect(studyPairTransitionTypes(PATHS.studySession, PATHS.home)).toBeUndefined()
   })
 
   it("does not tag any other route pair", () => {
@@ -21,7 +16,7 @@ describe("studyPairTransitionTypes", () => {
     expect(studyPairTransitionTypes(PATHS.studySession, PATHS.notes)).toBeUndefined()
   })
 
-  it("exports a stable shared-element name", () => {
+  it("keeps the legacy shared-element name stable for compatibility", () => {
     expect(STUDY_STAGE_NAME.length).toBeGreaterThan(0)
     expect(STUDY_STAGE_NAME).not.toContain(" ")
   })
