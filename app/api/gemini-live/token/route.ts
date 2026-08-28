@@ -2,7 +2,7 @@ import { GEMINI_LIVE_MODEL } from "@/lib/gemini-live-settings"
 
 export const dynamic = "force-dynamic"
 
-const TOKEN_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/auth_tokens"
+const TOKEN_ENDPOINT = "https://generativelanguage.googleapis.com/v1alpha/auth_tokens"
 const TOKEN_LIFETIME_MS = 30 * 60 * 1000
 const NEW_SESSION_WINDOW_MS = 60 * 1000
 
