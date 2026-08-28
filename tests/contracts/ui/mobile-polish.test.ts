@@ -82,7 +82,7 @@ describe("mobile visual polish regressions", () => {
     expect(cardPreview).toContain('sandbox="allow-same-origin"')
     expect(cardPreview).toContain("getTtsClip")
     expect(cardPreview).toContain("playTtsAudio")
-    expect(cardPreview).toContain("background:#e8f3ff;color:#194f83")
+    expect(cardPreview).toContain("background:#f1f3f8;color:#5067d9")
     expect(cardPreview).not.toContain("TtsPlayButton")
     expect(cardPreview).not.toContain("ttsFieldsOnSide")
     expect(cardPreview).not.toContain(">Audio</span>")
@@ -91,7 +91,7 @@ describe("mobile visual polish regressions", () => {
   it("lets viewport previews use the whole page instead of nesting another card shell", () => {
     expect(cardPreview).toContain("h-[calc(100dvh-5.75rem)]")
     expect(cardPreview).toContain("rounded-none border-0 bg-transparent p-0 shadow-none")
-    expect(cardPreview).toContain('fillViewport ? "flex-1 rounded-[20px]"')
+    expect(cardPreview).toContain('fillViewport ? "flex-1 rounded-[18px]"')
   })
 
   it("prevents generated preview documents from overflowing horizontally", () => {
