@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 
-const PICKER_ROW = 56
+const PICKER_ROW = 64
 
 type SharedProps = {
   cards: Card[]
@@ -46,19 +46,19 @@ export function ReferenceNotesBar({
   return (
     <button
       type="button"
-      aria-label="选择参考笔记"
+      aria-label="Choose reference notes"
       onClick={onOpenPicker}
       className={cn(
-        "flex h-7.5 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-all active:scale-95",
+        "flex h-8 items-center gap-1.5 rounded-[11px] border px-2.5 text-xs font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98]",
         count > 0
-          ? "border-primary/40 bg-primary/10 font-semibold text-primary shadow-2xs"
-          : "border-border/70 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          ? "border-energy/35 bg-energy/15 text-foreground"
+          : "border-black/[0.06] bg-card text-muted-foreground hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
       )}
     >
-      <Sparkles className="size-3.5 text-primary" />
-      <span>参考</span>
+      <Sparkles className="size-3.5" />
+      <span>References</span>
       {count > 0 ? (
-        <span className="ml-0.5 rounded-full bg-primary/20 px-1.5 font-mono text-[10px] font-bold leading-tight text-primary">
+        <span className="ml-0.5 flex min-w-5 items-center justify-center rounded-[7px] bg-energy px-1.5 font-mono text-[10px] font-semibold leading-5 text-black">
           {count}
         </span>
       ) : null}
@@ -88,7 +88,6 @@ export function ReferenceNotesPicker({
     padTop,
     padBottom,
   } = useVirtualWindow(filtered.length, PICKER_ROW, 0, open && isLargeList)
-
   const items = isLargeList ? filtered.slice(start, end) : filtered
 
   return (
@@ -101,64 +100,70 @@ export function ReferenceNotesPicker({
     >
       <SheetContent
         side="bottom"
-        className="max-h-[85dvh] h-[85dvh] rounded-t-3xl p-0 flex flex-col sm:max-w-lg sm:mx-auto border-border/80 shadow-xl"
+        className="flex h-[88dvh] max-h-[760px] flex-col p-0 sm:mx-auto sm:max-w-lg"
       >
-        {/* Header */}
-        <SheetHeader className="border-b border-border/70 px-4 py-3 shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <SheetTitle className="text-sm font-semibold">参考笔记</SheetTitle>
-              <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                已选 {referenceIds.length} 张
-              </Badge>
+        <SheetHeader className="shrink-0 px-5 pb-3 pt-5">
+          <div className="mb-1 flex items-center justify-between gap-3 pr-8">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+                <span className="size-2 rounded-full bg-energy" />
+                Style memory
+              </div>
+              <SheetTitle className="text-[28px] font-semibold tracking-[-0.045em]">Reference notes</SheetTitle>
             </div>
-
-            {referenceIds.length > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="mr-7 h-7 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => onChange([])}
-              >
-                <RotateCcw className="mr-1 size-3" />
-                清空
-              </Button>
-            ) : null}
+            <Badge className="h-8 border border-black/[0.06] bg-muted px-3 text-xs font-medium text-foreground shadow-none dark:border-white/[0.08]">
+              {referenceIds.length} selected
+            </Badge>
           </div>
-          <SheetDescription className="text-xs text-muted-foreground">
-            勾选笔记作为 AI 范例，补全与批量生成时自动学习其音标、释义与例句风格。
+          <SheetDescription className="max-w-md text-xs leading-5">
+            Choose a few strong examples. AI Fill and batch generation will follow their formatting, pronunciation, meaning, and example style without copying the entries.
           </SheetDescription>
+          {referenceIds.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-1 h-8 w-fit px-2 text-xs text-muted-foreground"
+              onClick={() => onChange([])}
+            >
+              <RotateCcw className="size-3" />
+              Clear selection
+            </Button>
+          ) : null}
         </SheetHeader>
 
-        {/* Search */}
-        <div className="border-b border-border/60 bg-muted/10 px-4 py-2.5 shrink-0">
+        <div className="shrink-0 px-4 pb-3">
           <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              aria-label="搜索参考笔记"
-              placeholder="搜索笔记…"
-              className="h-8.5 rounded-xl border-border/70 bg-card pr-3 pl-8.5 text-xs"
+              aria-label="Search reference notes"
+              placeholder="Search notes…"
+              className="h-11 bg-background pl-10 pr-4 text-sm"
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
         </div>
 
-        {/* List */}
         <div
           ref={isLargeList ? containerRef : undefined}
           data-testid="reference-notes-list"
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3"
         >
           {filtered.length === 0 ? (
-            <p className="px-2 py-10 text-center text-xs text-muted-foreground">
-              {query ? `没有匹配「${query}」的笔记` : "卡包中还没有笔记"}
-            </p>
+            <div className="mx-1 flex min-h-48 flex-col items-center justify-center rounded-[18px] border border-black/[0.06] bg-muted/45 px-6 text-center dark:border-white/[0.08]">
+              <span className="mb-3 flex size-11 items-center justify-center rounded-[13px] bg-card text-muted-foreground">
+                <Search className="size-5" />
+              </span>
+              <p className="text-sm font-semibold tracking-[-0.015em] text-foreground">
+                {query ? `No notes match “${query}”` : "This deck has no notes yet"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Try another search or add a few notes first.</p>
+            </div>
           ) : (
             <div
               style={isLargeList ? { paddingTop: padTop, paddingBottom: padBottom } : undefined}
-              className="space-y-1"
+              className="space-y-1.5"
             >
               {items.map((card) => {
                 const active = selectedSet.has(card.id)
@@ -170,32 +175,24 @@ export function ReferenceNotesPicker({
                     type="button"
                     aria-pressed={active}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all",
+                      "flex w-full items-center gap-3 rounded-[15px] border px-3.5 py-3 text-left transition-[background-color,border-color,transform] active:scale-[0.99]",
                       active
-                        ? "bg-primary/10 border border-primary/30"
-                        : "hover:bg-muted/40 active:bg-muted/70 border border-transparent"
+                        ? "border-energy/40 bg-energy/15"
+                        : "border-black/[0.055] bg-card hover:bg-muted/45 dark:border-white/[0.07]"
                     )}
                     onClick={() => onChange(toggleId(referenceIds, card.id))}
                   >
                     <span
                       className={cn(
-                        "flex size-4.5 shrink-0 items-center justify-center rounded-md border transition-colors",
-                        active
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/80 bg-card"
+                        "flex size-8 shrink-0 items-center justify-center rounded-[10px] transition-colors",
+                        active ? "bg-energy text-black" : "bg-muted text-muted-foreground"
                       )}
                     >
-                      {active ? <Check className="size-3 stroke-[3]" /> : null}
+                      {active ? <Check className="size-4 stroke-[3]" /> : <Sparkles className="size-3.5" />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold text-foreground">
-                        {label}
-                      </span>
-                      {subtitle ? (
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {subtitle}
-                        </span>
-                      ) : null}
+                      <span className="block truncate text-sm font-semibold tracking-[-0.015em] text-foreground">{label}</span>
+                      {subtitle ? <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{subtitle}</span> : null}
                     </span>
                   </button>
                 )
@@ -204,14 +201,13 @@ export function ReferenceNotesPicker({
           )}
         </div>
 
-        {/* Bottom Finish Button */}
-        <SheetFooter className="border-t border-border/70 bg-card p-3.5 shrink-0">
+        <SheetFooter className="shrink-0 border-t border-black/[0.045] bg-card/94 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl dark:border-white/[0.07]">
           <Button
             type="button"
-            className="h-9 w-full rounded-xl font-semibold shadow-xs"
+            className="h-12 w-full rounded-[15px] text-sm"
             onClick={() => onOpenChange(false)}
           >
-            完成 ({referenceIds.length} 张已选)
+            Done · {referenceIds.length} selected
           </Button>
         </SheetFooter>
       </SheetContent>

@@ -12,7 +12,7 @@ export function TtsPlayButton({
   text,
   lang,
   slow,
-  label = "播放",
+  label = "Play",
   className,
   iconOnly = false,
 }: {
@@ -35,35 +35,37 @@ export function TtsPlayButton({
       const clip = await getTtsClip({ text, lang, slow })
       await playTtsAudio(clip.blob)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "播放失败")
+      setError(caught instanceof Error ? caught.message : "Playback failed")
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative inline-flex", className)}>
       <Button
         type="button"
-        size={iconOnly ? "icon-sm" : "xs"}
-        variant="outline"
-        className={cn(iconOnly && "border-black/10 bg-white/92 text-stone-700 shadow-sm hover:bg-stone-100")}
+        size={iconOnly ? "icon-sm" : "sm"}
+        variant="ghost"
+        className={cn(
+          "border-0 font-black shadow-[0_8px_24px_-20px_rgba(0,0,0,0.72)]",
+          iconOnly
+            ? "bg-[#dff1ff] text-[#194f83] hover:bg-[#cfe6ff] dark:bg-[#244d74] dark:text-[#dceeff] dark:hover:bg-[#2b5a86]"
+            : "h-8 rounded-full bg-[#dff1ff] px-3 text-xs text-[#194f83] hover:bg-[#cfe6ff] dark:bg-[#244d74] dark:text-[#dceeff] dark:hover:bg-[#2b5a86]"
+        )}
         aria-label={iconOnly ? label : undefined}
         disabled={empty || busy}
         onClick={() => void play()}
       >
-        {iconOnly ? (
-          busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Volume2 className="size-3.5" />
-        ) : (
-          busy ? "获取中" : label
-        )}
+        {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Volume2 className="size-3.5" />}
+        {!iconOnly ? <span>{busy ? "Loading" : label}</span> : null}
       </Button>
       {error ? (
         <p
           role="status"
           className={cn(
-            "mt-1 text-xs text-destructive",
-            iconOnly && "absolute bottom-full left-0 z-30 mb-2 w-max max-w-48 rounded-lg border border-destructive/25 bg-popover px-2 py-1.5 shadow-md"
+            "mt-1 rounded-full bg-[#ffd8df] px-2.5 py-1 text-[11px] font-bold text-[#761c31] shadow-[0_10px_26px_-20px_rgba(0,0,0,0.7)] dark:bg-[#6a2835] dark:text-[#ffdce3]",
+            iconOnly && "absolute bottom-full left-0 z-30 mb-2 w-max max-w-52 rounded-2xl px-3 py-2"
           )}
         >
           {error}

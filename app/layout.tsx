@@ -12,7 +12,7 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "Anki Studio",
   applicationName: "Anki Studio",
-  description: "用 FSRS、模板与 AI 制作并复习自己的闪卡。",
+  description: "Create and review your own flashcards with FSRS, templates, and AI.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -21,18 +21,14 @@ export const metadata: Metadata = {
   },
   formatDetection: { telephone: false },
   icons: {
-    icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    icon: [{ url: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
   },
 }
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f2f2f7" },
-    { media: "(prefers-color-scheme: dark)", color: "#1c1c1e" },
+    { media: "(prefers-color-scheme: light)", color: "#fffaf5" },
+    { media: "(prefers-color-scheme: dark)", color: "#13120f" },
   ],
   colorScheme: "light dark",
   width: "device-width",
@@ -42,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -51,7 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
       </head>
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col bg-[#fffaf5] dark:bg-[#13120f]">
         <MotionProvider>
           <TooltipProvider>
             {children}

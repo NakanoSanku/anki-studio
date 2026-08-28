@@ -12,6 +12,8 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Sparkles,
+  WandSparkles,
   Zap,
 } from "lucide-react"
 
@@ -37,7 +39,6 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -52,10 +53,8 @@ export function AiSettingsPanel() {
     type: "idle",
     message: "",
   })
-
-  // Prompt Sheet editing state
   const [editingPromptKey, setEditingPromptKey] = useState<PromptKey | null>(null)
-  const [promptDraft, setPromptDraft] = useState<string>("")
+  const [promptDraft, setPromptDraft] = useState("")
   const [copiedPrompt, setCopiedPrompt] = useState(false)
   const editorRef = useRef<CodeEditorHandle>(null)
 
@@ -84,7 +83,7 @@ export function AiSettingsPanel() {
     }
     writeAiSettings(next)
     setSettings(next)
-    setStatus({ type: "success", message: "配置已保存" })
+    setStatus({ type: "success", message: "AI settings saved" })
   }
 
   const fetchModels = async () => {
@@ -95,22 +94,14 @@ export function AiSettingsPanel() {
       return
     }
     setBusy(true)
-    setStatus({ type: "info", message: "正在拉取在线模型列表…" })
+    setStatus({ type: "info", message: "Fetching available models…" })
     try {
       const fetched = await withBrowserCorsHint(() => listProviderModels(next))
       setModels(fetched)
-      if (!next.model || !fetched.includes(next.model)) {
-        patch({ model: fetched[0] ?? next.model })
-      }
-      setStatus({
-        type: "success",
-        message: `已获取 ${fetched.length} 个可用模型`,
-      })
+      if (!next.model || !fetched.includes(next.model)) patch({ model: fetched[0] ?? next.model })
+      setStatus({ type: "success", message: `Found ${fetched.length} available models` })
     } catch (error) {
-      setStatus({
-        type: "error",
-        message: error instanceof Error ? error.message : "拉取模型失败",
-      })
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Failed to fetch models" })
     } finally {
       setBusy(false)
     }
@@ -124,23 +115,16 @@ export function AiSettingsPanel() {
       return
     }
     setBusy(true)
-    setStatus({ type: "info", message: "正在测试连接…" })
+    setStatus({ type: "info", message: "Testing connection…" })
     const startTime = Date.now()
     try {
       await withBrowserCorsHint(async () => {
         const { runTestAi } = await import("@/lib/ai-run")
         await runTestAi(next)
       })
-      const latency = Date.now() - startTime
-      setStatus({
-        type: "success",
-        message: `连接成功 (${latency}ms)`,
-      })
+      setStatus({ type: "success", message: `Connected (${Date.now() - startTime}ms)` })
     } catch (error) {
-      setStatus({
-        type: "error",
-        message: error instanceof Error ? error.message : "连接失败，请检查网络或密钥",
-      })
+      setStatus({ type: "error", message: error instanceof Error ? error.message : "Connection failed. Check your endpoint and API key." })
     } finally {
       setBusy(false)
     }
@@ -151,20 +135,19 @@ export function AiSettingsPanel() {
       const text = await navigator.clipboard.readText()
       if (text) {
         patch({ apiKey: text.trim() })
-        setStatus({ type: "info", message: "已粘贴 API Key" })
+        setStatus({ type: "info", message: "API key pasted" })
       }
     } catch {
-      setStatus({ type: "error", message: "无法读取剪贴板，请手动粘贴" })
+      setStatus({ type: "error", message: "Clipboard access failed. Paste the API key manually." })
     }
   }
 
   const resetAllDefaults = () => {
     setSettings({ ...DEFAULT_AI_SETTINGS })
     setModels([])
-    setStatus({ type: "info", message: "已恢复默认配置" })
+    setStatus({ type: "info", message: "Defaults restored" })
   }
 
-  // Open prompt editor sheet
   const openPromptEditor = (key: PromptKey) => {
     setEditingPromptKey(key)
     setPromptDraft(settings[key] ?? DEFAULT_AI_SETTINGS[key])
@@ -174,90 +157,91 @@ export function AiSettingsPanel() {
   const savePromptDraft = () => {
     if (!editingPromptKey) return
     patch({ [editingPromptKey]: promptDraft })
-    const nextSettings = { ...settings, [editingPromptKey]: promptDraft }
-    writeAiSettings(nextSettings)
+    writeAiSettings({ ...settings, [editingPromptKey]: promptDraft })
     setEditingPromptKey(null)
-    setStatus({ type: "success", message: "提示词已更新" })
+    setStatus({ type: "success", message: "Prompt updated" })
   }
 
   const insertVariable = (varName: string) => {
     const snippet = `{{${varName}}}`
-    if (editorRef.current) {
-      editorRef.current.insert(snippet)
-    } else {
-      setPromptDraft((prev) => `${prev}${snippet}`)
-    }
+    if (editorRef.current) editorRef.current.insert(snippet)
+    else setPromptDraft((previous) => `${previous}${snippet}`)
   }
 
-  const activeSpec: PromptSpec | undefined = PROMPT_SPECS.find((s) => s.key === editingPromptKey)
-  const isDraftModified = editingPromptKey
-    ? promptDraft !== DEFAULT_AI_SETTINGS[editingPromptKey]
-    : false
+  const activeSpec: PromptSpec | undefined = PROMPT_SPECS.find((spec) => spec.key === editingPromptKey)
+  const isDraftModified = editingPromptKey ? promptDraft !== DEFAULT_AI_SETTINGS[editingPromptKey] : false
+  const customPromptCount = PROMPT_SPECS.filter((spec) => settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]).length
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-3.5 pb-10">
-      {/* Card 1: API Settings */}
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border/70 shadow-xs">
-        <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">接口设置</h2>
-          <button
-            type="button"
-            onClick={resetAllDefaults}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <RotateCcw className="size-3" />
-            <span>重置</span>
-          </button>
+    <div className="mx-auto w-full max-w-xl space-y-5 pb-12">
+      <section className="px-1 pb-1 pt-1">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="size-2 rounded-full bg-energy" />
+            AI workspace
+          </div>
+          <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs text-muted-foreground" onClick={resetAllDefaults}>
+            <RotateCcw className="size-3.5" />
+            Reset
+          </Button>
+        </div>
+        <h2 className="mt-3 text-[28px] font-semibold leading-[1.03] tracking-[-0.045em] sm:text-[32px]">A quiet AI assistant</h2>
+        <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+          Connect an OpenAI-compatible endpoint for field filling, batch generation, and template editing.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-medium">
+          <span className="rounded-full border border-black/[0.07] bg-card px-3 py-1.5 font-mono dark:border-white/[0.09]">
+            {settings.model.trim() || "No model selected"}
+          </span>
+          <span className="rounded-full bg-muted px-3 py-1.5 text-muted-foreground">{customPromptCount} custom prompts</span>
+        </div>
+      </section>
+
+      <section className="rounded-[22px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Provider</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Connection</h3>
+          </div>
+          <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={busy} onClick={() => void testConnection()}>
+            <Zap className={cn("size-3.5", busy && "animate-pulse")} />
+            {busy ? "Testing" : "Test"}
+          </Button>
         </div>
 
-        <div className="divide-y divide-border/60 p-1">
-          {/* Base URL */}
-          <div className="space-y-1 px-3.5 py-2.5">
-            <Label htmlFor="baseURL-input" className="text-xs font-medium text-muted-foreground">
-              接口地址 (Base URL)
-            </Label>
+        <div className="overflow-hidden rounded-[18px] border border-black/[0.06] dark:border-white/[0.08]">
+          <div className="p-3.5">
+            <Label htmlFor="baseURL-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Base URL</Label>
             <Input
               id="baseURL-input"
               value={settings.baseURL}
               placeholder="https://api.openai.com/v1"
-              className="h-9 rounded-xl bg-muted/20 text-xs font-mono"
-              onChange={(e) => patch({ baseURL: e.target.value })}
+              className="mt-2 h-11 bg-background font-mono text-xs"
+              onChange={(event) => patch({ baseURL: event.target.value })}
             />
           </div>
 
-          {/* Model Name */}
-          <div className="space-y-1 px-3.5 py-2.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="model-input" className="text-xs font-medium text-muted-foreground">
-                模型 (Model)
-              </Label>
+          <div className="border-t border-black/[0.055] p-3.5 dark:border-white/[0.07]">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="model-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Model</Label>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void fetchModels()}
-                className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-50"
+                className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-35"
               >
-                <RefreshCw className={cn("size-2.5", busy && "animate-spin")} />
-                <span>{models.length > 0 ? `已拉取 ${models.length} 个` : "拉取模型"}</span>
+                <RefreshCw className={cn("size-3", busy && "animate-spin")} />
+                {models.length > 0 ? `${models.length} models` : "Fetch models"}
               </button>
             </div>
-
             {models.length > 0 ? (
-              <Select value={settings.model} onValueChange={(val) => patch({ model: val })}>
-                <SelectTrigger id="model-input" className="h-9 w-full rounded-xl bg-muted/20 text-xs font-mono">
-                  <SelectValue placeholder="选择模型" />
+              <Select value={settings.model} onValueChange={(model) => patch({ model })}>
+                <SelectTrigger id="model-input" className="mt-2 h-11 w-full bg-background font-mono text-xs">
+                  <SelectValue placeholder="Select a model" />
                 </SelectTrigger>
-                <SelectContent position="popper" align="start" className="max-h-60 rounded-xl">
-                  {!models.includes(settings.model) && settings.model ? (
-                    <SelectItem value={settings.model} className="text-xs font-mono">
-                      {settings.model}
-                    </SelectItem>
-                  ) : null}
-                  {models.map((id) => (
-                    <SelectItem key={id} value={id} className="text-xs font-mono">
-                      {id}
-                    </SelectItem>
-                  ))}
+                <SelectContent position="popper" align="start" className="max-h-64">
+                  {!models.includes(settings.model) && settings.model ? <SelectItem value={settings.model}>{settings.model}</SelectItem> : null}
+                  {models.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
                 </SelectContent>
               </Select>
             ) : (
@@ -265,40 +249,33 @@ export function AiSettingsPanel() {
                 id="model-input"
                 value={settings.model}
                 placeholder="gpt-4o-mini"
-                className="h-9 rounded-xl bg-muted/20 text-xs font-mono"
-                onChange={(e) => patch({ model: e.target.value })}
+                className="mt-2 h-11 bg-background font-mono text-xs"
+                onChange={(event) => patch({ model: event.target.value })}
               />
             )}
           </div>
 
-          {/* API Key */}
-          <div className="space-y-1 px-3.5 py-2.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="apiKey-input" className="text-xs font-medium text-muted-foreground">
-                API Key
-              </Label>
-              <button
-                type="button"
-                onClick={pasteApiKey}
-                className="text-[11px] text-primary hover:underline"
-              >
-                粘贴
+          <div className="border-t border-black/[0.055] p-3.5 dark:border-white/[0.07]">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="apiKey-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">API Key</Label>
+              <button type="button" onClick={() => void pasteApiKey()} className="text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+                Paste from clipboard
               </button>
             </div>
-
-            <div className="relative">
+            <div className="relative mt-2">
               <Input
                 id="apiKey-input"
                 type={showApiKey ? "text" : "password"}
                 value={settings.apiKey}
-                placeholder="sk-... (免密接口可留空)"
-                className="h-9 rounded-xl bg-muted/20 pr-9 text-xs font-mono"
-                onChange={(e) => patch({ apiKey: e.target.value })}
+                placeholder="sk-… · leave blank for keyless endpoints"
+                className="h-11 bg-background pr-11 font-mono text-xs"
+                onChange={(event) => patch({ apiKey: event.target.value })}
               />
               <button
                 type="button"
-                onClick={() => setShowApiKey((prev) => !prev)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                onClick={() => setShowApiKey((visible) => !visible)}
+                className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {showApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
@@ -306,161 +283,106 @@ export function AiSettingsPanel() {
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="border-t border-border/70 bg-muted/10 p-3">
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              className="h-9 flex-1 rounded-xl text-xs font-semibold shadow-xs"
-              disabled={busy}
-              onClick={save}
-            >
-              <Save className="mr-1 size-3.5" />
-              保存配置
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 px-4 rounded-xl text-xs font-medium"
-              disabled={busy}
-              onClick={() => void testConnection()}
-            >
-              <Zap className={cn("mr-1 size-3 text-amber-500", busy && "animate-spin")} />
-              {busy ? "测试中…" : "测试连接"}
-            </Button>
+        {status.message ? (
+          <div
+            className={cn(
+              "mt-3 flex items-start gap-2 rounded-[14px] border px-3.5 py-3 text-xs font-medium",
+              status.type === "success"
+                ? "border-energy/30 bg-energy/12 text-foreground"
+                : status.type === "error"
+                  ? "border-destructive/20 bg-destructive/8 text-destructive"
+                  : "border-black/[0.06] bg-muted/55 text-muted-foreground dark:border-white/[0.08]"
+            )}
+            role="status"
+          >
+            {status.type === "success" ? <Check className="mt-0.5 size-4 shrink-0" /> : status.type === "error" ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <LoaderCircle className={cn("mt-0.5 size-4 shrink-0", status.type === "info" && busy && "animate-spin")} />}
+            <span className="leading-5">{status.message}</span>
           </div>
+        ) : null}
 
-          {status.message ? (
-            <div
-              className={cn(
-                "mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs",
-                status.type === "success"
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  : status.type === "error"
-                    ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                    : "bg-sky-500/10 text-sky-700 dark:text-sky-300"
-              )}
-            >
-              {status.type === "success" ? (
-                <Check className="size-3.5 shrink-0" />
-              ) : status.type === "error" ? (
-                <AlertCircle className="size-3.5 shrink-0" />
-              ) : (
-                <LoaderCircle className="size-3.5 shrink-0 animate-spin" />
-              )}
-              <span className="truncate">{status.message}</span>
-            </div>
-          ) : null}
-        </div>
-      </div>
+        <Button type="button" className="mt-3 h-[50px] w-full rounded-[15px] text-sm" disabled={busy} onClick={save}>
+          <Save className="size-4" />
+          Save AI settings
+        </Button>
+      </section>
 
-      {/* Card 2: Prompts (Clean Inset Grouped Rows) */}
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border/70 shadow-xs">
-        <div className="border-b border-border/70 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">提示词</h2>
+      <section>
+        <div className="mb-3 flex items-end justify-between px-1">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Prompts</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Prompt library</h3>
+          </div>
+          <span className="text-[10px] font-medium text-muted-foreground">Tap to edit</span>
         </div>
 
-        <ul className="divide-y divide-border/60">
-          {PROMPT_SPECS.map((spec) => {
-            const isModified = settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]
-
+        <div className="overflow-hidden rounded-[22px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
+          {PROMPT_SPECS.map((spec, index) => {
+            const modified = settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]
             return (
-              <li key={spec.key}>
-                <button
-                  type="button"
-                  onClick={() => openPromptEditor(spec.key)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
-                >
-                  <span className="text-xs font-medium text-foreground">{spec.label}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">
-                      {isModified ? "已自定义" : "默认"}
-                    </span>
-                    <ChevronRight className="size-3.5 text-muted-foreground/60" />
-                  </div>
-                </button>
-              </li>
+              <button
+                key={spec.key}
+                type="button"
+                onClick={() => openPromptEditor(spec.key)}
+                className={cn(
+                  "group flex min-h-[72px] w-full items-center gap-3.5 px-4 py-3 text-left transition-colors hover:bg-muted/55 active:bg-muted/75",
+                  index > 0 && "border-t border-black/[0.055] dark:border-white/[0.07]"
+                )}
+              >
+                <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-[13px]", modified ? "bg-energy text-black" : "bg-muted text-foreground")}>
+                  {index % 2 === 0 ? <WandSparkles className="size-4" /> : <Sparkles className="size-4" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold tracking-[-0.02em]">{spec.label}</span>
+                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">{modified ? "Customized" : "Using default prompt"}</span>
+                </span>
+                {modified ? <span className="size-2 shrink-0 rounded-full bg-energy" aria-label="Customized" /> : null}
+                <ChevronRight className="size-4 shrink-0 text-foreground/22 transition-transform duration-150 group-active:translate-x-0.5" />
+              </button>
             )
           })}
-        </ul>
-      </div>
+        </div>
+      </section>
 
-      {/* Prompt Editor Sheet with CodeMirror */}
       <Sheet open={Boolean(editingPromptKey)} onOpenChange={(open) => !open && setEditingPromptKey(null)}>
         <SheetContent
           side="bottom"
-          className="h-[88dvh] max-h-[720px] rounded-t-3xl p-0 flex flex-col sm:max-w-lg sm:mx-auto border-border/80 shadow-xl"
+          className="mx-auto flex h-[92dvh] max-h-[820px] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         >
           {activeSpec ? (
             <>
-              {/* Sheet Header */}
-              <SheetHeader className="border-b border-border/70 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <SheetTitle className="text-sm font-semibold">{activeSpec.label}</SheetTitle>
-                    <Badge variant="secondary" className="text-[10px] font-normal font-mono">
-                      {promptDraft.length} 字
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center gap-1 mr-7">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      disabled={!isDraftModified}
-                      className="h-7 text-xs text-muted-foreground disabled:opacity-30"
-                      onClick={() => setPromptDraft(DEFAULT_AI_SETTINGS[activeSpec.key])}
-                    >
-                      <RotateCcw className="mr-1 size-3" />
-                      恢复默认
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="h-7 text-xs text-muted-foreground"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(promptDraft)
-                          setCopiedPrompt(true)
-                          setTimeout(() => setCopiedPrompt(false), 2000)
-                        } catch {
-                          // ignore
-                        }
-                      }}
-                    >
-                      {copiedPrompt ? <Check className="mr-1 size-3 text-emerald-500" /> : <Copy className="mr-1 size-3" />}
-                      {copiedPrompt ? "已复制" : "复制"}
-                    </Button>
-                  </div>
+              <SheetHeader className="shrink-0 border-b border-black/[0.055] px-4 pb-3 pt-4 pr-12 dark:border-white/[0.07] sm:px-5 sm:pt-5">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="size-2 rounded-full bg-energy" />
+                    Prompt lab
+                  </span>
+                  <Badge className="border border-black/[0.07] bg-muted px-2.5 py-1 font-mono text-[9px] font-medium text-muted-foreground shadow-none dark:border-white/[0.09]">
+                    {promptDraft.length} chars
+                  </Badge>
                 </div>
-                <SheetDescription className="text-xs text-muted-foreground">
-                  {activeSpec.hint}
-                </SheetDescription>
+                <SheetTitle className="text-[22px] font-semibold tracking-[-0.04em] sm:text-2xl">{activeSpec.label}</SheetTitle>
+                <SheetDescription className="max-w-md text-xs leading-5">{activeSpec.hint}</SheetDescription>
               </SheetHeader>
 
-              {/* Variable Pills Toolbar */}
               {activeSpec.vars.length > 0 ? (
-                <div className="border-b border-border/60 bg-muted/15 px-4 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {activeSpec.vars.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => insertVariable(item.id)}
-                        className="flex h-6.5 items-center gap-1 rounded-md border border-border/70 bg-card px-2 text-[11px] text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-foreground active:scale-95 transition-all"
-                      >
-                        <span className="font-mono font-medium text-primary">{`+ {{${item.id}}}`}</span>
-                        <span>{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                <div
+                  data-testid="prompt-variable-rail"
+                  className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-black/[0.05] bg-muted/25 px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-white/[0.06] sm:px-5"
+                >
+                  {activeSpec.vars.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => insertVariable(item.id)}
+                      className="shrink-0 rounded-[10px] border border-black/[0.07] bg-card px-2.5 py-1.5 font-mono text-[10px] font-medium text-muted-foreground transition-[background-color,color,transform] hover:bg-muted hover:text-foreground active:scale-[0.98] dark:border-white/[0.09]"
+                    >
+                      + {`{{${item.id}}}`}
+                    </button>
+                  ))}
                 </div>
               ) : null}
 
-              {/* CodeMirror Canvas Body */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
+              <div className="min-h-0 flex-1 p-3 sm:p-4">
                 <CodeEditor
                   key={activeSpec.key}
                   ref={editorRef}
@@ -468,24 +390,51 @@ export function AiSettingsPanel() {
                   label={activeSpec.label}
                   value={promptDraft}
                   language="prompt"
-                  placeholder="在这里输入提示词…"
+                  placeholder="Write the prompt here…"
                   onChange={setPromptDraft}
-                  className="flex-1 rounded-2xl shadow-sm border border-border/70"
-                  editorClassName="h-[280px] sm:h-[340px]"
+                  className="h-full min-h-0 rounded-[16px] shadow-none"
+                  editorClassName="!h-full !min-h-0 lg:!h-full"
                 />
               </div>
 
-              {/* Sheet Footer */}
-              <SheetFooter className="border-t border-border/70 bg-card p-3.5">
+              <div
+                data-testid="prompt-editor-actions"
+                className="grid shrink-0 grid-cols-[auto_auto_minmax(0,1fr)] gap-2 border-t border-black/[0.055] bg-card px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-white/[0.07] sm:px-4 sm:pb-4"
+              >
                 <Button
                   type="button"
-                  className="h-9 w-full rounded-xl font-semibold shadow-xs"
-                  onClick={savePromptDraft}
+                  size="sm"
+                  variant="outline"
+                  disabled={!isDraftModified}
+                  className="h-11 whitespace-nowrap px-3 text-xs"
+                  onClick={() => setPromptDraft(DEFAULT_AI_SETTINGS[activeSpec.key])}
                 >
-                  <Save className="mr-1.5 size-3.5" />
-                  保存
+                  <RotateCcw className="size-3.5" />
+                  Reset
                 </Button>
-              </SheetFooter>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-11 whitespace-nowrap px-3 text-xs"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(promptDraft)
+                      setCopiedPrompt(true)
+                      window.setTimeout(() => setCopiedPrompt(false), 2000)
+                    } catch {
+                      setCopiedPrompt(false)
+                    }
+                  }}
+                >
+                  {copiedPrompt ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copiedPrompt ? "Copied" : "Copy"}
+                </Button>
+                <Button type="button" className="h-11 min-w-0 text-sm" onClick={savePromptDraft}>
+                  <Save className="size-4" />
+                  Save prompt
+                </Button>
+              </div>
             </>
           ) : null}
         </SheetContent>

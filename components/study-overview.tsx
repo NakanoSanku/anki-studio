@@ -1,10 +1,9 @@
 "use client"
 
-import { ArrowRight, CheckCircle2, Clock, Plus } from "lucide-react"
+import { ArrowRight, Clock3, Plus } from "lucide-react"
 
 import { StudyStage } from "@/components/study-stage"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import type { Deck } from "@/lib/deck"
 import { formatDueDate, getStudyQueue, getStudyStats } from "@/lib/fsrs"
 
@@ -22,126 +21,116 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
   const reviewCount = queue.length - newCount
   const ready = queue.length > 0
   const dailyLimitReached = !ready && stats.dueNow > 0
-  const totalCards = deck.cards.length
   const estimatedMinutes = Math.max(1, Math.round(queue.length * 0.4))
+  const todayTotal = stats.reviewedToday + queue.length
+  const progress = todayTotal > 0 ? Math.min(100, Math.round((stats.reviewedToday / todayTotal) * 100)) : 100
 
-  const emptyTitle = dailyLimitReached
-    ? "今日学习目标已达成"
-    : stats.nextDue
-      ? "当前没有待学习卡片"
-      : "卡包暂无待学习卡片"
+  const emptyTitle = dailyLimitReached ? "You're done for today" : stats.nextDue ? "Take a break" : "Start with your first note"
   const emptyDescription = dailyLimitReached
-    ? "今天计划中的新卡与复习任务已全部完成！"
+    ? "Today's new-note and review limits are complete."
     : stats.nextDue
-      ? `下一批卡片将在 ${formatDueDate(stats.nextDue, now)} 到期。`
-      : "添加新笔记或导入卡包即可开始记忆。"
+      ? `The next cards are due ${formatDueDate(stats.nextDue, now)}.`
+      : "Create a note or import a deck to begin studying."
 
   return (
     <StudyStage>
-      <section
-        className="mx-auto flex w-full max-w-md flex-col gap-3 px-1 py-2 sm:max-w-lg sm:gap-4 sm:py-6"
-        aria-labelledby="study-overview-title"
-      >
-        {/* Main Hero Learning Card */}
-        <Card className="rounded-3xl border-border/80 bg-card/90 shadow-sm backdrop-blur-xs">
-          <CardContent className="flex flex-col items-center px-5 py-7 text-center sm:px-8 sm:py-9">
+      <section className="mx-auto flex w-full max-w-lg flex-col gap-4 pb-3 pt-2 sm:py-6" aria-labelledby="study-overview-title">
+        <div className="flex items-end justify-between gap-4 px-1">
+          <div className="min-w-0">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="size-2 rounded-full bg-energy" />
+              Today
+            </div>
+            <h1 id="study-overview-title" className="text-[30px] font-semibold leading-[1.02] tracking-[-0.045em] sm:text-[34px]">
+              Today’s study
+            </h1>
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">Less friction. One clear rhythm.</p>
+          </div>
+          {ready ? (
+            <div className="mb-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-black/[0.07] bg-card px-3 py-2 text-[11px] font-medium text-muted-foreground dark:border-white/[0.09]">
+              <Clock3 className="size-3.5" />
+              {estimatedMinutes} min
+            </div>
+          ) : null}
+        </div>
+
+        <div className="overflow-hidden rounded-[28px] bg-foreground text-background shadow-[0_24px_60px_-42px_rgba(0,0,0,0.8)]">
+          <div className="px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
             {ready ? (
               <>
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-3 py-1 text-xs font-medium text-muted-foreground">
-                  <span>今日任务</span>
-                </div>
-
-                <div className="mt-4 flex flex-col items-center">
-                  <span className="font-mono text-6xl font-extrabold tracking-tight text-foreground sm:text-7xl">
-                    {queue.length}
-                  </span>
-                  <span className="mt-1 text-sm font-medium text-muted-foreground">
-                    张待学习
-                  </span>
-                </div>
-
-                {/* Categories & Estimated Time */}
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                  <div className="flex items-center gap-1.5 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-                    <span className="size-1.5 rounded-full bg-blue-500" />
-                    <span>复习 {reviewCount}</span>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-background/50">Remaining</p>
+                    <div className="mt-2 flex items-end gap-2">
+                      <span className="text-[64px] font-semibold leading-none tracking-[-0.065em]">{queue.length}</span>
+                      <span className="mb-2.5 text-sm font-medium text-background/55">cards</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
-                    <span>新卡 {newCount}</span>
-                  </div>
-                  <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
-                    <Clock className="size-3" />
-                    <span>约 {estimatedMinutes} 分钟</span>
+                  <div className="flex size-11 items-center justify-center rounded-full bg-energy text-sm font-bold text-black">
+                    {progress}%
                   </div>
                 </div>
 
-                {/* Primary Start Action */}
-                <div className="mt-8 flex w-full flex-col gap-2.5">
-                  <Button
-                    size="lg"
-                    aria-label="开始学习"
-                    className="h-12 w-full rounded-2xl text-base font-semibold shadow-sm transition-all active:scale-[0.98]"
-                    onClick={onStart}
-                  >
-                    开始学习
-                    <ArrowRight className="ml-1 size-4.5" />
-                  </Button>
+                <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-background/12" aria-hidden="true">
+                  <div className="h-full rounded-full bg-energy transition-[width] duration-300" style={{ width: `${Math.max(6, progress)}%` }} />
                 </div>
+
+                <div className="mt-5 grid grid-cols-3 divide-x divide-background/12 border-y border-background/12 py-4">
+                  <div className="pr-3">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">Review</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{reviewCount}</p>
+                  </div>
+                  <div className="px-3">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">New</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{newCount}</p>
+                  </div>
+                  <div className="pl-3">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-background/40">Done</p>
+                    <p className="mt-1 text-xl font-semibold tracking-[-0.03em]">{stats.reviewedToday}</p>
+                  </div>
+                </div>
+
+                <Button
+                  size="lg"
+                  className="mt-5 h-13 w-full rounded-[16px] bg-energy px-5 text-[15px] font-semibold text-black shadow-none hover:bg-energy/90 active:scale-[0.99]"
+                  onClick={onStart}
+                >
+                  Start studying <ArrowRight className="ml-1 size-4.5" />
+                </Button>
               </>
             ) : (
-              <>
-                <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <CheckCircle2 className="size-7 stroke-[2.5]" />
+              <div className="py-3">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-background/50">
+                  <span className="size-2 rounded-full bg-energy" />
+                  Clear
                 </div>
-                <h2 id="study-overview-title" className="mt-4 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                  {emptyTitle}
-                </h2>
-                <p className="mt-2 max-w-xs text-xs leading-relaxed text-muted-foreground sm:text-sm">
-                  {emptyDescription}
-                </p>
+                <div className="mt-6 flex size-12 items-center justify-center rounded-full bg-energy text-xl font-bold text-black">✓</div>
+                <h2 className="mt-5 text-[30px] font-semibold tracking-[-0.045em]">{emptyTitle}</h2>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-background/55">{emptyDescription}</p>
                 {stats.reviewedToday > 0 ? (
-                  <div className="mt-4 rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2 text-xs text-muted-foreground">
-                    今日已复习 <strong className="font-semibold text-foreground">{stats.reviewedToday}</strong> 张卡片
-                  </div>
+                  <p className="mt-5 border-t border-background/12 pt-4 text-xs font-medium text-background/55">
+                    {stats.reviewedToday} cards completed today
+                  </p>
                 ) : null}
-              </>
+              </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Secondary Deck & Stats Card */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col justify-center rounded-2xl border border-border/70 bg-card/60 p-4 shadow-2xs">
-            <span className="text-xs text-muted-foreground">卡包总卡片</span>
-            <div className="mt-1.5 flex items-baseline gap-1.5">
-              <span className="font-mono text-2xl font-bold text-foreground">{totalCards}</span>
-              <span className="text-xs text-muted-foreground">张</span>
-            </div>
-          </div>
-          <div className="flex flex-col justify-center rounded-2xl border border-border/70 bg-card/60 p-4 shadow-2xs">
-            <span className="text-xs text-muted-foreground">今日已学</span>
-            <div className="mt-1.5 flex items-baseline gap-1.5">
-              <span className="font-mono text-2xl font-bold text-foreground">{stats.reviewedToday}</span>
-              <span className="text-xs text-muted-foreground">张</span>
-            </div>
           </div>
         </div>
 
-        {/* Secondary Action Button */}
-        {onAddNote ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            aria-label="新建卡片"
-            className="h-11 w-full rounded-2xl border-border/80 bg-card/70 text-sm font-medium shadow-2xs hover:bg-muted/50 active:scale-[0.98]"
-            onClick={onAddNote}
-          >
-            <Plus className="mr-1.5 size-4" />
-            新建卡片
-          </Button>
-        ) : null}
+        <div className="rounded-[22px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current deck</p>
+              <p className="mt-1.5 truncate text-[16px] font-semibold tracking-[-0.025em]">{deck.name.trim() || "Untitled deck"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{deck.cards.length} notes</p>
+            </div>
+            {onAddNote ? (
+              <Button type="button" variant="outline" className="h-11 shrink-0 px-4" onClick={onAddNote}>
+                <Plus className="mr-1 size-4" /> New note
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </section>
     </StudyStage>
   )

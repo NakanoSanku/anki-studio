@@ -7,8 +7,12 @@
     "build": "next build",
     "start": "next start -p 3000 -H 0.0.0.0",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run typecheck:app && npm run typecheck:tests",
+    "typecheck:app": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:contracts": "vitest run tests/contracts",
     "test:watch": "vitest"
   },
   "dependencies": {

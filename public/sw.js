@@ -1,5 +1,5 @@
-const CACHE_NAME = "anki-studio-shell-v4"
-const STATIC_PATHS = ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"]
+const CACHE_NAME = "anki-studio-shell-v5"
+const STATIC_PATHS = ["/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg"]
 
 function isCacheableAsset(url, request) {
   return (
@@ -40,6 +40,9 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const names = await caches.keys()
       await Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name)))
+      if (self.registration.navigationPreload) {
+        await self.registration.navigationPreload.enable()
+      }
       await self.clients.claim()
     })()
   )
@@ -74,13 +77,16 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then(async (response) => {
+      (async () => {
+        try {
+          const response = (await event.preloadResponse) || await fetch(request)
           if (url.pathname !== "/") return response
           const cache = await caches.open(CACHE_NAME)
           return cacheResponse(cache, "/", response)
-        })
-        .catch(async () => (await caches.match(request)) || (await caches.match("/")) || Response.error())
+        } catch {
+          return (await caches.match(request)) || (await caches.match("/")) || Response.error()
+        }
+      })()
     )
     return
   }

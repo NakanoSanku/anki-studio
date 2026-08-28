@@ -38,8 +38,36 @@ export function previewDocument(css: string, html: string): string {
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <style>
-      html, body { margin: 0; min-height: 100%; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+      }
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+      body.card {
+        max-width: 100%;
+        overflow-x: hidden;
+        overflow-wrap: anywhere;
+      }
+      img, video, svg, canvas {
+        max-width: 100%;
+        height: auto;
+      }
+      table {
+        max-width: 100%;
+      }
+      pre {
+        max-width: 100%;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
       ${css}
     </style>
   </head>

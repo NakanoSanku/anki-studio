@@ -22,7 +22,7 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
     `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${lang}&q=${encoded}&ttsspeed=${speed}`,
   ]
 
-  let lastError = "语音接口失败"
+  let lastError = "TTS service failed"
   for (const url of urls) {
     const response = await fetch(url, {
       headers: {
@@ -33,12 +33,12 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
       cache: "no-store",
     })
     if (!response.ok) {
-      lastError = response.status === 403 ? "Google 暂时拒绝语音请求，请稍后再试" : `语音接口 ${response.status}`
+      lastError = response.status === 403 ? "Google temporarily rejected the TTS request. Try again later." : `TTS service returned ${response.status}`
       continue
     }
     const buffer = await response.arrayBuffer()
     if (buffer.byteLength > 80) return buffer
-    lastError = "语音接口返回空音频"
+    lastError = "TTS service returned empty audio"
   }
   throw new Error(lastError)
 }
@@ -48,14 +48,14 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as { text?: unknown; lang?: unknown; slow?: unknown }
   } catch {
-    return Response.json({ error: "请求无效" }, { status: 400 })
+    return Response.json({ error: "Invalid request" }, { status: 400 })
   }
 
   const text = typeof body.text === "string" ? body.text.trim() : ""
   const lang = body.lang
-  if (!text) return Response.json({ error: "没有可朗读的文本" }, { status: 400 })
-  if (text.length > MAX_TEXT) return Response.json({ error: "单段文本过长" }, { status: 400 })
-  if (!isLang(lang)) return Response.json({ error: "只支持英语和泰语" }, { status: 400 })
+  if (!text) return Response.json({ error: "There is no text to read" }, { status: 400 })
+  if (text.length > MAX_TEXT) return Response.json({ error: "Text segment is too long" }, { status: 400 })
+  if (!isLang(lang)) return Response.json({ error: "Only English and Thai are supported" }, { status: 400 })
 
   try {
     const audio = await gate.enqueue(() => fetchGoogle(text, lang, Boolean(body.slow)))
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "语音生成失败"
+    const message = error instanceof Error ? error.message : "TTS generation failed"
     return Response.json({ error: message }, { status: 502 })
   }
 }

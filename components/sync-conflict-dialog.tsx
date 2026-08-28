@@ -1,5 +1,7 @@
 "use client"
 
+import { Cloud, Copy, Laptop, Pause } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -12,11 +14,11 @@ import {
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 
 function formatTime(value: number): string {
-  if (!value) return "未知时间"
+  if (!value) return "Unknown time"
   try {
     return new Date(value).toLocaleString()
   } catch {
-    return "未知时间"
+    return "Unknown time"
   }
 }
 
@@ -29,36 +31,84 @@ export function SyncConflictDialog({
 }) {
   return (
     <Dialog open={Boolean(conflict)} onOpenChange={(open) => { if (!open) onChoose("defer") }}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+      <DialogContent className="sm:max-w-lg" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>卡包有冲突</DialogTitle>
+          <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+            <span className="size-2 rounded-full bg-destructive/70" />
+            Sync conflict
+          </div>
+          <DialogTitle className="text-2xl">Both copies changed</DialogTitle>
           <DialogDescription>
-            「{conflict?.name}」在本机和云端都被改过。选一边，或把本机另存为新卡包。
+            “{conflict?.name}” has newer changes on this device and in the cloud. Choose which version to keep, or save the local copy as a new deck first.
           </DialogDescription>
         </DialogHeader>
+
         {conflict ? (
-          <div className="space-y-1 text-sm text-foreground/70">
-            <p>本机：{conflict.localDeleted ? "已删除" : "有未同步的修改"} · {formatTime(conflict.localUpdatedAt)}</p>
-            <p>
-              云端：{conflict.remoteDeleted ? "已删除" : conflict.remoteName} · 版本 {conflict.remoteRev}
-            </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <VersionCard
+              icon={<Laptop className="size-4" />}
+              eyebrow="This device"
+              title="Local version"
+              line1={conflict.localDeleted ? "Deleted locally" : "Unsynced changes"}
+              line2={formatTime(conflict.localUpdatedAt)}
+            />
+            <VersionCard
+              icon={<Cloud className="size-4" />}
+              eyebrow="Cloud"
+              title="Cloud version"
+              line1={conflict.remoteDeleted ? "Deleted in cloud" : conflict.remoteName}
+              line2={`Revision ${conflict.remoteRev}`}
+            />
           </div>
         ) : null}
-        <DialogFooter className="sm:flex-col sm:items-stretch">
-          <Button type="button" onClick={() => onChoose("remote")}>
-            用云端
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" className="h-12 text-xs" onClick={() => onChoose("remote")}>
+            <Cloud className="size-3.5" />
+            Use cloud
           </Button>
-          <Button type="button" variant="outline" onClick={() => onChoose("local")}>
-            用本机
+          <Button type="button" className="h-12 text-xs" onClick={() => onChoose("local")}>
+            <Laptop className="size-3.5" />
+            Use local
           </Button>
-          <Button type="button" variant="outline" onClick={() => onChoose("copy")}>
-            本机另存为新卡包
+        </div>
+
+        <DialogFooter className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto]">
+          <Button type="button" variant="outline" className="h-11 justify-start px-4 text-xs" onClick={() => onChoose("copy")}>
+            <Copy className="size-3.5" />
+            Save local as new deck
           </Button>
-          <Button type="button" variant="ghost" onClick={() => onChoose("defer")}>
-            稍后
+          <Button type="button" variant="ghost" className="h-11 px-4 text-xs text-muted-foreground" onClick={() => onChoose("defer")}>
+            <Pause className="size-3.5" />
+            Later
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function VersionCard({
+  icon,
+  eyebrow,
+  title,
+  line1,
+  line2,
+}: {
+  icon: React.ReactNode
+  eyebrow: string
+  title: string
+  line1: string
+  line2: string
+}) {
+  return (
+    <div className="rounded-[16px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09]">
+      <span className="flex size-9 items-center justify-center rounded-[11px] bg-muted text-foreground">{icon}</span>
+      <p className="mt-4 text-[9px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">{eyebrow}</p>
+      <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em]">{title}</h3>
+      <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+        {line1}<br />{line2}
+      </p>
+    </div>
   )
 }

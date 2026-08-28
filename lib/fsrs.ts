@@ -50,10 +50,10 @@ export type StudyStats = {
 }
 
 const RATING_LABELS: Record<Grade, string> = {
-  [Rating.Again]: "重来",
-  [Rating.Hard]: "困难",
-  [Rating.Good]: "良好",
-  [Rating.Easy]: "简单",
+  [Rating.Again]: "Again",
+  [Rating.Hard]: "Hard",
+  [Rating.Good]: "Good",
+  [Rating.Easy]: "Easy",
 }
 
 function schedulerFor(deck: Deck) {
@@ -252,20 +252,20 @@ export function removeNoteSchedule(deck: Deck, noteId: string): Deck {
 
 export function formatInterval(milliseconds: number): string {
   const minutes = Math.max(1, Math.round(milliseconds / 60_000))
-  if (minutes < 60) return `${minutes} 分钟`
+  if (minutes < 60) return `${minutes} min`
   const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} 小时`
+  if (hours < 24) return `${hours} hr`
   const days = Math.round(hours / 24)
-  if (days < 30) return `${days} 天`
+  if (days < 30) return `${days} d`
   const months = Math.round(days / 30)
-  if (months < 12) return `${months} 个月`
+  if (months < 12) return `${months} mo`
   const years = Math.round(days / 365)
-  return `${years} 年`
+  return `${years} yr`
 }
 
 export function formatDueDate(date: Date, now = new Date()): string {
   const diff = date.getTime() - now.getTime()
-  if (diff <= 0) return "现在"
+  if (diff <= 0) return "now"
   if (date.getTime() < endOfLocalDay(now).getTime()) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   return date.toLocaleDateString([], { month: "short", day: "numeric" })
 }

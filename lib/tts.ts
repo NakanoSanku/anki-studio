@@ -43,10 +43,100 @@ export function chunkTtsText(text: string): string[] {
   return parts.filter(Boolean)
 }
 
+function rotateLeft(value: number, bits: number): number {
+  return ((value << bits) | (value >>> (32 - bits))) >>> 0
+}
+
+/**
+ * Small SHA-1 implementation used only as a compatibility fallback when
+ * Web Crypto is unavailable (for example on an HTTP self-hosted origin or
+ * in a restricted WebView). Keeping SHA-1 here preserves existing TTS cache
+ * IDs and exported audio filenames exactly.
+ */
+export function sha1Hex(bytes: Uint8Array): string {
+  const bitLength = bytes.length * 8
+  const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64
+  const padded = new Uint8Array(paddedLength)
+  padded.set(bytes)
+  padded[bytes.length] = 0x80
+
+  const view = new DataView(padded.buffer)
+  view.setUint32(paddedLength - 8, Math.floor(bitLength / 0x100000000), false)
+  view.setUint32(paddedLength - 4, bitLength >>> 0, false)
+
+  let h0 = 0x67452301
+  let h1 = 0xefcdab89
+  let h2 = 0x98badcfe
+  let h3 = 0x10325476
+  let h4 = 0xc3d2e1f0
+  const words = new Uint32Array(80)
+
+  for (let offset = 0; offset < paddedLength; offset += 64) {
+    for (let i = 0; i < 16; i += 1) {
+      words[i] = view.getUint32(offset + i * 4, false)
+    }
+    for (let i = 16; i < 80; i += 1) {
+      words[i] = rotateLeft(words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16], 1)
+    }
+
+    let a = h0
+    let b = h1
+    let c = h2
+    let d = h3
+    let e = h4
+
+    for (let i = 0; i < 80; i += 1) {
+      let f: number
+      let k: number
+      if (i < 20) {
+        f = (b & c) | (~b & d)
+        k = 0x5a827999
+      } else if (i < 40) {
+        f = b ^ c ^ d
+        k = 0x6ed9eba1
+      } else if (i < 60) {
+        f = (b & c) | (b & d) | (c & d)
+        k = 0x8f1bbcdc
+      } else {
+        f = b ^ c ^ d
+        k = 0xca62c1d6
+      }
+
+      const next = (rotateLeft(a, 5) + f + e + k + words[i]) >>> 0
+      e = d
+      d = c
+      c = rotateLeft(b, 30)
+      b = a
+      a = next
+    }
+
+    h0 = (h0 + a) >>> 0
+    h1 = (h1 + b) >>> 0
+    h2 = (h2 + c) >>> 0
+    h3 = (h3 + d) >>> 0
+    h4 = (h4 + e) >>> 0
+  }
+
+  return [h0, h1, h2, h3, h4].map((value) => value.toString(16).padStart(8, "0")).join("")
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export async function ttsClipId(lang: TtsLang, slow: boolean, text: string): Promise<string> {
   const bytes = new TextEncoder().encode(`${lang}|${slow ? 1 : 0}|${text}`)
-  const digest = await crypto.subtle.digest("SHA-1", bytes)
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+  const subtle = globalThis.crypto?.subtle
+  if (subtle) {
+    try {
+      const digest = await subtle.digest("SHA-1", bytes)
+      return bytesToHex(new Uint8Array(digest))
+    } catch {
+      // Some restricted browser contexts expose SubtleCrypto but reject digest().
+      // Fall through to the deterministic JavaScript implementation below.
+    }
+  }
+  return sha1Hex(bytes)
 }
 
 export function ttsFilename(lang: TtsLang, slow: boolean, id: string): string {
@@ -72,7 +162,7 @@ function openDb(): Promise<IDBDatabase> {
       }
     }
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("无法打开语音缓存"))
+    request.onerror = () => reject(request.error ?? new Error("Unable to open the TTS cache"))
   })
 }
 
@@ -85,7 +175,7 @@ export async function cacheGet(id: string): Promise<Blob | null> {
     const buffer = await new Promise<ArrayBuffer | undefined>((resolve, reject) => {
       const request = db.transaction(STORE, "readonly").objectStore(STORE).get(id)
       request.onsuccess = () => resolve(request.result as ArrayBuffer | undefined)
-      request.onerror = () => reject(request.error ?? new Error("读取语音缓存失败"))
+      request.onerror = () => reject(request.error ?? new Error("Unable to read the TTS cache"))
     })
     if (!buffer) return null
     const blob = new Blob([buffer], { type: "audio/mpeg" })
@@ -106,7 +196,7 @@ export async function cacheSet(id: string, data: ArrayBuffer | Blob): Promise<Bl
     await new Promise<void>((resolve, reject) => {
       const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(buffer, id)
       request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error ?? new Error("写入语音缓存失败"))
+      request.onerror = () => reject(request.error ?? new Error("Unable to write the TTS cache"))
     })
   } finally {
     db.close()
@@ -125,7 +215,7 @@ async function fetchTtsChunk(text: string, lang: TtsLang, slow: boolean, signal?
   })
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(data?.error || `语音接口 ${response.status}`)
+    throw new Error(data?.error || `TTS request failed (${response.status})`)
   }
   return response.arrayBuffer()
 }
@@ -143,7 +233,7 @@ export async function getTtsClip(input: {
   signal?: AbortSignal
 }): Promise<TtsClip> {
   const text = normalizeTtsText(input.text)
-  if (!text) throw new Error("没有可朗读的文本")
+  if (!text) throw new Error("There is no text to read")
   const id = await ttsClipId(input.lang, input.slow, text)
   const filename = ttsFilename(input.lang, input.slow, id)
   const cached = await cacheGet(id)
@@ -173,12 +263,12 @@ export async function playTtsAudio(blob: Blob) {
     audio.onerror = () => {
       URL.revokeObjectURL(url)
       if (currentAudio === audio) currentAudio = null
-      reject(new Error("音频播放失败"))
+      reject(new Error("Audio playback failed"))
     }
     void audio.play().catch((error) => {
       URL.revokeObjectURL(url)
       if (currentAudio === audio) currentAudio = null
-      reject(error instanceof Error ? error : new Error("音频播放失败"))
+      reject(error instanceof Error ? error : new Error("Audio playback failed"))
     })
   })
 }

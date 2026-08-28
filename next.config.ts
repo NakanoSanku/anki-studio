@@ -1,6 +1,7 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   serverExternalPackages: ["sql.js"],
   allowedDevOrigins: [
     "*.run.app",
@@ -9,6 +10,14 @@ const nextConfig: NextConfig = {
     "localhost:3000",
     "127.0.0.1:3000",
   ],
+  async rewrites() {
+    return [
+      // Note detail pages are client-rendered by Studio. Keep the visible URL
+      // while serving the already-static notes shell instead of invoking a
+      // server-rendered dynamic route for every card open/back navigation.
+      { source: "/notes/:id", destination: "/notes" },
+    ]
+  },
   async headers() {
     return [
       {

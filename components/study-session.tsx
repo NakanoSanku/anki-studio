@@ -48,13 +48,13 @@ type StudySessionProps = {
 
 const ratingStyle = {
   [Rating.Again]:
-    "border-rose-200/90 bg-rose-50/80 text-rose-700 hover:border-rose-300 hover:bg-rose-100/80 focus-visible:border-rose-400 focus-visible:ring-rose-200/70 dark:border-rose-900/75 dark:bg-rose-950/35 dark:text-rose-300 dark:hover:border-rose-800 dark:hover:bg-rose-950/55 dark:focus-visible:border-rose-700 dark:focus-visible:ring-rose-900/70",
+    "border border-destructive/18 bg-destructive/8 text-destructive hover:bg-destructive/12 focus-visible:ring-destructive/25 dark:bg-destructive/12",
   [Rating.Hard]:
-    "border-amber-200/90 bg-amber-50/80 text-amber-800 hover:border-amber-300 hover:bg-amber-100/80 focus-visible:border-amber-400 focus-visible:ring-amber-200/70 dark:border-amber-900/75 dark:bg-amber-950/35 dark:text-amber-300 dark:hover:border-amber-800 dark:hover:bg-amber-950/55 dark:focus-visible:border-amber-700 dark:focus-visible:ring-amber-900/70",
+    "border border-black/[0.07] bg-[#f3f0e8] text-foreground hover:bg-[#ece7dc] focus-visible:ring-foreground/15 dark:border-white/[0.09] dark:bg-white/[0.055] dark:hover:bg-white/[0.08]",
   [Rating.Good]:
-    "border-blue-200/90 bg-blue-50/80 text-blue-700 hover:border-blue-300 hover:bg-blue-100/80 focus-visible:border-blue-400 focus-visible:ring-blue-200/70 dark:border-blue-900/75 dark:bg-blue-950/35 dark:text-blue-300 dark:hover:border-blue-800 dark:hover:bg-blue-950/55 dark:focus-visible:border-blue-700 dark:focus-visible:ring-blue-900/70",
+    "border border-black/[0.07] bg-card text-foreground hover:bg-muted/65 focus-visible:ring-foreground/15 dark:border-white/[0.09]",
   [Rating.Easy]:
-    "border-emerald-200/90 bg-emerald-50/80 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100/80 focus-visible:border-emerald-400 focus-visible:ring-emerald-200/70 dark:border-emerald-900/75 dark:bg-emerald-950/35 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/55 dark:focus-visible:border-emerald-700 dark:focus-visible:ring-emerald-900/70",
+    "border border-energy/30 bg-energy/18 text-foreground hover:bg-energy/25 focus-visible:ring-energy/35",
 } as const
 
 type ScreenWakeLockSentinel = {
@@ -114,7 +114,7 @@ function StudyCard({ deck, item, revealed }: { deck: Deck; item: StudyItem; reve
   const rendered = renderCard(item.template.front, item.template.back, values)
   return (
     <iframe
-      title={revealed ? "卡片背面" : "卡片正面"}
+      title={revealed ? "Card back" : "Card front"}
       sandbox=""
       srcDoc={previewDocument(deck.css, revealed ? rendered.back : rendered.front)}
       className="h-full w-full border-0 bg-white"
@@ -122,36 +122,75 @@ function StudyCard({ deck, item, revealed }: { deck: Deck; item: StudyItem; reve
   )
 }
 
+function StudyBackdrop() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="absolute -left-24 -top-20 size-72 rounded-full bg-energy/[0.09] blur-3xl" />
+      <div className="absolute -right-24 bottom-[8%] size-80 rounded-full bg-foreground/[0.035] blur-3xl dark:bg-white/[0.04]" />
+    </div>
+  )
+}
+
 function FocusHeader({
   completed,
   total,
   progress,
+  canEdit,
   onExit,
   onEdit,
 }: {
   completed: number
   total: number
   progress: number
+  canEdit: boolean
   onExit: () => void
   onEdit: () => void
 }) {
   return (
-    <header className="relative z-20 shrink-0 border-b border-border/65 bg-background/92 pt-[env(safe-area-inset-top)]">
-      <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 sm:min-h-16 sm:px-5">
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="退出学习" onClick={onExit}>
+    <header className="relative z-30 shrink-0 border-b border-black/[0.045] bg-background/94 pt-[env(safe-area-inset-top)] backdrop-blur-2xl dark:border-white/[0.07]">
+      <div className="mx-auto grid min-h-16 w-full max-w-5xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 sm:min-h-18 sm:px-5">
+        <Button
+          type="button"
+          size="icon-lg"
+          variant="outline"
+          className="shadow-none"
+          aria-label="Exit study"
+          onClick={onExit}
+        >
           <X className="size-4" />
         </Button>
 
-        <div className="flex min-w-0 items-center gap-3">
-          <Progress value={progress} aria-label={`本轮已完成 ${completed}，共 ${total} 张`} />
-          <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
-            {completed} / {total}
-          </span>
+        <div className="min-w-0 px-1">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:text-[11px]">
+              <span className="size-1.5 rounded-full bg-energy" />
+              Focus
+            </span>
+            <span className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground sm:text-[11px]">
+              {completed} / {total}
+            </span>
+          </div>
+          <Progress
+            value={progress}
+            aria-label={`Completed ${completed} of ${total} cards`}
+            className="h-1.5 bg-black/[0.06] [&_[data-slot=progress-indicator]]:bg-energy dark:bg-white/10"
+          />
         </div>
 
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="改这条笔记" onClick={onEdit}>
-          <Pencil className="size-4" />
-        </Button>
+        {canEdit ? (
+          <Button
+            type="button"
+            size="icon-lg"
+            variant="outline"
+            className="shadow-none"
+            aria-label="Edit note"
+            onClick={onEdit}
+          >
+            <Pencil className="size-4" />
+          </Button>
+        ) : (
+          <span className="size-11" aria-hidden="true" />
+        )}
       </div>
     </header>
   )
@@ -169,40 +208,40 @@ function RatingDock({
   onRate: (rating: (typeof options)[number]["rating"]) => void
 }) {
   return (
-    <div className="relative z-20 shrink-0 border-t border-border/70 bg-background/94 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4 lg:px-7">
-      <div className="mx-auto h-16 w-full max-w-5xl sm:h-18">
+    <div className="relative z-30 shrink-0 border-t border-black/[0.045] bg-background/96 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-2xl sm:px-5 sm:pt-3 dark:border-white/[0.07]">
+      <div className="mx-auto w-full max-w-4xl">
         {!revealed ? (
           <Button
-            className="h-full w-full text-sm sm:text-base"
+            className="h-14 w-full justify-center rounded-[16px] bg-foreground px-6 text-[15px] font-semibold tracking-[-0.015em] text-background shadow-[0_16px_34px_-26px_rgba(0,0,0,0.75)] hover:bg-foreground/90"
             aria-keyshortcuts="Space"
             onClick={onReveal}
           >
-            显示答案
-            <kbd className="ml-auto hidden rounded-md border border-primary-foreground/25 bg-primary-foreground/10 px-2 py-0.5 font-mono text-[10px] font-normal sm:inline">
+            <span>Show answer</span>
+            <kbd className="ml-auto hidden rounded-[8px] border border-background/15 bg-background/8 px-2 py-1 font-mono text-[9px] font-medium text-background/60 sm:inline">
               Space
             </kbd>
           </Button>
         ) : (
-          <div className="grid h-full grid-cols-4 gap-1.5 sm:gap-2.5" aria-label="选择本次记忆难度">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5" aria-label="Rate recall">
             {options.map((option, index) => (
               <Button
                 key={option.rating}
-                variant="outline"
+                variant="ghost"
                 className={cn(
-                  "h-full min-h-0 flex-col gap-1 rounded-xl px-1 py-2 sm:py-2.5",
+                  "min-h-15 flex-col gap-0.5 rounded-[16px] px-2 py-2.5 shadow-none sm:min-h-16",
                   ratingStyle[option.rating]
                 )}
-                aria-label={`${option.label}，下次复习间隔 ${option.interval}，快捷键 ${index + 1}`}
+                aria-label={`${option.label}, next interval ${option.interval}, shortcut ${index + 1}`}
                 aria-keyshortcuts={`${index + 1}`}
                 onClick={() => onRate(option.rating)}
               >
-                <span className="flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
-                  <kbd className="hidden size-5 items-center justify-center rounded border border-current/20 font-mono text-[10px] font-normal opacity-70 sm:flex">
+                <span className="flex items-center gap-1.5 text-sm font-semibold tracking-[-0.015em] sm:text-[15px]">
+                  <kbd className="hidden size-5 items-center justify-center rounded-[7px] bg-black/[0.06] font-mono text-[9px] font-medium opacity-60 sm:flex dark:bg-white/[0.08]">
                     {index + 1}
                   </kbd>
                   {option.label}
                 </span>
-                <span className="max-w-full truncate font-mono text-[10px] font-normal opacity-70 sm:text-[11px]">
+                <span className="max-w-full truncate font-mono text-[9px] font-medium opacity-55 sm:text-[10px]">
                   {option.interval}
                 </span>
               </Button>
@@ -298,32 +337,38 @@ export function StudySession({
   if (!current) {
     const dailyLimitReached = stats.dueNow > 0
     const completionDescription = dailyLimitReached
-      ? "今天可以学习的卡片已经全部完成。"
+      ? "You've completed every card available under today's limits."
       : stats.nextDue
-        ? `下一张将在 ${formatDueDate(stats.nextDue, now)} 到期。`
-        : "暂无计划中的复习。"
+        ? `The next card is due ${formatDueDate(stats.nextDue, now)}.`
+        : "No reviews are scheduled right now."
 
     return (
       <StudyStage>
-      <section
-        className="flex h-[100dvh] items-center justify-center overflow-y-auto overscroll-none bg-background px-4 py-8 sm:px-8"
-        aria-labelledby="study-complete-title"
-      >
-        <div className="flex w-full max-w-md flex-col items-center text-center">
-          <span className="flex size-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-            <CheckCircle2 className="size-8" />
-          </span>
-          <h2 id="study-complete-title" className="mt-6 text-2xl font-semibold tracking-tight sm:text-3xl">
-            {completed > 0 ? `本轮完成 ${completed} 张` : "当前没有待学习卡片"}
-          </h2>
-          <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
-            {completionDescription}
-          </p>
-          <Button size="lg" className="mt-8 h-12 w-full max-w-xs" onClick={onExit}>
-            返回学习
-          </Button>
-        </div>
-      </section>
+        <section
+          className="relative flex h-[100dvh] items-center justify-center overflow-hidden overscroll-none bg-background px-4 py-8 sm:px-8"
+          aria-labelledby="study-complete-title"
+        >
+          <StudyBackdrop />
+          <div className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
+            <div className="flex size-16 items-center justify-center rounded-full bg-energy text-black shadow-[0_18px_42px_-32px_rgba(0,0,0,0.5)]">
+              <CheckCircle2 className="size-7" />
+            </div>
+            <p className="mt-6 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Session clear</p>
+            <h2 id="study-complete-title" className="mt-2 text-[32px] font-semibold tracking-[-0.05em] text-foreground sm:text-[36px]">
+              {completed > 0 ? `${completed} cards complete` : "Nothing due right now"}
+            </h2>
+            <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
+              {completionDescription}
+            </p>
+            <Button
+              size="lg"
+              className="mt-8 h-[52px] w-full max-w-xs rounded-[16px]"
+              onClick={onExit}
+            >
+              Back to study
+            </Button>
+          </div>
+        </section>
       </StudyStage>
     )
   }
@@ -331,8 +376,6 @@ export function StudySession({
   const side = revealed ? "back" : "front"
   const playable = ttsFieldsOnSide(deck, side, current.template.id)
   const configs = ttsOf(deck)
-  // `custom` on AnimatePresence lets the exiting face pick up the latest
-  // action (reveal/conceal/advance) so its exit direction matches the gesture.
   const slideVariants: Variants = {
     enter: (cardAction: CardMotionAction) => cardMotionPose(cardAction, reducedMotion).initial,
     center: { x: 0, opacity: 1 },
@@ -341,161 +384,174 @@ export function StudySession({
 
   return (
     <StudyStage>
-    <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="学习会话">
-      <FocusHeader
-        completed={completed}
-        total={total}
-        progress={progress}
-        onExit={onExit}
-        onEdit={() => {
-          setEditValues({ ...current.note.values })
-          setEditError("")
-          setEditOpen(true)
-        }}
-      />
+      <section className="flex h-[100dvh] flex-col overflow-hidden overscroll-none bg-background" aria-label="Study session">
+        <FocusHeader
+          completed={completed}
+          total={total}
+          progress={progress}
+          canEdit={revealed}
+          onExit={onExit}
+          onEdit={() => {
+            setEditValues({ ...current.note.values })
+            setEditError("")
+            setEditOpen(true)
+          }}
+        />
 
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
-        <AnimatePresence
-          initial={false}
-          mode="popLayout"
-          custom={action}
-        >
-          <motion.div
-            key={`${current.id}:${side}`}
-            custom={action}
-            variants={slideVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: CARD_MOTION_DURATION_S, ease: "easeOut" }}
-            data-card-motion=""
-            data-card-face={side}
-            className="absolute inset-0 h-full w-full"
-          >
-            <StudyCard deck={deck} item={current} revealed={revealed} />
-          </motion.div>
-        </AnimatePresence>
-
-        {!revealed ? (
-          <button
-            type="button"
-            className="absolute inset-0 z-10 cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 focus-visible:ring-inset"
-            onClick={reveal}
-            aria-label="显示答案"
-            aria-keyshortcuts="Space"
-          />
-        ) : null}
-
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-3 sm:inset-x-5 sm:bottom-5">
-          <div className="pointer-events-auto flex max-w-[65%] flex-wrap gap-1.5">
-            {playable.map((name) => {
-              const tts = configs[name]
-              if (!tts) return null
-              return (
-                <Tooltip key={name}>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <TtsPlayButton
-                        iconOnly
-                        text={current.note.values[tts.source] ?? ""}
-                        lang={tts.lang}
-                        slow={tts.slow}
-                        label={`播放 ${name} · ${ttsLangLabel(tts.lang)}`}
-                      />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>{name} · {ttsLangLabel(tts.lang)}</TooltipContent>
-                </Tooltip>
-              )
-            })}
-          </div>
-
-          {revealed ? (
-            <div className="pointer-events-auto flex gap-1 rounded-xl border border-black/10 bg-white/92 p-1 text-stone-700 shadow-sm backdrop-blur">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    className="text-stone-700 hover:bg-stone-100"
-                    aria-label="重看正面"
-                    onClick={conceal}
-                  >
-                    <RotateCcw className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>重看正面</TooltipContent>
-              </Tooltip>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <RatingDock
-        revealed={revealed}
-        options={options}
-        onReveal={reveal}
-        onRate={rate}
-      />
-
-      <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <SheetHeader>
-            <SheetTitle>改这条笔记</SheetTitle>
-            <SheetDescription>保存后回到当前卡片。</SheetDescription>
-          </SheetHeader>
-          <div className="flex max-h-[50dvh] flex-col gap-4 overflow-y-auto px-4">
-            {textFields(deck).map((field) => {
-              const note = notesOf(deck)[field]?.trim()
-              const long = textFields(deck).indexOf(field) >= 2
-              return (
-                <div key={field} className="space-y-2">
-                  <Label htmlFor={`study-edit-${field}`}>{field}</Label>
-                  {long ? (
-                    <Textarea
-                      id={`study-edit-${field}`}
-                      value={editValues[field] ?? ""}
-                      placeholder={note}
-                      className="min-h-24"
-                      onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
-                    />
-                  ) : (
-                    <Input
-                      id={`study-edit-${field}`}
-                      value={editValues[field] ?? ""}
-                      placeholder={note}
-                      onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
-                    />
-                  )}
-                </div>
-              )
-            })}
-            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
-          </div>
-          <SheetFooter>
-            <Button
-              type="button"
-              onClick={() => {
-                let next = deck
-                for (const field of textFields(deck)) {
-                  const result = setCardField(next, current.note.id, field, editValues[field] ?? "")
-                  if (!result.ok) {
-                    setEditError(result.error)
-                    return
-                  }
-                  next = result.deck
-                }
-                onChange(next)
-                setEditOpen(false)
-              }}
+        <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-5 sm:py-3">
+          <StudyBackdrop />
+          <div className="relative z-10 mx-auto h-full w-full max-w-5xl overflow-hidden rounded-[24px] border border-black/[0.065] bg-white shadow-[0_24px_60px_-46px_rgba(0,0,0,0.55)] dark:border-white/[0.09]">
+            <AnimatePresence
+              initial={false}
+              mode="popLayout"
+              custom={action}
             >
-              保存
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </section>
+              <motion.div
+                key={`${current.id}:${side}`}
+                custom={action}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: CARD_MOTION_DURATION_S, ease: "easeOut" }}
+                data-card-motion=""
+                data-card-face={side}
+                className="absolute inset-0 h-full w-full overflow-hidden rounded-[inherit]"
+              >
+                <StudyCard deck={deck} item={current} revealed={revealed} />
+              </motion.div>
+            </AnimatePresence>
+
+            {!revealed ? (
+              <button
+                type="button"
+                className="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-energy/30 focus-visible:ring-inset"
+                onClick={reveal}
+                aria-label="Show answer"
+                aria-keyshortcuts="Space"
+              />
+            ) : null}
+
+            <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-3 sm:inset-x-5 sm:bottom-5">
+              <div className="pointer-events-auto flex max-w-[70%] flex-wrap gap-1.5">
+                {playable.map((name) => {
+                  const tts = configs[name]
+                  if (!tts) return null
+                  return (
+                    <Tooltip key={name}>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <TtsPlayButton
+                            iconOnly
+                            text={current.note.values[tts.source] ?? ""}
+                            lang={tts.lang}
+                            slow={tts.slow}
+                            label={`Play ${name} · ${ttsLangLabel(tts.lang)}`}
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>{name} · {ttsLangLabel(tts.lang)}</TooltipContent>
+                    </Tooltip>
+                  )
+                })}
+              </div>
+
+              {revealed ? (
+                <div className="pointer-events-auto rounded-[14px] border border-black/[0.07] bg-card p-0.5 text-foreground shadow-[0_12px_28px_-22px_rgba(0,0,0,0.45)] dark:border-white/[0.1]">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Review front"
+                        onClick={conceal}
+                      >
+                        <RotateCcw className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Review front</TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <RatingDock
+          revealed={revealed}
+          options={options}
+          onReveal={reveal}
+          onRate={rate}
+        />
+
+        <Sheet open={editOpen} onOpenChange={setEditOpen}>
+          <SheetContent
+            side="bottom"
+            className="max-h-[88dvh] pb-[max(1rem,env(safe-area-inset-bottom))]"
+          >
+            <SheetHeader>
+              <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="size-2 rounded-full bg-energy" />
+                Quick edit
+              </div>
+              <SheetTitle className="text-2xl font-semibold tracking-[-0.04em]">Edit note</SheetTitle>
+              <SheetDescription>Save your changes and return to this card.</SheetDescription>
+            </SheetHeader>
+            <div className="flex max-h-[52dvh] flex-col gap-3 overflow-y-auto px-4">
+              {textFields(deck).map((field) => {
+                const note = notesOf(deck)[field]?.trim()
+                const long = textFields(deck).indexOf(field) >= 2
+                return (
+                  <div key={field} className="space-y-2 rounded-[16px] border border-black/[0.065] bg-background/45 p-3.5 dark:border-white/[0.09]">
+                    <Label htmlFor={`study-edit-${field}`} className="text-xs font-semibold tracking-[-0.01em]">
+                      {field}
+                    </Label>
+                    {long ? (
+                      <Textarea
+                        id={`study-edit-${field}`}
+                        value={editValues[field] ?? ""}
+                        placeholder={note}
+                        className="min-h-24"
+                        onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
+                      />
+                    ) : (
+                      <Input
+                        id={`study-edit-${field}`}
+                        value={editValues[field] ?? ""}
+                        placeholder={note}
+                        onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+              {editError ? <p className="text-sm font-medium text-destructive">{editError}</p> : null}
+            </div>
+            <SheetFooter>
+              <Button
+                type="button"
+                className="h-[52px] rounded-[16px] text-sm font-semibold"
+                onClick={() => {
+                  let next = deck
+                  for (const field of textFields(deck)) {
+                    const result = setCardField(next, current.note.id, field, editValues[field] ?? "")
+                    if (!result.ok) {
+                      setEditError(result.error)
+                      return
+                    }
+                    next = result.deck
+                  }
+                  onChange(next)
+                  setEditOpen(false)
+                }}
+              >
+                Save changes
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      </section>
     </StudyStage>
   )
 }

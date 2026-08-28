@@ -26,14 +26,17 @@ export function OfflineBanner() {
       {!online ? (
         <motion.div
           role="status"
-          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
-          animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
+          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.96 }}
+          animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.96 }}
           transition={{ duration: BANNER_DURATION_S, ease: "easeOut" }}
-          className="fixed right-3 bottom-20 z-[70] flex items-center gap-2 rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 shadow-lg dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200 lg:bottom-4"
+          className="fixed right-3 bottom-24 z-[70] flex max-w-[calc(100vw-1.5rem)] items-center gap-2.5 rounded-[14px] border border-black/[0.07] bg-card/95 px-3.5 py-2.5 text-xs font-semibold tracking-tight text-foreground shadow-[0_16px_36px_-26px_rgba(0,0,0,0.55)] backdrop-blur-2xl dark:border-white/[0.1] lg:bottom-4"
         >
-          <CloudOff className="size-4" />
-          离线模式 · 修改会保存在本机
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-[9px] bg-foreground text-background">
+            <CloudOff className="size-3.5" />
+          </span>
+          <span className="min-w-0 truncate">Offline · changes are saved on this device</span>
+          <span className="size-2 shrink-0 rounded-full bg-energy" aria-hidden="true" />
         </motion.div>
       ) : null}
     </AnimatePresence>

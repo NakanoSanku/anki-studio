@@ -4,7 +4,7 @@ import { Minus, Plus, RotateCcw } from "lucide-react"
 
 import { type Deck, type FsrsDeckState } from "@/lib/deck"
 import { updateFsrsSettings } from "@/lib/fsrs"
-import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -18,242 +18,147 @@ const DEFAULT_FSRS_VALUES = {
 }
 
 const RETENTION_PRESETS = [
-  { value: 0.85, label: "85% 轻松" },
-  { value: 0.9, label: "90% 推荐" },
-  { value: 0.92, label: "92% 进阶" },
-  { value: 0.95, label: "95% 冲刺" },
-]
+  { value: 0.85, label: "Relaxed", note: "Fewer reviews" },
+  { value: 0.9, label: "Balanced", note: "Recommended" },
+  { value: 0.92, label: "Focused", note: "Stronger recall" },
+  { value: 0.95, label: "Intense", note: "High review load" },
+] as const
 
-export function StudySettingsPanel({
-  deck,
-  fsrsSettings,
-  onDeckChange,
+const RETENTION_MIN = 70
+const RETENTION_MAX = 99
+const RETENTION_MARKS = [
+  { value: 70, label: "70 · light" },
+  { value: 90, label: "90 · balanced" },
+  { value: 99, label: "99 · strongest" },
+] as const
+
+function retentionMarkPosition(value: number): number {
+  return ((value - RETENTION_MIN) / (RETENTION_MAX - RETENTION_MIN)) * 100
+}
+
+function Stepper({
+  value,
+  unit,
+  min,
+  max,
+  step,
+  onChange,
 }: {
-  deck: Deck
-  fsrsSettings: FsrsDeckState
-  onDeckChange: (deck: Deck) => void
+  value: number
+  unit: string
+  min: number
+  max: number
+  step: number
+  onChange: (next: number) => void
 }) {
+  return (
+    <div className="flex items-center gap-1 rounded-[13px] border border-black/[0.06] bg-card p-1 dark:border-white/[0.08]">
+      <button type="button" onClick={() => onChange(Math.max(min, value - step))} className="flex size-8 items-center justify-center rounded-[9px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label={`Decrease by ${step} ${unit}`}>
+        <Minus className="size-3.5" />
+      </button>
+      <div className="relative">
+        <Input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.target.value) || min)))} className="h-8 w-20 border-0 bg-transparent px-1 pr-6 text-center font-mono text-xs font-semibold shadow-none focus-visible:ring-0" />
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-medium text-muted-foreground">{unit}</span>
+      </div>
+      <button type="button" onClick={() => onChange(Math.min(max, value + step))} className="flex size-8 items-center justify-center rounded-[9px] bg-foreground text-background transition-transform active:scale-[0.96]" aria-label={`Increase by ${step} ${unit}`}>
+        <Plus className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+export function StudySettingsPanel({ deck, fsrsSettings, onDeckChange }: { deck: Deck; fsrsSettings: FsrsDeckState; onDeckChange: (deck: Deck) => void }) {
   const currentRetentionPercent = Math.round(fsrsSettings.requestRetention * 100)
-
-  const update = (partial: Partial<FsrsDeckState>) => {
-    onDeckChange(updateFsrsSettings(deck, partial))
-  }
-
-  const resetDefaults = () => {
-    update(DEFAULT_FSRS_VALUES)
-  }
+  const update = (partial: Partial<FsrsDeckState>) => onDeckChange(updateFsrsSettings(deck, partial))
+  const resetDefaults = () => update(DEFAULT_FSRS_VALUES)
+  const retentionHint = currentRetentionPercent >= 95
+    ? "Higher retention keeps memories stronger, but creates a heavier daily review load. Best for short-term exam prep."
+    : currentRetentionPercent <= 85
+      ? "A lighter workload with more acceptable forgetting."
+      : "The recommended FSRS range balances long-term retention with a sustainable review load."
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-3.5 pb-10">
-      {/* Card 1: Retention Rate */}
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border/70 shadow-xs">
-        <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">目标保留率</h2>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="border-primary/30 bg-primary/5 font-mono text-xs font-semibold text-primary"
-            >
-              {currentRetentionPercent}%
-            </Badge>
-            <button
-              type="button"
-              onClick={resetDefaults}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <RotateCcw className="size-3" />
-              <span>默认</span>
-            </button>
-          </div>
+    <div className="mx-auto w-full max-w-xl space-y-5 pb-12">
+      <section className="rounded-[22px] border border-black/[0.065] bg-card p-5 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"><span className="size-2 rounded-full bg-energy" />Memory target</span>
+          <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs text-muted-foreground" onClick={resetDefaults}><RotateCcw className="size-3.5" />Reset</Button>
         </div>
 
-        <div className="p-4 space-y-3">
-          {/* Segmented Quick Switcher */}
-          <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/40 p-1 text-xs">
-            {RETENTION_PRESETS.map((preset) => {
-              const active = Math.abs(fsrsSettings.requestRetention - preset.value) < 0.005
-              return (
-                <button
-                  key={preset.value}
-                  type="button"
-                  onClick={() => update({ requestRetention: preset.value })}
-                  className={cn(
-                    "rounded-lg py-1.5 text-center transition-all",
-                    active
-                      ? "bg-card font-semibold text-foreground shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              )
-            })}
-          </div>
+        <div className="mt-5 flex items-end gap-2">
+          <span className="text-[64px] font-semibold leading-none tracking-[-0.075em] sm:text-[72px]">{currentRetentionPercent}</span>
+          <span className="pb-1.5 text-xl font-semibold text-muted-foreground">%</span>
+        </div>
+        <h2 className="mt-3 text-xl font-semibold tracking-[-0.035em]">Target retention</h2>
+        <p className="mt-1.5 max-w-md text-xs leading-5 text-muted-foreground">{retentionHint}</p>
 
-          {/* Precision Slider */}
-          <div className="space-y-2 pt-1">
-            <Slider
-              value={[currentRetentionPercent]}
-              min={70}
-              max={99}
-              step={1}
-              onValueChange={(val) => {
-                const next = (val[0] ?? 90) / 100
-                update({ requestRetention: next })
-              }}
-              className="py-1"
-            />
-            <div className="relative h-4 text-[10px] text-muted-foreground font-mono select-none">
-              <span className="absolute left-0">70% 极低负担</span>
+        <div className="mt-5 rounded-[16px] border border-black/[0.055] bg-background/55 p-3 dark:border-white/[0.07]">
+          <Slider
+            value={[currentRetentionPercent]}
+            min={RETENTION_MIN}
+            max={RETENTION_MAX}
+            step={1}
+            aria-label="Target retention"
+            aria-valuetext={`${currentRetentionPercent}% retention`}
+            onValueChange={(value) => update({ requestRetention: (value[0] ?? 90) / 100 })}
+            className="py-2 [&_[data-slot=slider-range]]:bg-energy [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-card [&_[data-slot=slider-thumb]]:bg-foreground [&_[data-slot=slider-track]]:bg-foreground/10"
+          />
+          <div className="relative mt-1 h-5 font-mono text-[9px] font-medium text-muted-foreground" data-testid="retention-scale">
+            {RETENTION_MARKS.map((mark) => (
               <span
-                className="absolute -translate-x-1/2 font-medium text-foreground/80"
-                style={{ left: `${((90 - 70) / (99 - 70)) * 100}%` }}
+                key={mark.value}
+                data-retention-mark={mark.value}
+                style={{ left: `${retentionMarkPosition(mark.value)}%` }}
+                className={cn(
+                  "absolute top-0 whitespace-nowrap",
+                  mark.value === RETENTION_MIN
+                    ? "translate-x-0 text-left"
+                    : mark.value === RETENTION_MAX
+                      ? "-translate-x-full text-right"
+                      : "-translate-x-1/2 text-center"
+                )}
               >
-                90% 推荐
+                {mark.label}
               </span>
-              <span className="absolute right-0">99% 极高牢固</span>
-            </div>
-          </div>
-
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            {currentRetentionPercent >= 95
-              ? "💡 设定 95%+ 会显著提升复习频率与卡片量，适合短期高强度冲刺。"
-              : currentRetentionPercent <= 85
-                ? "💡 设定 85% 以下可大幅减轻每日复习压力，适合时间有限的日常学习。"
-                : "💡 90% 是 FSRS 算法推荐的标准保留率，在记忆牢固度与复习量之间达到最佳平衡。"}
-          </p>
-        </div>
-      </div>
-
-      {/* Card 2: Daily Quotas & Intervals (Clean Inset Grouped Rows) */}
-      <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border/70 shadow-xs">
-        <div className="border-b border-border/70 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">每日配额与间隔</h2>
-        </div>
-
-        <div className="divide-y divide-border/60">
-          {/* Daily New Limit */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <Label htmlFor="daily-new-input" className="text-xs font-medium text-foreground">
-                每日新卡
-              </Label>
-              <p className="text-[11px] text-muted-foreground">每天引入的新卡片数量上限</p>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => update({ dailyNewLimit: Math.max(0, fsrsSettings.dailyNewLimit - 5) })}
-                className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-muted/20 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="减少 5 张"
-              >
-                <Minus className="size-3" />
-              </button>
-              <div className="relative">
-                <Input
-                  id="daily-new-input"
-                  type="number"
-                  min="0"
-                  max="999"
-                  value={fsrsSettings.dailyNewLimit}
-                  onChange={(e) =>
-                    update({ dailyNewLimit: Math.max(0, Math.min(999, Number(e.target.value) || 0)) })
-                  }
-                  className="h-7 w-20 rounded-lg bg-muted/20 text-center font-mono text-xs pr-6"
-                />
-                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                  张
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => update({ dailyNewLimit: Math.min(999, fsrsSettings.dailyNewLimit + 5) })}
-                className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-muted/20 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="增加 5 张"
-              >
-                <Plus className="size-3" />
-              </button>
-            </div>
-          </div>
-
-          {/* Daily Review Limit */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <Label htmlFor="daily-review-input" className="text-xs font-medium text-foreground">
-                每日复习
-              </Label>
-              <p className="text-[11px] text-muted-foreground">每天复习到期卡片数量上限</p>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => update({ dailyReviewLimit: Math.max(0, fsrsSettings.dailyReviewLimit - 20) })}
-                className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-muted/20 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="减少 20 张"
-              >
-                <Minus className="size-3" />
-              </button>
-              <div className="relative">
-                <Input
-                  id="daily-review-input"
-                  type="number"
-                  min="0"
-                  max="9999"
-                  value={fsrsSettings.dailyReviewLimit}
-                  onChange={(e) =>
-                    update({
-                      dailyReviewLimit: Math.max(0, Math.min(9999, Number(e.target.value) || 0)),
-                    })
-                  }
-                  className="h-7 w-20 rounded-lg bg-muted/20 text-center font-mono text-xs pr-6"
-                />
-                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                  张
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => update({ dailyReviewLimit: Math.min(9999, fsrsSettings.dailyReviewLimit + 20) })}
-                className="flex size-7 items-center justify-center rounded-lg border border-border/70 bg-muted/20 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="增加 20 张"
-              >
-                <Plus className="size-3" />
-              </button>
-            </div>
-          </div>
-
-          {/* Maximum Interval */}
-          <div className="flex items-center justify-between px-4 py-3">
-            <div>
-              <Label htmlFor="max-interval-input" className="text-xs font-medium text-foreground">
-                最长间隔
-              </Label>
-              <p className="text-[11px] text-muted-foreground">卡片复习间隔的最长上限天数</p>
-            </div>
-
-            <div className="relative">
-              <Input
-                id="max-interval-input"
-                type="number"
-                min="1"
-                max="36500"
-                value={fsrsSettings.maximumInterval}
-                onChange={(e) =>
-                  update({
-                    maximumInterval: Math.max(1, Math.min(36500, Number(e.target.value) || 1)),
-                  })
-                }
-                className="h-7 w-24 rounded-lg bg-muted/20 text-center font-mono text-xs pr-6"
-              />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                天
-              </span>
-            </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
+
+      <section>
+        <div className="mb-3 px-1"><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Study rhythm</p><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Choose a pace</h3></div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {RETENTION_PRESETS.map((preset) => {
+            const active = Math.abs(fsrsSettings.requestRetention - preset.value) < 0.005
+            return (
+              <button key={preset.value} type="button" aria-pressed={active} onClick={() => update({ requestRetention: preset.value })} className={cn("relative min-h-24 rounded-[18px] border p-4 text-left transition-[background-color,border-color,transform] active:scale-[0.99]", active ? "border-energy/40 bg-energy/18" : "border-black/[0.065] bg-card hover:bg-muted/45 dark:border-white/[0.09]")}>
+                <span className="font-mono text-[10px] font-medium text-muted-foreground">{Math.round(preset.value * 100)}%</span>
+                <span className="mt-3 block text-lg font-semibold tracking-[-0.03em]">{preset.label}</span>
+                <span className="mt-0.5 block text-[11px] text-muted-foreground">{preset.note}</span>
+                {active ? <span className="absolute right-3 top-3 size-2 rounded-full bg-energy" aria-hidden="true" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 px-1"><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Daily limits</p><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Daily workload</h3></div>
+        <div className="overflow-hidden rounded-[20px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div className="min-w-0"><Label className="text-[15px] font-semibold tracking-[-0.02em]">New notes</Label><p className="mt-1 text-[11px] text-muted-foreground">Maximum new notes introduced each day.</p></div>
+            <Stepper value={fsrsSettings.dailyNewLimit} unit="cards" min={0} max={999} step={5} onChange={(dailyNewLimit) => update({ dailyNewLimit })} />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-black/[0.055] p-4 dark:border-white/[0.07]">
+            <div className="min-w-0"><Label className="text-[15px] font-semibold tracking-[-0.02em]">Reviews</Label><p className="mt-1 text-[11px] text-muted-foreground">Maximum due reviews completed each day.</p></div>
+            <Stepper value={fsrsSettings.dailyReviewLimit} unit="cards" min={0} max={9999} step={20} onChange={(dailyReviewLimit) => update({ dailyReviewLimit })} />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-black/[0.055] p-4 dark:border-white/[0.07]">
+            <div className="min-w-0"><Label htmlFor="max-interval-input" className="text-[15px] font-semibold tracking-[-0.02em]">Maximum interval</Label><p className="mt-1 text-[11px] text-muted-foreground">Caps how far even very familiar cards can be scheduled.</p></div>
+            <div className="relative shrink-0"><Input id="max-interval-input" type="number" min="1" max="36500" value={fsrsSettings.maximumInterval} onChange={(event) => update({ maximumInterval: Math.max(1, Math.min(36500, Number(event.target.value) || 1)) })} className="h-10 w-28 pr-10 text-center font-mono text-xs font-semibold" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-medium text-muted-foreground">days</span></div>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
