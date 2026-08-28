@@ -76,9 +76,9 @@ function SyncIcon({ syncing, syncUnavailable }: { syncing: boolean; syncUnavaila
     <AnimatePresence initial={false} mode="popLayout">
       <motion.span
         key={state}
-        initial={{ opacity: 0, scale: 0.92 }}
+        initial={{ opacity: 0, scale: 0.94 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.92 }}
+        exit={{ opacity: 0, scale: 0.94 }}
         transition={{ duration: SYNC_ICON_DURATION_S }}
         className="flex"
       >
@@ -233,7 +233,7 @@ export function AppShell({
       >
         <a
           href="#app-main"
-          className="fixed left-3 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[90] -translate-y-24 rounded-[14px] bg-foreground px-4 py-2.5 text-sm font-semibold text-background shadow-lg transition-transform focus:translate-y-0 focus:outline-none focus:ring-3 focus:ring-energy/50"
+          className="fixed left-3 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[90] -translate-y-24 rounded-[12px] bg-foreground px-4 py-2.5 text-sm font-semibold text-background shadow-lg transition-transform focus:translate-y-0 focus:outline-none focus:ring-3 focus:ring-signal/30"
         >
           Skip to content
         </a>
@@ -244,13 +244,13 @@ export function AppShell({
               key="status-toast"
               role="status"
               aria-live="polite"
-              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              initial={{ opacity: 0, y: -8, scale: 0.985 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.65rem)] z-[70] mx-auto flex w-fit max-w-[min(30rem,calc(100vw-1.5rem))] items-center gap-2 rounded-[14px] border border-black/[0.07] bg-card/95 px-3.5 py-2.5 text-center text-xs font-semibold text-foreground shadow-[0_16px_36px_-24px_rgba(0,0,0,0.5)] backdrop-blur-2xl sm:inset-x-4 sm:top-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-white/[0.1]"
+              exit={{ opacity: 0, y: -6, scale: 0.985 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.65rem)] z-[70] mx-auto flex w-fit max-w-[min(30rem,calc(100vw-1.5rem))] items-center gap-2 rounded-[12px] border border-foreground/[0.07] bg-card/92 px-3.5 py-2.5 text-center text-xs font-semibold text-foreground shadow-[0_16px_36px_-30px_rgba(15,23,42,0.34)] backdrop-blur-2xl sm:inset-x-4 sm:top-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-white/[0.1]"
             >
-              <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-energy" />
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-signal" />
               {shownStatus}
             </motion.div>
           ) : null}
@@ -259,7 +259,7 @@ export function AppShell({
         {!session ? (
           <header
             className={cn(
-              "z-30 border-b border-black/[0.045] bg-background/92 pt-[env(safe-area-inset-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/82 dark:border-white/[0.07]",
+              "z-30 bg-background/82 pt-[env(safe-area-inset-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/72",
               lock ? "shrink-0" : "sticky top-0"
             )}
             aria-label="App header"
@@ -267,13 +267,13 @@ export function AppShell({
             <div
               className={cn(
                 "mx-auto flex w-full max-w-7xl items-center gap-2.5 px-3 min-[390px]:px-4 sm:px-6",
-                home ? "h-[80px] min-[390px]:h-[84px] sm:h-[88px]" : "h-[68px] min-[390px]:h-[72px] sm:h-20"
+                home ? "h-[76px] min-[390px]:h-[80px] sm:h-[84px]" : "h-[64px] min-[390px]:h-[68px] sm:h-[74px]"
               )}
             >
               {header.backHref ? (
                 <button
                   type="button"
-                  className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 min-[390px]:size-11 dark:border-white/[0.09]"
+                  className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[12px] border border-foreground/[0.07] bg-card/76 text-foreground shadow-[0_8px_22px_-20px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-[background-color,border-color,transform] [-webkit-tap-highlight-color:transparent] hover:border-foreground/[0.12] hover:bg-card active:scale-[0.98] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-signal/18 min-[390px]:size-11 dark:border-white/[0.09]"
                   aria-label="Back"
                   onClick={goBack}
                 >
@@ -282,29 +282,29 @@ export function AppShell({
               ) : null}
 
               {header.title ? (
-                <h1 className="min-w-0 flex-1 truncate text-[19px] font-semibold tracking-[-0.03em] min-[390px]:text-[20px]">{header.title}</h1>
+                <h1 className="min-w-0 flex-1 truncate text-[18px] font-semibold tracking-[-0.025em] min-[390px]:text-[19px]">{header.title}</h1>
               ) : null}
 
               {header.showDeck ? (
                 <button
                   type="button"
-                  className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-[12px] text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45"
+                  className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-[11px] text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-signal/18"
                   onClick={onDeckClick}
                 >
                   <div className="min-w-0">
                     <span
                       className={cn(
-                        "anki-wordmark block tracking-[-0.045em]",
+                        "anki-wordmark block",
                         home
-                          ? "text-[25px] min-[390px]:text-[27px] sm:text-[29px]"
-                          : "text-[21px] min-[390px]:text-[22px] sm:text-[23px]"
+                          ? "text-[24px] min-[390px]:text-[25px] sm:text-[27px]"
+                          : "text-[20px] min-[390px]:text-[21px] sm:text-[22px]"
                       )}
                     >
                       anki studio
                     </span>
-                    <span className="mt-1.5 flex max-w-[64vw] items-center gap-1 text-[10px] font-medium text-muted-foreground min-[390px]:max-w-[70vw] min-[390px]:text-[11px]">
+                    <span className="mt-1.5 inline-flex max-w-[68vw] items-center gap-1 rounded-full bg-muted/62 px-2 py-1 text-[10px] font-medium text-muted-foreground min-[390px]:max-w-[72vw] min-[390px]:text-[11px]">
                       <span className="truncate">{name}</span>
-                      <ChevronDown className="size-3.5 shrink-0 transition-transform duration-150 group-active:translate-y-0.5" />
+                      <ChevronDown className="size-3 shrink-0 transition-transform duration-150 group-active:translate-y-0.5" />
                     </span>
                   </div>
                 </button>
@@ -315,7 +315,7 @@ export function AppShell({
               {pathname === PATHS.notes || pathname === PATHS.home ? (
                 <button
                   type="button"
-                  className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 disabled:opacity-50 min-[390px]:size-11 dark:border-white/[0.09]"
+                  className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[12px] border border-foreground/[0.07] bg-card/76 text-foreground shadow-[0_8px_22px_-20px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-[background-color,border-color,transform] [-webkit-tap-highlight-color:transparent] hover:border-foreground/[0.12] hover:bg-card active:scale-[0.98] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-signal/18 disabled:opacity-50 min-[390px]:size-11 dark:border-white/[0.09]"
                   disabled={syncing}
                   aria-label={
                     syncing ? "Syncing" : dirtyCount > 0 ? `${dirtyCount} changes waiting to sync` : shownSyncUnavailable || "Sync now"
@@ -324,7 +324,7 @@ export function AppShell({
                 >
                   <SyncIcon syncing={syncing} syncUnavailable={shownSyncUnavailable} />
                   {dirtyCount > 0 ? (
-                    <span className="absolute right-1 top-1 size-2.5 rounded-full border-2 border-card bg-energy min-[390px]:right-1.5 min-[390px]:top-1.5" />
+                    <span className="absolute right-1 top-1 size-2.5 rounded-full border-2 border-card bg-signal min-[390px]:right-1.5 min-[390px]:top-1.5" />
                   ) : null}
                 </button>
               ) : null}
@@ -360,7 +360,7 @@ export function AppShell({
             )}
           >
             <nav
-              className="pointer-events-auto mx-auto grid max-w-md grid-cols-3 rounded-[22px] border border-black/[0.065] bg-card/94 p-1.5 shadow-[0_18px_46px_-30px_rgba(0,0,0,0.35)] backdrop-blur-2xl min-[390px]:p-2 dark:border-white/[0.09] dark:bg-card/94"
+              className="pointer-events-auto mx-auto grid max-w-sm grid-cols-3 rounded-[18px] border border-foreground/[0.07] bg-card/88 p-1.5 shadow-[0_18px_46px_-36px_rgba(15,23,42,0.3)] backdrop-blur-2xl min-[390px]:p-1.5 dark:border-white/[0.09]"
               aria-label="Primary navigation"
             >
               {PRIMARY_NAV.map((item) => {
@@ -371,17 +371,17 @@ export function AppShell({
                     key={item.id}
                     href={item.href}
                     className={cn(
-                      "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[16px] text-[10px] font-medium transition-[background-color,color,transform] duration-150 [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 min-[390px]:min-h-12 min-[390px]:text-[11px]",
+                      "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[13px] text-[10px] font-medium transition-[background-color,color,transform] duration-150 [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-signal/18 min-[390px]:min-h-12 min-[390px]:text-[11px]",
                       selected
-                        ? "bg-foreground text-background"
-                        : "text-foreground/45 hover:bg-muted/70 hover:text-foreground/70 active:scale-[0.98]"
+                        ? "bg-accent text-foreground"
+                        : "text-foreground/42 hover:bg-muted/62 hover:text-foreground/72 active:scale-[0.99]"
                     )}
                     aria-current={selected ? "page" : undefined}
                   >
-                    <Icon className="size-[17px] min-[390px]:size-[18px]" />
+                    <Icon className={cn("size-[17px] min-[390px]:size-[18px]", selected && "text-signal")} />
                     <span className="leading-none">{item.label}</span>
                     {item.id === "study" && dueCount > 0 ? (
-                      <span className="absolute right-[18%] top-0.5 flex min-w-4 items-center justify-center rounded-full bg-energy px-1 font-mono text-[8px] font-bold leading-4 text-black min-[390px]:right-[20%] min-[390px]:top-1 min-[390px]:text-[9px]">
+                      <span className="absolute right-[18%] top-0.5 flex min-w-4 items-center justify-center rounded-full bg-signal px-1 font-mono text-[8px] font-bold leading-4 text-black min-[390px]:right-[20%] min-[390px]:top-1 min-[390px]:text-[9px]">
                         {dueCount > 99 ? "99+" : dueCount}
                       </span>
                     ) : null}
