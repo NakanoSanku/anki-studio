@@ -27,8 +27,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fffaf5" },
-    { media: "(prefers-color-scheme: dark)", color: "#13120f" },
+    { media: "(prefers-color-scheme: light)", color: "#f8f9fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#141620" },
   ],
   colorScheme: "light dark",
   width: "device-width",
@@ -47,7 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
       </head>
-      <body className="flex min-h-full flex-col bg-[#fffaf5] dark:bg-[#13120f]">
+      <body className="flex min-h-full flex-col bg-[#f8f9fb] dark:bg-[#141620]">
         <MotionProvider>
           <TooltipProvider>
             {children}
