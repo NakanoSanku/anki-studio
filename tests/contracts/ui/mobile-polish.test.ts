@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { readSource } from "../helpers/source"
 
 const aiSettings = readSource("components", "ai-settings-panel.tsx")
+const codeEditor = readSource("components", "code-editor.tsx")
 const studySettings = readSource("components", "study-settings-panel.tsx")
 const cardPreview = readSource("components", "card-preview.tsx")
 const template = readSource("lib", "template.ts")
@@ -16,6 +17,15 @@ describe("mobile visual polish regressions", () => {
     expect(aiSettings).toContain('data-testid="prompt-editor-actions"')
     expect(aiSettings).toContain("pb-[max(0.75rem,env(safe-area-inset-bottom))]")
     expect(aiSettings).not.toContain("<SheetFooter")
+  })
+
+  it("lets full-height CodeMirror workspaces shrink between their chrome instead of covering actions", () => {
+    expect(codeEditor).toContain("flex min-h-0 min-w-0 flex-col overflow-hidden")
+    expect(codeEditor).toContain("flex shrink-0 items-center justify-between")
+    expect(codeEditor).toContain("h-[300px] min-h-0 min-w-0 lg:h-[440px]")
+    expect(codeEditor).toContain("[&_.cm-editor]:min-h-0")
+    expect(codeEditor).toContain("[&_.cm-scroller]:overflow-auto")
+    expect(codeEditor).toContain("[&_.cm-scroller]:overscroll-contain")
   })
 
   it("positions retention labels using the same numeric scale as the slider", () => {
