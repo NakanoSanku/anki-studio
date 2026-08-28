@@ -1,11 +1,16 @@
-import { useMemo } from "react"
+import { useCallback, useMemo, type SyntheticEvent } from "react"
 
 import { previewDocument, renderCard } from "@/lib/template"
-import { getCardTemplate, previewValues, ttsLangLabel, ttsOf, type Deck } from "@/lib/deck"
-import { ttsFieldsOnSide } from "@/lib/tts"
+import { getCardTemplate, previewValues, ttsOf, type Deck } from "@/lib/deck"
+import { getTtsClip, playTtsAudio } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { TtsPlayButton } from "@/components/tts-play-button"
+
+const TTS_BUTTON_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`
+
+function previewTtsButton(name: string): string {
+  return `<button type="button" data-preview-tts="${encodeURIComponent(name)}" aria-label="Play audio" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:4px;border:1px solid rgba(25,79,131,.10);border-radius:10px;background:#e8f3ff;color:#194f83;box-shadow:none;cursor:pointer;vertical-align:middle;-webkit-tap-highlight-color:transparent;">${TTS_BUTTON_ICON}</button>`
+}
 
 type CardPreviewProps = {
   deck: Deck
@@ -28,14 +33,92 @@ export function CardPreview({
 }: CardPreviewProps) {
   const preview = useMemo(() => previewValues(deck, values), [deck, values])
   const template = useMemo(() => getCardTemplate(deck, templateId), [deck, templateId])
+  const configs = useMemo(() => ttsOf(deck), [deck])
+  const renderValues = useMemo(() => {
+    const next = { ...preview }
+    for (const [name, tts] of Object.entries(configs)) {
+      next[name] = (values[tts.source] ?? "").trim() ? previewTtsButton(name) : ""
+    }
+    return next
+  }, [configs, preview, values])
   const rendered = useMemo(
-    () => renderCard(template.front, template.back, preview),
-    [template.front, template.back, preview]
+    () => renderCard(template.front, template.back, renderValues),
+    [template.front, template.back, renderValues]
   )
   const html = side === "front" ? rendered.front : rendered.back
   const doc = useMemo(() => previewDocument(deck.css, html), [deck.css, html])
-  const playable = useMemo(() => ttsFieldsOnSide(deck, side, template.id), [deck, side, template.id])
-  const configs = useMemo(() => ttsOf(deck), [deck])
+
+  const wireFrame = useCallback(
+    (event: SyntheticEvent<HTMLIFrameElement>) => {
+      const frameDoc = event.currentTarget.contentDocument
+      if (!frameDoc) return
+
+      for (const button of frameDoc.querySelectorAll<HTMLButtonElement>("[data-preview-tts]")) {
+        const encodedName = button.dataset.previewTts
+        if (!encodedName) {
+          button.remove()
+          continue
+        }
+
+        let name = ""
+        try {
+          name = decodeURIComponent(encodedName)
+        } catch {
+          button.remove()
+          continue
+        }
+
+        const tts = configs[name]
+        const text = tts ? values[tts.source] ?? "" : ""
+        if (!tts || !text.trim()) {
+          button.remove()
+          continue
+        }
+
+        button.setAttribute("aria-label", `Play ${name}`)
+        button.onclick = (buttonEvent) => {
+          buttonEvent.preventDefault()
+          buttonEvent.stopPropagation()
+          if (button.disabled) return
+
+          button.disabled = true
+          button.dataset.state = "loading"
+          button.style.opacity = "0.58"
+          button.style.cursor = "progress"
+          button.removeAttribute("title")
+
+          void getTtsClip({ text, lang: tts.lang, slow: tts.slow })
+            .then((clip) => playTtsAudio(clip.blob))
+            .then(() => {
+              if (!button.isConnected) return
+              button.dataset.state = "idle"
+              button.style.opacity = "1"
+              button.style.cursor = "pointer"
+            })
+            .catch((caught: unknown) => {
+              if (!button.isConnected) return
+              const message = caught instanceof Error ? caught.message : "Audio playback failed"
+              button.dataset.state = "error"
+              button.title = message
+              button.style.opacity = "1"
+              button.style.cursor = "pointer"
+              button.style.background = "#fff0f0"
+              button.style.color = "#b42318"
+              window.setTimeout(() => {
+                if (!button.isConnected) return
+                button.dataset.state = "idle"
+                button.style.background = "#e8f3ff"
+                button.style.color = "#194f83"
+              }, 1800)
+            })
+            .finally(() => {
+              if (button.isConnected) button.disabled = false
+            })
+        }
+      }
+    },
+    [configs, values]
+  )
 
   return (
     <div
@@ -100,32 +183,14 @@ export function CardPreview({
       >
         <iframe
           title="Card preview"
-          sandbox=""
+          sandbox="allow-same-origin"
           loading="lazy"
           referrerPolicy="no-referrer"
           srcDoc={doc}
+          onLoad={wireFrame}
           className="h-full w-full border-0 bg-white"
         />
       </div>
-
-      {playable.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5">
-          <span className="mr-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Audio</span>
-          {playable.map((name) => {
-            const tts = configs[name]
-            if (!tts) return null
-            return (
-              <TtsPlayButton
-                key={name}
-                text={values[tts.source] ?? ""}
-                lang={tts.lang}
-                slow={tts.slow}
-                label={`Play ${name} · ${ttsLangLabel(tts.lang)}`}
-              />
-            )
-          })}
-        </div>
-      ) : null}
     </div>
   )
 }

@@ -4,8 +4,10 @@ import { readSource } from "../helpers/source"
 
 const aiSettings = readSource("components", "ai-settings-panel.tsx")
 const codeEditor = readSource("components", "code-editor.tsx")
+const dialog = readSource("components", "ui", "dialog.tsx")
 const sheet = readSource("components", "ui", "sheet.tsx")
 const studySettings = readSource("components", "study-settings-panel.tsx")
+const textarea = readSource("components", "ui", "textarea.tsx")
 const cardPreview = readSource("components", "card-preview.tsx")
 const template = readSource("lib", "template.ts")
 
@@ -18,6 +20,16 @@ describe("mobile visual polish regressions", () => {
     expect(aiSettings).toContain('data-testid="prompt-editor-actions"')
     expect(aiSettings).toContain("pb-[max(0.75rem,env(safe-area-inset-bottom))]")
     expect(aiSettings).not.toContain("<SheetFooter")
+  })
+
+  it("keeps compact dialogs inside iPhone-width viewports", () => {
+    expect(dialog).toContain("grid min-w-0 w-full max-h-[calc(100dvh-1.5rem)]")
+    expect(dialog).toContain("overflow-x-hidden")
+    expect(dialog).toContain("overflow-y-auto")
+    expect(dialog).toContain("[&>*]:min-w-0")
+    expect(dialog).toContain("p-4")
+    expect(dialog).toContain("min-[400px]:p-5")
+    expect(textarea).toContain("min-w-0 w-full max-w-full resize-y")
   })
 
   it("lets bottom sheets honor explicit viewport heights instead of forcing height auto", () => {
@@ -47,6 +59,17 @@ describe("mobile visual polish regressions", () => {
   it("does not render a decorative dot inside the card preview canvas", () => {
     expect(cardPreview).toContain('title="Card preview"')
     expect(cardPreview).not.toContain("absolute left-4 top-4 z-10 size-2 rounded-full bg-energy")
+  })
+
+  it("renders preview TTS controls inside the card using the Study button treatment", () => {
+    expect(cardPreview).toContain("data-preview-tts")
+    expect(cardPreview).toContain('sandbox="allow-same-origin"')
+    expect(cardPreview).toContain("getTtsClip")
+    expect(cardPreview).toContain("playTtsAudio")
+    expect(cardPreview).toContain("background:#e8f3ff;color:#194f83")
+    expect(cardPreview).not.toContain("TtsPlayButton")
+    expect(cardPreview).not.toContain("ttsFieldsOnSide")
+    expect(cardPreview).not.toContain(">Audio</span>")
   })
 
   it("prevents generated preview documents from overflowing horizontally", () => {
