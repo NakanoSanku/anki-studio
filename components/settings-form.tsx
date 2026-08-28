@@ -4,10 +4,9 @@ import { useEffect, useState, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 import { productSyncMessage } from "@/lib/product-copy"
-import { BrainCircuit, Cloud, CloudOff, FolderCog, Gauge, RefreshCw, Table2 } from "lucide-react"
+import { BrainCircuit, FolderCog, Gauge, RefreshCw, Table2 } from "lucide-react"
 
 import { fsrsOf, type Deck } from "@/lib/deck"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AiSettingsPanel } from "@/components/ai-settings-panel"
@@ -46,6 +45,15 @@ function useDesktopSettingsLayout() {
   return desktop
 }
 
+function formatLastSync(timestamp: number): string {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp))
+}
+
 export function SettingsForm({
   section,
   deckTools,
@@ -67,6 +75,19 @@ export function SettingsForm({
   const fsrsSettings = deck ? fsrsOf(deck) : null
   const defaultSection: SettingsSection = section ?? (deckTools ? "deck" : fsrsSettings ? "study" : "ai")
   const shownSyncMessage = sync ? productSyncMessage(sync.message) : ""
+  const syncHeadline = sync
+    ? sync.syncing
+      ? "Syncing…"
+      : sync.unavailable
+        ? "Sync unavailable"
+        : sync.dirtyCount > 0
+          ? `${sync.dirtyCount} local ${sync.dirtyCount === 1 ? "change" : "changes"} waiting`
+          : sync.lastSyncAt
+            ? "Up to date"
+            : shownSyncMessage === "Not synced yet"
+              ? "Ready to sync"
+              : shownSyncMessage
+    : ""
 
   return (
     <Tabs
@@ -119,69 +140,45 @@ export function SettingsForm({
 
         <TabsContent value="sync" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           {sync ? (
-            <div className="max-w-3xl space-y-3">
+            <div className="mx-auto max-w-2xl space-y-2.5">
               <GoogleAccountPanel onReadyChange={setGoogleReady} />
               <GoogleSheetPickerPanel
                 enabled={googleReady === true}
                 onConnectionChange={setSheetConnected}
                 onConnected={onSyncNow}
-                inventoryKey={sync.lastSyncAt}
               />
 
-              <div className="rounded-[20px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span
-                      className={cn(
-                        "flex size-11 shrink-0 items-center justify-center rounded-[13px] bg-muted text-foreground",
-                        sync.syncing && "animate-pulse"
-                      )}
-                    >
-                      {sync.syncing ? (
-                        <RefreshCw className="size-4.5 animate-spin" />
-                      ) : sync.unavailable ? (
-                        <CloudOff className="size-4.5" />
-                      ) : (
-                        <Cloud className="size-4.5" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-[15px] font-semibold tracking-[-0.02em]">{shownSyncMessage}</p>
-                        {sync.dirtyCount > 0 ? (
-                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">{sync.dirtyCount} local changes</Badge>
-                        ) : sync.unavailable ? (
-                          <Badge className="border border-black/[0.06] bg-muted text-[10px] font-medium text-muted-foreground shadow-none dark:border-white/[0.08]">Offline</Badge>
-                        ) : (
-                          <Badge className="border border-energy/25 bg-energy/15 text-[10px] font-medium text-foreground shadow-none">Up to date</Badge>
-                        )}
-                      </div>
-                      {sync.lastSyncAt ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Last completed: {new Date(sync.lastSyncAt).toLocaleString()}</p>
-                      ) : (
-                        <p className="mt-1 text-xs text-muted-foreground">Works offline and syncs both ways after Google Sheets is connected.</p>
-                      )}
-                      {sync.unavailable ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{sync.unavailable}</p> : null}
-                    </div>
+              <section className="rounded-[18px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.4)] dark:border-white/[0.09] sm:p-5">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                      <span className={cn("size-2 rounded-full", sync.unavailable ? "bg-muted-foreground/40" : "bg-energy")} />
+                      Sync status
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em]">{syncHeadline}</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {sync.lastSyncAt ? `Last sync · ${formatLastSync(sync.lastSyncAt)}` : "Your changes are saved locally until the first sync."}
+                    </p>
+                    {sync.unavailable ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{sync.unavailable}</p> : null}
                   </div>
-
-                  <Button
-                    type="button"
-                    className="h-11 w-full shrink-0 px-5 text-xs sm:w-auto"
-                    disabled={sync.syncing || googleReady !== true || !sheetConnected}
-                    onClick={onSyncNow}
-                  >
-                    <RefreshCw className={sync.syncing ? "mr-1.5 size-3.5 animate-spin" : "mr-1.5 size-3.5"} />
-                    {sync.syncing
-                      ? "Syncing…"
-                      : googleReady !== true
-                        ? "Connect Google first"
-                        : !sheetConnected
-                          ? "Connect a sheet first"
-                          : "Sync now"}
-                  </Button>
                 </div>
-              </div>
+
+                <Button
+                  type="button"
+                  className="mt-4 h-12 w-full justify-center text-xs"
+                  disabled={sync.syncing || googleReady !== true || !sheetConnected}
+                  onClick={onSyncNow}
+                >
+                  <RefreshCw className={sync.syncing ? "size-3.5 animate-spin" : "size-3.5"} />
+                  {sync.syncing
+                    ? "Syncing…"
+                    : googleReady !== true
+                      ? "Connect Google first"
+                      : !sheetConnected
+                        ? "Choose a sync sheet"
+                        : "Sync now"}
+                </Button>
+              </section>
             </div>
           ) : null}
         </TabsContent>
