@@ -87,11 +87,11 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         role="group"
         aria-label={label}
         className={cn(
-          "min-w-0 overflow-hidden rounded-[20px] border border-black/[0.12] bg-[#111215] shadow-[0_22px_55px_-42px_rgba(0,0,0,0.82)]",
+          "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[20px] border border-black/[0.12] bg-[#111215] shadow-[0_22px_55px_-42px_rgba(0,0,0,0.82)]",
           className
         )}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="size-2 rounded-full bg-energy" />
             <span className="font-mono text-[9px] font-medium uppercase tracking-[0.14em] text-white/38">editor</span>
@@ -100,7 +100,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             {language === "css" ? "style.css" : language === "prompt" ? "prompt" : "template"}
           </span>
         </div>
-        <div className={cn("h-[300px] min-w-0 lg:h-[440px]", editorClassName)}>
+        <div className={cn("h-[300px] min-h-0 min-w-0 lg:h-[440px]", editorClassName)}>
           <CodeMirror
             ref={editorRef}
             id={id}
@@ -117,10 +117,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             basicSetup={basicSetup}
             onChange={onChange}
             onUpdate={onUpdate}
-            className="h-full max-w-full [&_.cm-editor]:h-full [&_.cm-editor]:max-w-full"
+            className="h-full min-h-0 max-w-full [&_.cm-editor]:h-full [&_.cm-editor]:min-h-0 [&_.cm-editor]:max-w-full [&_.cm-scroller]:overflow-auto [&_.cm-scroller]:overscroll-contain"
           />
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] px-4 py-2 font-mono text-[9px] font-medium text-slate-400">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/[0.07] px-4 py-2 font-mono text-[9px] font-medium text-slate-400">
           <span>Ln {caret.line}, Col {caret.column}</span>
           <span className="hidden text-white/28 sm:inline">Tab indent · Shift+Tab outdent</span>
         </div>
