@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { createDefaultDeck, serializeDeck, STORAGE_KEY } from "@/lib/deck"
+import { createDefaultDeck, isCardApproved, serializeDeck, STORAGE_KEY } from "@/lib/deck"
 import { editorStateKey, writeEditorState } from "@/lib/editor-state"
 import {
   addLibraryDeck,
+  cloneDeckAsCopy,
   createLibraryDeck,
   deleteLibraryDeck,
   duplicateLibraryDeck,
@@ -180,6 +181,14 @@ describe("library operations", () => {
     const tombstone = await getStudioStore().getRecord(copied.library.activeId)
     expect(tombstone?.deletedAt).toBeGreaterThan(0)
     expect(tombstone?.dirty).toBe(true)
+  })
+
+  it("preserves pending review status when duplicating a deck", () => {
+    const source = createDefaultDeck()
+    source.cards = source.cards.map((card) => ({ ...card, reviewStatus: "pending" as const }))
+    const copy = cloneDeckAsCopy(source, "Copy")
+    expect(copy.cards.every((card) => !isCardApproved(card))).toBe(true)
+    expect(copy.cards[0]?.id).not.toBe(source.cards[0]?.id)
   })
 
   it("imports a deck as a new library item", async () => {

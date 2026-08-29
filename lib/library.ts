@@ -13,12 +13,14 @@ import {
 import { deleteEditorState } from "./editor-state"
 import {
   getStudioStore,
+  isDeckId,
   type DeckRecord,
   type LibraryMeta,
   type StudioStore,
 } from "./studio-store"
 
 export const LIBRARY_KEY = "anki-studio.library.v1"
+const LEGACY_SINGLE_MIGRATION_ID_KEY = "anki-studio.migration.single-deck-id.v1"
 
 export type LibraryEntry = {
   id: string
@@ -185,10 +187,11 @@ async function markLocalEdits(store: StudioStore): Promise<void> {
 
 async function createFresh(
   deck: Deck,
-  extra: { dirty: boolean; hasLocalEdits: boolean }
+  extra: { dirty: boolean; hasLocalEdits: boolean },
+  requestedId?: string
 ): Promise<LibrarySession> {
   const store = getStudioStore()
-  const id = createDeckId()
+  const id = requestedId && isDeckId(requestedId) ? requestedId : createDeckId()
   const now = Date.now()
   const record: DeckRecord = { id, deck, rev: 0, dirty: extra.dirty, updatedAt: now }
   const meta: LibraryMeta = { version: 1, activeId: id, order: [id] }
@@ -209,8 +212,10 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
       const parsed = parseLibraryJson(rawLib)
       const records: DeckRecord[] = []
       const order: string[] = []
+      const migratedKeys: string[] = []
       for (const entry of parsed.decks) {
-        const raw = storage.getItem(deckStorageKey(entry.id))
+        const key = deckStorageKey(entry.id)
+        const raw = storage.getItem(key)
         if (!raw) continue
         try {
           const deck = parseDeckJson(raw)
@@ -222,9 +227,9 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
             updatedAt: entry.updatedAt,
           })
           order.push(entry.id)
-          storage.removeItem(deckStorageKey(entry.id))
+          migratedKeys.push(key)
         } catch {
-          // skip broken deck
+          // Skip unreadable legacy data without deleting the migration journal.
         }
       }
       if (records.length > 0) {
@@ -236,6 +241,7 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
         }
         await store.setMeta({ version: 1, activeId, order })
         await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })
+        for (const key of migratedKeys) storage.removeItem(key)
         storage.removeItem(LIBRARY_KEY)
         storage.removeItem(STORAGE_KEY)
         const active = records.find((record) => record.id === activeId)!
@@ -254,8 +260,15 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
   } catch {
     deck = createDefaultDeck()
   }
+  let migrationId = storage.getItem(LEGACY_SINGLE_MIGRATION_ID_KEY)?.trim() ?? ""
+  if (!isDeckId(migrationId)) {
+    migrationId = createDeckId()
+    storage.setItem(LEGACY_SINGLE_MIGRATION_ID_KEY, migrationId)
+  }
+  const migrated = await createFresh(deck, { dirty: true, hasLocalEdits: true }, migrationId)
   storage.removeItem(STORAGE_KEY)
-  return createFresh(deck, { dirty: true, hasLocalEdits: true })
+  storage.removeItem(LEGACY_SINGLE_MIGRATION_ID_KEY)
+  return migrated
 }
 
 let loadInflight: Promise<LibrarySession> | null = null
@@ -272,6 +285,9 @@ export async function loadLibrarySession(): Promise<LibrarySession> {
 
 async function loadLibrarySessionUncached(): Promise<LibrarySession> {
   const store = getStudioStore()
+  const migrated = await migrateLegacy()
+  if (migrated) return migrated
+
   const rawRecords = await store.listRecords()
   const records: DeckRecord[] = []
   let upgraded = false
@@ -303,20 +319,32 @@ async function loadLibrarySessionUncached(): Promise<LibrarySession> {
     if (active) return { library, deck: active.deck }
   }
 
-  const migrated = await migrateLegacy()
-  if (migrated) return migrated
-
   return createFresh(createDefaultDeck(), { dirty: false, hasLocalEdits: false })
 }
 
-export async function persistActiveDeck(library: Library, deck: Deck): Promise<Library> {
+export async function persistActiveDeck(
+  library: Library,
+  deck: Deck,
+  options: { recreateMissing?: boolean } = {}
+): Promise<Library> {
   const store = getStudioStore()
   if (library.activeId === "pending") return library
   const current = await store.getRecord(library.activeId)
+  const normalized = parseDeckJson(serializeDeck(deck))
   if (!current || current.deletedAt) {
+    if (!options.recreateMissing) {
+      return libraryFrom(await store.getMeta(), await store.listRecords())
+    }
+    const record: DeckRecord = current
+      ? { ...current, deck: normalized, dirty: true, updatedAt: Date.now(), deletedAt: undefined }
+      : { id: library.activeId, deck: normalized, rev: 0, dirty: true, updatedAt: Date.now() }
+    await store.setRecord(record)
+    const meta = await store.getMeta()
+    const order = meta?.order.includes(record.id) ? meta.order : [...(meta?.order ?? []), record.id]
+    await store.setMeta({ version: 1, activeId: record.id, order })
+    await markLocalEdits(store)
     return libraryFrom(await store.getMeta(), await store.listRecords())
   }
-  const normalized = parseDeckJson(serializeDeck(deck))
   if (serializeDeck(current.deck) === serializeDeck(normalized)) {
     return libraryFrom(await store.getMeta(), await store.listRecords())
   }
@@ -433,6 +461,7 @@ export function cloneDeckAsCopy(deck: Deck, name: string): Deck {
     cards: deck.cards.map((card) => ({
       id: createCardId(),
       guid: createNoteGuid(),
+      ...(card.reviewStatus === "pending" ? { reviewStatus: "pending" as const } : {}),
       values: { ...card.values },
     })),
     fsrs: { ...fsrsOf(deck), cards: {} },
