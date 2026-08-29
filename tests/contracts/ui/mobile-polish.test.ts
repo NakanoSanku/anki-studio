@@ -62,14 +62,13 @@ describe("mobile visual polish regressions", () => {
     expect(codeEditor).toContain("[&_.cm-scroller]:overscroll-contain")
   })
 
-  it("positions retention labels using the same numeric scale as the slider", () => {
+  it("keeps the retention slider free of scale labels", () => {
     expect(studySettings).toContain("const RETENTION_MIN = 70")
     expect(studySettings).toContain("const RETENTION_MAX = 99")
-    expect(studySettings).toContain("function retentionMarkPosition")
-    expect(studySettings).toContain("(value - RETENTION_MIN) / (RETENTION_MAX - RETENTION_MIN)")
-    expect(studySettings).toContain('data-testid="retention-scale"')
-    expect(studySettings).toContain("data-retention-mark={mark.value}")
-    expect(studySettings).not.toContain('mt-1 flex justify-between font-mono')
+    expect(studySettings).not.toContain("RETENTION_MARKS")
+    expect(studySettings).not.toContain("retentionMarkPosition")
+    expect(studySettings).not.toContain('data-testid="retention-scale"')
+    expect(studySettings).not.toContain("data-retention-mark")
   })
 
   it("does not render a decorative dot inside the card preview canvas", () => {
