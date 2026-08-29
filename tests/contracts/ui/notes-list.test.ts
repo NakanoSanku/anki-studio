@@ -4,6 +4,7 @@ import { readSource } from "../helpers/source"
 
 const shell = readSource("components", "app-shell.tsx")
 const editor = readSource("components", "card-editor.tsx")
+const references = readSource("components", "reference-notes-bar.tsx")
 const studio = readSource("components", "studio.tsx")
 
 describe("notes mobile chrome", () => {
@@ -62,5 +63,12 @@ describe("notes mobile chrome", () => {
 
   it("hides the batch dialog while the reference-notes sheet is open", () => {
     expect(editor).toContain("batchOpen && !referencePickerOpen")
+  })
+
+  it("keeps clear selection in the upper-right of the reference picker", () => {
+    expect(references).toContain('className="mb-2 flex items-center justify-between gap-3 pr-8"')
+    expect(references).toContain('aria-label="Clear reference selection"')
+    expect(references).toContain("Clear selection")
+    expect(references).not.toContain('className="mt-1 h-8 w-fit px-2 text-xs text-muted-foreground"')
   })
 })

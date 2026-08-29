@@ -103,33 +103,34 @@ export function ReferenceNotesPicker({
         className="flex h-[88dvh] max-h-[760px] flex-col p-0 sm:mx-auto sm:max-w-lg"
       >
         <SheetHeader className="shrink-0 px-5 pb-3 pt-5">
-          <div className="mb-1 flex items-center justify-between gap-3 pr-8">
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
-                <span className="size-2 rounded-full bg-energy" />
-                Style memory
-              </div>
-              <SheetTitle className="text-[28px] font-semibold tracking-[-0.045em]">Reference notes</SheetTitle>
+          <div className="mb-2 flex items-center justify-between gap-3 pr-8">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+              <span className="size-2 rounded-full bg-energy" />
+              Style memory
             </div>
-            <Badge className="h-8 border border-black/[0.06] bg-muted px-3 text-xs font-medium text-foreground shadow-none dark:border-white/[0.08]">
+            {referenceIds.length > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Clear reference selection"
+                className="h-8 px-2 text-xs text-muted-foreground"
+                onClick={() => onChange([])}
+              >
+                <RotateCcw className="size-3" />
+                Clear selection
+              </Button>
+            ) : null}
+          </div>
+          <div className="mb-1 flex items-center justify-between gap-3 pr-8">
+            <SheetTitle className="min-w-0 text-[28px] font-semibold tracking-[-0.045em]">Reference notes</SheetTitle>
+            <Badge className="h-8 shrink-0 border border-black/[0.06] bg-muted px-3 text-xs font-medium text-foreground shadow-none dark:border-white/[0.08]">
               {referenceIds.length} selected
             </Badge>
           </div>
           <SheetDescription className="max-w-md text-xs leading-5">
             Choose a few strong examples. AI Fill and batch generation will follow their formatting, pronunciation, meaning, and example style without copying the entries.
           </SheetDescription>
-          {referenceIds.length > 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-8 w-fit px-2 text-xs text-muted-foreground"
-              onClick={() => onChange([])}
-            >
-              <RotateCcw className="size-3" />
-              Clear selection
-            </Button>
-          ) : null}
         </SheetHeader>
 
         <div className="shrink-0 px-4 pb-3">
