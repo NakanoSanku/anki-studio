@@ -4,91 +4,19 @@ on:
   push:
     branches:
       - main
-      - fix/review-gate-sync-readme
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ui-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  apply-production-readiness:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/review-gate-sync-readme' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v5
-        with:
-          ref: fix/review-gate-sync-readme
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply cycle 3 hardening
-        shell: bash
-        run: |
-          python .github/production-cycle3.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('tests/unit/lib/library.test.ts')
-          text = path.read_text()
-          old = '''    await expect(loadLibrarySession()).rejects.toThrow("simulated durable-write failure")\n    expect(memory.get(LIBRARY_KEY)).toBeTruthy()\n    expect(memory.get(`anki-studio.deck.${id}`)).toBeTruthy()\n\n    setStudioStore(base)\n    const retried = await loadLibrarySession()'''
-          new = '''    const firstAttempt = await loadLibrarySession()\n    expect(firstAttempt.deck.name).toBe("Recover me")\n    expect(memory.get(LIBRARY_KEY)).toBeTruthy()\n    expect(memory.get(`anki-studio.deck.${id}`)).toBeTruthy()\n\n    setStudioStore(base)\n    const retried = await loadLibrarySession()'''
-          if old not in text:
-              raise SystemExit('migration regression patch anchor missing')
-          path.write_text(text.replace(old, new, 1))
-          PY
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint patched tree
-        run: npm run lint
-
-      - name: Typecheck patched tree
-        run: npm run typecheck
-
-      - name: Test patched tree
-        run: npm test
-
-      - name: Build patched tree
-        run: npm run build
-
-      - name: Commit validated fixes
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            lib/request-guard.ts \
-            app/api/tts/route.ts \
-            app/api/gemini-live/token/route.ts \
-            app/api/sync/decks/[id]/route.ts \
-            lib/import-preview.ts \
-            lib/google-sheets-sync.ts \
-            lib/google-auth.ts \
-            app/api/google-sheets/list/route.ts \
-            components/deck-tools-panel.tsx \
-            README.md \
-            next.config.ts \
-            tests/unit/lib/request-guard.test.ts \
-            tests/unit/lib/import-preview.test.ts \
-            tests/unit/lib/library.test.ts \
-            tests/contracts/production-network.test.ts
-          git diff --cached --check
-          git commit -m "fix: bound production network and import surfaces"
-          git push origin HEAD:fix/review-gate-sync-readme
-
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
