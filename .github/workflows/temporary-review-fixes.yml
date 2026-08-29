@@ -29,7 +29,6 @@ jobs:
                   raise SystemExit(f"{label}: expected 1 match, found {count}")
               return text.replace(old, new, 1)
 
-          # 1) Google Sheets preview edits must re-enter the approval queue.
           path = Path("lib/google-sheets-sync.ts")
           source = path.read_text()
           source = replace_once(
@@ -45,7 +44,6 @@ jobs:
               "preview approval gate",
           )
 
-          # 3) Keep sync user-facing copy English end-to-end.
           replacements = {
               '"表格读取过于频繁，请稍后再试"': '"Google Sheets is being read too frequently. Try again shortly."',
               '"Google Sheet ID 无效"': '"Invalid Google Sheet ID"',
@@ -93,7 +91,6 @@ jobs:
               source = source.replace(old, new)
           path.write_text(source)
 
-          # 2) JSON is a project backup, not a published-only export.
           path = Path("components/studio.tsx")
           studio = path.read_text()
           studio = replace_once(
@@ -104,7 +101,6 @@ jobs:
           )
           path.write_text(studio)
 
-          # 4) "done" is already an invariant label and must not be pluralized.
           path = Path("components/study-overview.tsx")
           overview = path.read_text()
           overview = replace_once(
@@ -115,7 +111,6 @@ jobs:
           )
           path.write_text(overview)
 
-          # Translate server-side sync errors and make status classification work with English messages.
           path = Path("lib/sync-server.ts")
           server = path.read_text()
           server_replacements = {
@@ -130,15 +125,13 @@ jobs:
           server = replace_once(
               server,
               '''  if (\n    message.includes("无效")\n    || message.includes("缺少")\n    || message.includes("太大")\n    || message.includes("无法解析")\n  ) {''',
-              '''  if (\n    /invalid|missing|too large|could not be parsed|corrupt|incompatible|duplicate/i.test(message)\n    || /无效|缺少|太大|无法解析/.test(message)\n  ) {''',
+              '''  if (/invalid|missing|too large|could not be parsed|corrupt|incompatible|duplicate/i.test(message)) {''',
               "sync error classification",
           )
           path.write_text(server)
 
-          # Regression coverage for all review findings.
           Path("tests/contracts/review-fixes.test.ts").write_text('''import { describe, expect, it } from "vitest"\n\nimport { readSource } from "./ui/helpers/source"\n\nconst sheets = readSource("lib", "google-sheets-sync.ts")\nconst syncServer = readSource("lib", "sync-server.ts")\nconst studio = readSource("components", "studio.tsx")\nconst home = readSource("components", "study-overview.tsx")\n\ndescribe("code review fixes", () => {\n  it("returns Google Sheets additions and edits to pending review", () => {\n    expect(sheets).toContain("createPendingCard")\n    expect(sheets).toContain("const changed = !current ||")\n    expect(sheets).toContain('reviewStatus: "pending"')\n    expect(sheets).not.toContain("const card = current ?? createCard(deck.fields)")\n  })\n\n  it("keeps JSON as a full project backup while published exports stay approval-gated", () => {\n    expect(studio).toContain('new Blob([serializeDeck(deck)], { type: "application/json" })')\n    expect(studio).toContain("const exportDeck = approvedDeck(deck)")\n    expect(studio).toContain("deckToCsv(exportDeck)")\n    expect(studio).toContain("serializeDeck(approvedDeck(deck))")\n  })\n\n  it("keeps sync errors English while retaining the legacy preview header", () => {\n    expect(sheets.replace('"序号"', "")).not.toMatch(/[\\u3400-\\u9fff]/)\n    expect(syncServer).not.toMatch(/[\\u3400-\\u9fff]/)\n  })\n\n  it("does not pluralize the invariant done label", () => {\n    expect(home).toContain('`${stats.reviewedToday} done`')\n    expect(home).not.toContain('countLabel(stats.reviewedToday, "done")')\n  })\n})\n''')
 
-          # Audit unexpected untranslated strings in the two sync surfaces. Legacy "序号" is data compatibility.
           for target in [Path("lib/google-sheets-sync.ts"), Path("lib/sync-server.ts")]:
               text = target.read_text()
               check = text.replace('"序号"', '"legacy-index"')
