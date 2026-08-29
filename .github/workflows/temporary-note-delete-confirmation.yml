@@ -1,0 +1,87 @@
+name: Temporary note delete confirmation
+
+on:
+  push:
+    branches:
+      - fix/note-delete-confirmation
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add note delete confirmation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          path = Path("components/card-editor.tsx")
+          source = path.read_text()
+
+          source = replace_once(
+              source,
+              '''  AlertDialogAction,\n  AlertDialogContent,''',
+              '''  AlertDialogAction,\n  AlertDialogCancel,\n  AlertDialogContent,''',
+              "import alert dialog cancel",
+          )
+
+          source = replace_once(
+              source,
+              '''  const [alert, setAlert] = useState("")\n  const [batchOpen, setBatchOpen] = useState(false)''',
+              '''  const [alert, setAlert] = useState("")\n  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)\n  const [batchOpen, setBatchOpen] = useState(false)''',
+              "delete target state",
+          )
+
+          source = replace_once(
+              source,
+              '''<Button type="button" size="xs" variant="ghost" className="h-8 whitespace-nowrap px-2 text-[11px] text-destructive" onClick={() => removeCard(selected.id)}>Delete</Button>''',
+              '''<Button type="button" size="xs" variant="ghost" className="h-8 whitespace-nowrap px-2 text-[11px] text-destructive" onClick={() => setDeleteTargetId(selected.id)}>Delete</Button>''',
+              "delete button",
+          )
+
+          source = replace_once(
+              source,
+              '''  const aiDialog = (\n    <AlertDialog open={Boolean(alert)} onOpenChange={(open) => { if (!open) setAlert("") }}>''',
+              '''  const deleteDialog = (\n    <AlertDialog open={Boolean(deleteTargetId)} onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}>\n      <AlertDialogContent data-testid="note-delete-confirmation">\n        <AlertDialogHeader>\n          <AlertDialogTitle>Delete note?</AlertDialogTitle>\n          <AlertDialogDescription>This note and its study history will be permanently removed from this deck.</AlertDialogDescription>\n        </AlertDialogHeader>\n        <AlertDialogFooter>\n          <AlertDialogCancel>Cancel</AlertDialogCancel>\n          <AlertDialogAction\n            variant="destructive"\n            onClick={() => {\n              const id = deleteTargetId\n              setDeleteTargetId(null)\n              if (id) removeCard(id)\n            }}\n          >\n            Delete\n          </AlertDialogAction>\n        </AlertDialogFooter>\n      </AlertDialogContent>\n    </AlertDialog>\n  )\n\n  const aiDialog = (\n    <AlertDialog open={Boolean(alert)} onOpenChange={(open) => { if (!open) setAlert("") }}>''',
+              "delete confirmation dialog",
+          )
+
+          source = replace_once(
+              source,
+              '''      {aiDialog}\n      {batchDialog}''',
+              '''      {deleteDialog}\n      {aiDialog}\n      {batchDialog}''',
+              "render delete confirmation",
+          )
+
+          path.write_text(source)
+
+          test_path = Path("tests/contracts/ui/notes-list.test.ts")
+          tests = test_path.read_text()
+          old = '''    expect(editor).toContain('aria-label="AI Fill"')\n    expect(editor).toContain(">Delete</Button>")'''
+          new = '''    expect(editor).toContain('aria-label="AI Fill"')\n    expect(editor).toContain(">Delete</Button>")\n    expect(editor).toContain("setDeleteTargetId(selected.id)")\n    expect(editor).toContain('data-testid="note-delete-confirmation"')\n    expect(editor).toContain("<AlertDialogTitle>Delete note?</AlertDialogTitle>")\n    expect(editor).toContain("<AlertDialogCancel>Cancel</AlertDialogCancel>")\n    expect(editor).not.toContain("onClick={() => removeCard(selected.id)}")'''
+          tests = replace_once(tests, old, new, "delete confirmation contract")
+          test_path.write_text(tests)
+          PY
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/card-editor.tsx tests/contracts/ui/notes-list.test.ts
+          git diff --cached --check
+          git commit -m "fix: confirm before deleting notes"
+          git push origin HEAD:${GITHUB_REF_NAME}
