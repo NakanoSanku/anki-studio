@@ -38,6 +38,7 @@ type WindowWithWebkitAudio = Window & typeof globalThis & {
 }
 
 const LIVE_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"
+const CONNECT_TIMEOUT_MS = 20_000
 const INPUT_RATE = 16_000
 const OUTPUT_RATE = 24_000
 
@@ -93,6 +94,13 @@ function decodePcm16(base64: string): Float32Array {
   return output
 }
 
+async function readLiveMessageData(data: unknown): Promise<string | null> {
+  if (typeof data === "string") return data
+  if (data instanceof Blob) return data.text()
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)
+  return null
+}
+
 async function requestLiveToken(apiKey: string): Promise<{ token: string; model: string }> {
   const response = await fetch("/api/gemini-live/token", {
     method: "POST",
@@ -126,6 +134,7 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
   const [liveTutor, setLiveTutor] = useState("")
 
   const websocketRef = useRef<WebSocket | null>(null)
+  const setupTimerRef = useRef(0)
   const audioContextRef = useRef<AudioContext | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -199,6 +208,8 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
   const stopSession = useCallback((exit = false) => {
     stoppedRef.current = true
     micStartedRef.current = false
+    window.clearTimeout(setupTimerRef.current)
+    setupTimerRef.current = 0
 
     const processor = processorRef.current
     if (processor) processor.onaudioprocess = null
@@ -285,6 +296,12 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
     tutorDraftRef.current = ""
     setError("")
     setPhase("connecting")
+    setupTimerRef.current = window.setTimeout(() => {
+      if (stoppedRef.current) return
+      stopSession(false)
+      setError("Gemini Live did not finish connecting. Check API access and try again.")
+      setPhase("error")
+    }, CONNECT_TIMEOUT_MS)
 
     try {
       const AudioContextCtor = window.AudioContext || (window as WindowWithWebkitAudio).webkitAudioContext
@@ -293,25 +310,28 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
       audioContextRef.current = context
       await context.resume()
 
-      const [{ token, model }, stream] = await Promise.all([
-        requestLiveToken(nextSettings.apiKey.trim()),
-        navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        }),
-      ])
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      })
       if (stoppedRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
       }
       mediaStreamRef.current = stream
 
+      // Mint the one-use ephemeral token only after microphone permission so its
+      // one-minute new-session window is not spent waiting on the user prompt.
+      const { token, model } = await requestLiveToken(nextSettings.apiKey.trim())
+      if (stoppedRef.current) return
+
       const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)
+      socket.binaryType = "arraybuffer"
       websocketRef.current = socket
 
       socket.onopen = () => {
@@ -327,73 +347,87 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
       }
 
       socket.onmessage = (event) => {
-        if (stoppedRef.current || typeof event.data !== "string") return
-        let message: LiveMessage
-        try {
-          message = JSON.parse(event.data) as LiveMessage
-        } catch {
-          return
-        }
+        void (async () => {
+          if (stoppedRef.current) return
+          const raw = await readLiveMessageData(event.data)
+          if (stoppedRef.current || raw == null) return
 
-        if (message.setupComplete) {
-          startMicrophone(socket, context, stream)
-          setPhase("thinking")
-          socket.send(JSON.stringify({
-            realtimeInput: {
-              text: "Begin the voice lesson now. Greet briefly, then ask the first question from the deck.",
-            },
-          }))
-        }
+          let message: LiveMessage
+          try {
+            message = JSON.parse(raw) as LiveMessage
+          } catch {
+            return
+          }
 
-        const content = message.serverContent
-        if (!content) return
+          if (message.setupComplete) {
+            window.clearTimeout(setupTimerRef.current)
+            setupTimerRef.current = 0
+            startMicrophone(socket, context, stream)
+            setPhase("thinking")
+            socket.send(JSON.stringify({
+              realtimeInput: {
+                text: "Begin the voice lesson now. Greet briefly, then ask the first question from the deck.",
+              },
+            }))
+          }
 
-        if (content.interrupted) {
-          clearPlayback()
-          flushTutor()
-          setPhase("listening")
-        }
+          const content = message.serverContent
+          if (!content) return
 
-        const inputText = content.inputTranscription?.text
-        if (inputText) {
-          userDraftRef.current += inputText
-          setLiveUser(userDraftRef.current)
-          setPhase("thinking")
-        }
+          if (content.interrupted) {
+            clearPlayback()
+            flushTutor()
+            setPhase("listening")
+          }
 
-        const outputText = content.outputTranscription?.text
-        if (outputText) {
-          if (userDraftRef.current) flushUser()
-          tutorDraftRef.current += outputText
-          setLiveTutor(tutorDraftRef.current)
-        }
+          const inputText = content.inputTranscription?.text
+          if (inputText) {
+            userDraftRef.current += inputText
+            setLiveUser(userDraftRef.current)
+            setPhase("thinking")
+          }
 
-        for (const part of content.modelTurn?.parts ?? []) {
-          const audio = part.inlineData
-          if (!audio?.data) continue
-          if (audio.mimeType && !audio.mimeType.startsWith("audio/")) continue
-          if (userDraftRef.current) flushUser()
-          setPhase("speaking")
-          playAudio(audio.data)
-        }
+          const outputText = content.outputTranscription?.text
+          if (outputText) {
+            if (userDraftRef.current) flushUser()
+            tutorDraftRef.current += outputText
+            setLiveTutor(tutorDraftRef.current)
+          }
 
-        if (content.turnComplete) {
-          flushUser()
-          flushTutor()
-          setPhase("listening")
-        }
+          for (const part of content.modelTurn?.parts ?? []) {
+            const audio = part.inlineData
+            if (!audio?.data) continue
+            if (audio.mimeType && !audio.mimeType.startsWith("audio/")) continue
+            if (userDraftRef.current) flushUser()
+            setPhase("speaking")
+            playAudio(audio.data)
+          }
+
+          if (content.turnComplete) {
+            flushUser()
+            flushTutor()
+            setPhase("listening")
+          }
+        })().catch(() => {
+          if (stoppedRef.current) return
+          stopSession(false)
+          setError("Unable to read the Gemini Live response")
+          setPhase("error")
+        })
       }
 
       socket.onerror = () => {
         if (stoppedRef.current) return
+        stopSession(false)
         setError("The Gemini Live connection failed")
         setPhase("error")
       }
 
       socket.onclose = (event) => {
         if (stoppedRef.current) return
-        stoppedRef.current = true
-        setError(event.reason || "The Gemini Live session ended. Start a new lesson to continue.")
+        const reason = event.reason || "The Gemini Live session ended. Start a new lesson to continue."
+        stopSession(false)
+        setError(reason)
         setPhase("error")
       }
     } catch (caught) {

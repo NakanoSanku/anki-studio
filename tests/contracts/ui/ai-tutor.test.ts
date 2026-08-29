@@ -43,4 +43,15 @@ describe("AI Voice Tutor", () => {
     expect(tutor).toContain("clearPlayback()")
     expect(tutor).toContain("OUTPUT_RATE = 24_000")
   })
+
+  it("handles binary Gemini frames and does not stay on Connecting forever", () => {
+    expect(tutor).toContain("data instanceof Blob")
+    expect(tutor).toContain("data instanceof ArrayBuffer")
+    expect(tutor).toContain("new TextDecoder().decode(data)")
+    expect(tutor).toContain('socket.binaryType = "arraybuffer"')
+    expect(tutor).toContain("CONNECT_TIMEOUT_MS = 20_000")
+    expect(tutor).toContain("setupTimerRef")
+    expect(tutor).toContain("Gemini Live did not finish connecting")
+    expect(tutor).not.toContain('typeof event.data !== "string"')
+  })
 })
