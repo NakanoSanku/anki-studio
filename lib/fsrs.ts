@@ -10,6 +10,7 @@ import {
 
 import {
   fsrsOf,
+  isCardApproved,
   isCardEmpty,
   scheduledCardKey,
   templatesOf,
@@ -123,7 +124,7 @@ function allItems(deck: Deck, now: Date): StudyItem[] {
   const state = fsrsOf(deck)
   const result: StudyItem[] = []
   for (const note of deck.cards) {
-    if (isCardEmpty(note, deck.fields)) continue
+    if (!isCardApproved(note) || isCardEmpty(note, deck.fields)) continue
     for (const template of templatesOf(deck)) {
       const id = scheduledCardKey(note.id, template.id)
       const stored = state.cards[id]
