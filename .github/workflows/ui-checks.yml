@@ -50,6 +50,16 @@ jobs:
           Path('/tmp/production-cycle1b.py').write_text('\n'.join(body) + '\n')
           PY
           python /tmp/production-cycle1b.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/unit/lib/sync-client.test.ts')
+          text = path.read_text()
+          text = text.replace(
+              'import { createMemoryStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"',
+              'import { createMemoryStore, getStudioStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"'
+          )
+          path.write_text(text)
+          PY
 
       - name: Install dependencies
         run: npm ci
