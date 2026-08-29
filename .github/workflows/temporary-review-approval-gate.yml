@@ -1,0 +1,181 @@
+name: Temporary review approval gate
+
+on:
+  push:
+    branches:
+      - refactor/review-approval-gate
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refactor review into approval gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          # Review status becomes durable deck data. Missing status is approved,
+          # which safely migrates every existing deck without hiding old notes.
+          path = Path("lib/deck.ts")
+          source = path.read_text()
+          source = replace_once(
+              source,
+              '''export type Card = {\n  id: string\n  guid: string\n  values: Record<string, string>\n  pushedHash?: string\n}''',
+              '''export type CardReviewStatus = "approved" | "pending"\n\nexport type Card = {\n  id: string\n  guid: string\n  values: Record<string, string>\n  /** Missing means approved for backward compatibility with existing decks. */\n  reviewStatus?: CardReviewStatus\n  pushedHash?: string\n}''',
+              "card review type",
+          )
+          source = replace_once(
+              source,
+              '''export function createCard(fields: string[], values: Record<string, string> = {}): Card {\n  return {\n    id: createCardId(),\n    guid: createNoteGuid(),\n    values: { ...emptyValues(fields), ...values },\n  }\n}\n''',
+              '''export function reviewStatusOf(card: Pick<Card, "reviewStatus">): CardReviewStatus {\n  return card.reviewStatus === "pending" ? "pending" : "approved"\n}\n\nexport function isCardApproved(card: Pick<Card, "reviewStatus">): boolean {\n  return reviewStatusOf(card) === "approved"\n}\n\nfunction withCardReviewStatus(card: Card, status: CardReviewStatus): Card {\n  if (status === "pending") return { ...card, reviewStatus: "pending" }\n  const { reviewStatus: _reviewStatus, ...approved } = card\n  return approved\n}\n\nexport function createCard(fields: string[], values: Record<string, string> = {}): Card {\n  return {\n    id: createCardId(),\n    guid: createNoteGuid(),\n    values: { ...emptyValues(fields), ...values },\n  }\n}\n\nexport function createPendingCard(fields: string[], values: Record<string, string> = {}): Card {\n  return withCardReviewStatus(createCard(fields, values), "pending")\n}\n\nexport function setCardReviewStatus(deck: Deck, cardId: string, status: CardReviewStatus): Deck {\n  if (!deck.cards.some((card) => card.id === cardId)) return deck\n  return {\n    ...deck,\n    cards: deck.cards.map((card) => card.id === cardId ? withCardReviewStatus(card, status) : card),\n  }\n}\n\nexport function approveCard(deck: Deck, cardId: string): Deck {\n  return setCardReviewStatus(deck, cardId, "approved")\n}\n\nexport function markCardPending(deck: Deck, cardId: string): Deck {\n  return setCardReviewStatus(deck, cardId, "pending")\n}\n\nexport function approvedCards(deck: Pick<Deck, "cards">): Card[] {\n  return deck.cards.filter(isCardApproved)\n}\n\nexport function approvedDeck(deck: Deck): Deck {\n  const cards = approvedCards(deck)\n  const allowed = new Set(cards.map((card) => card.id))\n  const fsrs = fsrsOf(deck)\n  return {\n    ...deck,\n    cards,\n    fsrs: {\n      ...fsrs,\n      cards: Object.fromEntries(\n        Object.entries(fsrs.cards).filter(([, scheduled]) => allowed.has(scheduled.noteId))\n      ),\n    },\n  }\n}\n''',
+              "review helpers",
+          )
+          source = replace_once(
+              source,
+              '''      pushedHash: typeof item.pushedHash === "string" && item.pushedHash ? item.pushedHash : undefined,\n      values,''',
+              '''      ...(item.reviewStatus === "pending" ? { reviewStatus: "pending" as const } : {}),\n      pushedHash: typeof item.pushedHash === "string" && item.pushedHash ? item.pushedHash : undefined,\n      values,''',
+              "parse review status",
+          )
+          source = replace_once(
+              source,
+              '''    added.push(createCard(currentFields, values))''',
+              '''    added.push(reviewStatusOf(card) === "pending"\n      ? createPendingCard(currentFields, values)\n      : createCard(currentFields, values))''',
+              "preserve incoming review status",
+          )
+          source = replace_once(
+              source,
+              '''        item.id === cardId ? { ...item, values: { ...item.values, [field]: value } } : item''',
+              '''        item.id === cardId\n          ? withCardReviewStatus({ ...item, values: { ...item.values, [field]: value } }, "pending")\n          : item''',
+              "editing invalidates approval",
+          )
+          source = replace_once(
+              source,
+              '''      cards: deck.cards.map((item) => (item.id === cardId ? { ...item, values: nextValues } : item)),''',
+              '''      cards: deck.cards.map((item) => (\n        item.id === cardId ? withCardReviewStatus({ ...item, values: nextValues }, "pending") : item\n      )),''',
+              "AI fill invalidates approval",
+          )
+          path.write_text(source)
+
+          # Study is built only from approved notes.
+          path = Path("lib/fsrs.ts")
+          source = path.read_text()
+          source = replace_once(source, "  isCardEmpty,\n  scheduledCardKey,", "  isCardApproved,\n  isCardEmpty,\n  scheduledCardKey,", "FSRS approval import")
+          source = replace_once(
+              source,
+              '''  for (const note of deck.cards) {\n    if (isCardEmpty(note, deck.fields)) continue''',
+              '''  for (const note of deck.cards) {\n    if (!isCardApproved(note) || isCardEmpty(note, deck.fields)) continue''',
+              "study approval filter",
+          )
+          path.write_text(source)
+
+          # Notes review UI now mutates the deck, making approval a normal dirty/syncable change.
+          path = Path("components/card-editor.tsx")
+          source = path.read_text()
+          source = replace_once(source, "  cardSubtitle,\n  createCard,", "  cardSubtitle,\n  approveCard,\n  createPendingCard,", "editor review imports 1")
+          source = replace_once(source, "  isCardEmpty,\n  mergeCardAiValues,", "  isCardApproved,\n  isCardEmpty,\n  markCardPending,\n  mergeCardAiValues,", "editor review imports 2")
+          source = replace_once(
+              source,
+              '''  const visibleCards = deck.cards.filter(\n    (card) => cardMatchesQuery(card, editableFields, query) && matchesReviewFilter(card, review, filter)\n  )''',
+              '''  const visibleCards = deck.cards.filter(\n    (card) => cardMatchesQuery(card, editableFields, query)\n      && (filter !== "unreviewed" || !isCardApproved(card))\n  )''',
+              "editor review filter",
+          )
+          source = replace_once(
+              source,
+              '''  const reviewedCount = review.reviewed.filter((id) => deck.cards.some((card) => card.id === id)).length\n  const isSelectedReviewed = Boolean(selected && review.reviewed.includes(selected.id))''',
+              '''  const reviewedCount = deck.cards.filter(isCardApproved).length\n  const isSelectedReviewed = Boolean(selected && isCardApproved(selected))''',
+              "editor reviewed counts",
+          )
+          source = replace_once(source, "    const card = createCard(current.fields)", "    const card = createPendingCard(current.fields)", "manual new note pending")
+          source = replace_once(
+              source,
+              '''    setReview((state) => markReviewed(state, currentId))\n    if (nextId) onSelect(nextId)''',
+              '''    pushDeck(approveCard(deckRef.current, currentId))\n    setReview((state) => markReviewed(state, currentId))\n    if (nextId) onSelect(nextId)''',
+              "approve mutates deck",
+          )
+          source = replace_once(
+              source,
+              '''    setReview((state) => markUnreviewed(state, currentId))\n  }''',
+              '''    pushDeck(markCardPending(deckRef.current, currentId))\n    setReview((state) => markUnreviewed(state, currentId))\n  }''',
+              "undo approval mutates deck",
+          )
+          source = replace_once(source, "      const incoming = generated.map((values) => createCard(fields, values))", "      const incoming = generated.map((values) => createPendingCard(fields, values))", "AI batch pending")
+          source = replace_once(
+              source,
+              '''    const isReviewed = review.reviewed.includes(card.id)''',
+              '''    const isReviewed = isCardApproved(card)''',
+              "list approved badge",
+          )
+          # setCardField / mergeCardAiValues already put the durable card back into pending.
+          # Keep the editor-state mirror for compatibility with old synced clients.
+          path.write_text(source)
+
+          # Every newly-authored note starts pending until the user reviews it.
+          # All export formats operate on an approved-only snapshot.
+          path = Path("components/studio.tsx")
+          source = path.read_text()
+          source = replace_once(source, "  createCard,\n  createDefaultDeck,", "  approvedCards,\n  approvedDeck,\n  createPendingCard,\n  createDefaultDeck,", "studio approval imports")
+          source = replace_once(source, "    const card = createCard(deck.fields)", "    const card = createPendingCard(deck.fields)", "studio new note pending")
+          source = replace_once(
+              source,
+              '''  const onExportJson = () => {\n    const blob = new Blob([serializeDeck(deck)], { type: "application/json" })''',
+              '''  const onExportJson = () => {\n    const exportDeck = approvedDeck(deck)\n    const blob = new Blob([serializeDeck(exportDeck)], { type: "application/json" })''',
+              "JSON approval export",
+          )
+          source = replace_once(
+              source,
+              '''  const onExportCsv = () => {\n    const blob = new Blob([deckToCsv(deck)], { type: "text/csv;charset=utf-8" })''',
+              '''  const onExportCsv = () => {\n    const exportDeck = approvedDeck(deck)\n    const blob = new Blob([deckToCsv(exportDeck)], { type: "text/csv;charset=utf-8" })''',
+              "CSV approval export",
+          )
+          source = replace_once(
+              source,
+              '''    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(deck)) as Deck)''',
+              '''    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(approvedDeck(deck))) as Deck)''',
+              "APKG approval export",
+          )
+          source = replace_once(source, "      cardCount={deck.cards.length}", "      cardCount={approvedCards(deck).length}", "deck export count")
+          path.write_text(source)
+
+          # The Study screen and Voice Tutor never receive pending notes.
+          path = Path("components/study-overview.tsx")
+          source = path.read_text()
+          source = replace_once(source, 'import type { Deck } from "@/lib/deck"', 'import { approvedDeck, type Deck } from "@/lib/deck"', "study approved deck import")
+          source = replace_once(
+              source,
+              '''  const now = new Date()\n  const queue = getStudyQueue(deck, now)\n  const stats = getStudyStats(deck, now)''',
+              '''  const now = new Date()\n  const studyDeck = approvedDeck(deck)\n  const queue = getStudyQueue(studyDeck, now)\n  const stats = getStudyStats(studyDeck, now)''',
+              "study approved snapshot",
+          )
+          source = replace_once(source, "{deck.cards.length} notes", "{studyDeck.cards.length} notes", "study deck count")
+          source = replace_once(source, "{tutorOpen ? <AiTutor deck={deck} onExit={() => setTutorOpen(false)} /> : null}", "{tutorOpen ? <AiTutor deck={studyDeck} onExit={() => setTutorOpen(false)} /> : null}", "voice tutor approved snapshot")
+          path.write_text(source)
+
+          # Tests: durable migration, pending generation, study/export gates, and sync serialization.
+          Path("tests/unit/lib/review-gate.test.ts").write_text('''import { describe, expect, it } from "vitest"\n\nimport {\n  approveCard,\n  approvedDeck,\n  createCard,\n  createDefaultDeck,\n  createPendingCard,\n  isCardApproved,\n  mergeGeneratedCards,\n  parseDeckJson,\n  serializeDeck,\n  setCardField,\n} from "@/lib/deck"\nimport { getStudyQueue } from "@/lib/fsrs"\nimport { parseRemoteDeckPayload } from "@/lib/sync-payload"\n\nconst now = new Date("2026-08-29T03:00:00.000Z")\n\ndescribe("review approval gate", () => {\n  it("treats legacy notes without review metadata as approved", () => {\n    const deck = createDefaultDeck()\n    const raw = JSON.parse(serializeDeck(deck))\n    delete raw.cards[0].reviewStatus\n    const migrated = parseDeckJson(JSON.stringify(raw))\n    expect(isCardApproved(migrated.cards[0]!)).toBe(true)\n  })\n\n  it("keeps new generated notes pending through dedupe/merge", () => {\n    const deck = createDefaultDeck()\n    const incoming = createPendingCard(deck.fields, { Word: "pending-word" })\n    const result = mergeGeneratedCards(deck, [incoming], deck.cards[0]!.id)\n    expect(result.ok).toBe(true)\n    if (!result.ok) return\n    const pending = result.deck.cards.find((card) => card.values.Word === "pending-word")!\n    expect(isCardApproved(pending)).toBe(false)\n  })\n\n  it("returns edited notes to pending and approval restores them", () => {\n    const deck = createDefaultDeck()\n    const id = deck.cards[0]!.id\n    const edited = setCardField(deck, id, "Translation", "updated")\n    expect(edited.ok).toBe(true)\n    if (!edited.ok) return\n    expect(isCardApproved(edited.deck.cards[0]!)).toBe(false)\n    expect(isCardApproved(approveCard(edited.deck, id).cards[0]!)).toBe(true)\n  })\n\n  it("excludes pending notes and their schedules from the approved deck and study queue", () => {\n    const base = createDefaultDeck()\n    const pending = createPendingCard(base.fields, { Word: "draft" })\n    const deck = { ...base, cards: [...base.cards, pending] }\n    expect(getStudyQueue(deck, now).some((item) => item.note.id === pending.id)).toBe(false)\n    const exported = approvedDeck(deck)\n    expect(exported.cards.map((card) => card.id)).not.toContain(pending.id)\n  })\n\n  it("round-trips pending status through the cloud payload", () => {\n    const deck = createDefaultDeck()\n    deck.cards = [createCard(deck.fields, { Word: "approved" }), createPendingCard(deck.fields, { Word: "draft" })]\n    const payload = parseRemoteDeckPayload({ rev: 1, updatedAt: Date.now(), deck })\n    expect(payload.deck?.cards.map(isCardApproved)).toEqual([true, false])\n  })\n})\n''')
+
+          Path("tests/contracts/ui/review-approval-gate.test.ts").write_text('''import { describe, expect, it } from "vitest"\n\nimport { readSource } from "../helpers/source"\n\nconst editor = readSource("components", "card-editor.tsx")\nconst studio = readSource("components", "studio.tsx")\nconst study = readSource("components", "study-overview.tsx")\nconst deck = readSource("lib", "deck.ts")\nconst fsrs = readSource("lib", "fsrs.ts")\n\ndescribe("review approval gate contracts", () => {\n  it("stores review approval in the card instead of relying on editor state", () => {\n    expect(deck).toContain('reviewStatus?: CardReviewStatus')\n    expect(editor).toContain("pushDeck(approveCard(deckRef.current, currentId))")\n    expect(editor).toContain("pushDeck(markCardPending(deckRef.current, currentId))")\n    expect(editor).toContain("deck.cards.filter(isCardApproved).length")\n  })\n\n  it("makes authored and AI-generated notes pending until review", () => {\n    expect(editor).toContain("createPendingCard(current.fields)")\n    expect(editor).toContain("generated.map((values) => createPendingCard(fields, values))")\n    expect(studio).toContain("createPendingCard(deck.fields)")\n    expect(deck).toContain('withCardReviewStatus({ ...item, values: { ...item.values, [field]: value } }, "pending")')\n  })\n\n  it("gates study and voice tutor to approved notes", () => {\n    expect(fsrs).toContain("!isCardApproved(note) || isCardEmpty")\n    expect(study).toContain("const studyDeck = approvedDeck(deck)")\n    expect(study).toContain("<AiTutor deck={studyDeck}")\n  })\n\n  it("gates JSON, CSV, and APKG exports to approved notes", () => {\n    expect(studio).toContain("const exportDeck = approvedDeck(deck)")\n    expect(studio).toContain("deckToCsv(exportDeck)")\n    expect(studio).toContain("serializeDeck(approvedDeck(deck))")\n  })\n})\n''')
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/deck.ts lib/fsrs.ts components/card-editor.tsx components/studio.tsx components/study-overview.tsx tests/unit/lib/review-gate.test.ts tests/contracts/ui/review-approval-gate.test.ts
+          git diff --cached --check
+          git commit -m "refactor: make review an approval gate"
+          git push origin HEAD:${GITHUB_REF_NAME}
