@@ -70,7 +70,7 @@ Current card:
 Reference notes (match their style, but do not copy their entries):
 {{references}}`
 
-export const DEFAULT_BATCH_PROMPT = `Generate {{count}} unique vocabulary cards.
+const PREVIOUS_DEFAULT_BATCH_PROMPT = `Generate {{count}} unique vocabulary cards.
 Topic or word list:
 {{topic}}
 Fields: {{fields}}
@@ -78,6 +78,19 @@ Field notes:
 {{notes}}
 Do not use these existing key values: {{existing}}
 Every card must have a unique value for "{{key}}".
+Reference notes (match their style, but do not copy their entries):
+{{references}}`
+
+export const DEFAULT_BATCH_PROMPT = `Create Anki vocabulary notes from the source material below.
+Source material:
+{{topic}}
+Amount:
+{{count}}
+Fields: {{fields}}
+Field notes:
+{{notes}}
+Do not use these existing key values: {{existing}}
+Every note must have a unique value for "{{key}}".
 Reference notes (match their style, but do not copy their entries):
 {{references}}`
 
@@ -141,7 +154,11 @@ export function parseAiSettings(raw: unknown): AiSettings {
     baseURL: text(raw.baseURL, DEFAULT_AI_SETTINGS.baseURL),
     systemPrompt: migrateDefault(raw.systemPrompt, LEGACY_DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT),
     cardCompletePrompt: migrateDefault(raw.cardCompletePrompt, LEGACY_DEFAULT_CARD_COMPLETE_PROMPT, DEFAULT_CARD_COMPLETE_PROMPT),
-    batchPrompt: migrateDefault(raw.batchPrompt, LEGACY_DEFAULT_BATCH_PROMPT, DEFAULT_BATCH_PROMPT),
+    batchPrompt: migrateDefault(
+      migrateDefault(raw.batchPrompt, LEGACY_DEFAULT_BATCH_PROMPT, PREVIOUS_DEFAULT_BATCH_PROMPT),
+      PREVIOUS_DEFAULT_BATCH_PROMPT,
+      DEFAULT_BATCH_PROMPT
+    ),
     templateEditPrompt: migrateDefault(raw.templateEditPrompt, LEGACY_DEFAULT_TEMPLATE_EDIT_PROMPT, DEFAULT_TEMPLATE_EDIT_PROMPT),
   }
 }
@@ -242,8 +259,8 @@ export const PROMPT_SPECS: PromptSpec[] = [
     label: "Batch generation",
     hint: "Used when generating multiple notes from the Notes screen.",
     vars: [
-      { id: "topic", label: "Topic or word list" },
-      { id: "count", label: "Count" },
+      { id: "topic", label: "Source material" },
+      { id: "count", label: "Amount rule" },
       { id: "key", label: "Key field" },
       { id: "fields", label: "Field list" },
       { id: "notes", label: "Field notes" },

@@ -54,21 +54,34 @@ describe("notes mobile chrome", () => {
     expect(shell).not.toContain("router.back()")
   })
 
-  it("keeps reference notes available for AI Fill and batch generation", () => {
-    expect(editor).toContain("ReferenceNotesBar")
+  it("keeps reference notes inside AI flows instead of the note-list toolbar", () => {
+    expect(editor).not.toContain("ReferenceNotesBar")
     expect(editor).toContain("ReferenceNotesPicker")
     expect(editor).toContain("referenceValuesForComplete")
-    expect(editor).toContain("references")
+    expect(editor).toContain("Optional style examples")
   })
 
   it("hides the batch dialog while the reference-notes sheet is open", () => {
     expect(editor).toContain("batchOpen && !referencePickerOpen")
   })
 
-  it("keeps clear selection in the upper-right of the reference picker", () => {
-    expect(references).toContain('className="mb-2 flex items-center justify-between gap-3 pr-8"')
+  it("keeps reference picker controls stable and supports full-note preview", () => {
     expect(references).toContain('aria-label="Clear reference selection"')
-    expect(references).toContain("Clear selection")
-    expect(references).not.toContain('className="mt-1 h-8 w-fit px-2 text-xs text-muted-foreground"')
+    expect(references).toContain("disabled={referenceIds.length === 0}")
+    expect(references).not.toContain("Sparkles")
+    expect(references).toContain('aria-label={`Preview ${label || "note"}`}')
+    expect(references).toContain("Note preview")
+    expect(references).toContain("Use as reference")
+    expect(references).toContain("Pick notes whose style you want AI to follow.")
+  })
+
+  it("uses compact source-material generation with auto and manual amounts", () => {
+    expect(editor).toContain("Source material")
+    expect(editor).toContain("Topic, word list, article, notes…")
+    expect(editor).toContain('data-testid="batch-amount-auto"')
+    expect(editor).toContain('data-testid="batch-amount-manual"')
+    expect(editor).toContain("Adapts to the source · up to 50 notes")
+    expect(editor).toContain('count: batchAmountMode === "manual" ? Math.floor(count) : undefined')
+    expect(editor).not.toContain("Generate multiple notes from a topic or pasted word list")
   })
 })

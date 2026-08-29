@@ -80,7 +80,7 @@ export function formatTemplateFields(fields: string[], fieldTts: Record<string, 
 
 export type BatchAiInput = {
   topic: string
-  count: number
+  count?: number
   fields: string[]
   existingKeys: string[]
   notes?: Record<string, string>
