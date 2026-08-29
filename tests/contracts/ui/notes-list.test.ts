@@ -38,6 +38,11 @@ describe("notes mobile chrome", () => {
     expect(editor).toContain("whitespace-nowrap")
     expect(editor).toContain('aria-label="AI Fill"')
     expect(editor).toContain(">Delete</Button>")
+    expect(editor).toContain("setDeleteTargetId(selected.id)")
+    expect(editor).toContain('data-testid="note-delete-confirmation"')
+    expect(editor).toContain("<AlertDialogTitle>Delete note?</AlertDialogTitle>")
+    expect(editor).toContain("<AlertDialogCancel>Cancel</AlertDialogCancel>")
+    expect(editor).not.toContain("onClick={() => removeCard(selected.id)}")
   })
 
   it("uses a deterministic note return path instead of relying on browser history", () => {

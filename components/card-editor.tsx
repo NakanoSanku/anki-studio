@@ -39,6 +39,7 @@ import { TtsPlayButton } from "@/components/tts-play-button"
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -108,6 +109,7 @@ export function CardEditor({
   const deckRef = useRef(deck)
   const pendingDecks = useRef(new Set<Deck>())
   const [alert, setAlert] = useState("")
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [completeOpen, setCompleteOpen] = useState(false)
   const [referencePickerOpen, setReferencePickerOpen] = useState(false)
@@ -458,6 +460,30 @@ export function CardEditor({
 
   const preview = <CardPreview deck={deck} values={selected?.values ?? {}} side={previewSide} onSideChange={onPreviewSideChange} fillViewport />
 
+  const deleteDialog = (
+    <AlertDialog open={Boolean(deleteTargetId)} onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}>
+      <AlertDialogContent data-testid="note-delete-confirmation">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete note?</AlertDialogTitle>
+          <AlertDialogDescription>This note and its study history will be permanently removed from this deck.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={() => {
+              const id = deleteTargetId
+              setDeleteTargetId(null)
+              if (id) removeCard(id)
+            }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   const aiDialog = (
     <AlertDialog open={Boolean(alert)} onOpenChange={(open) => { if (!open) setAlert("") }}>
       <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Unable to complete action</AlertDialogTitle><AlertDialogDescription>{alert}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogAction>OK</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
@@ -574,7 +600,7 @@ export function CardEditor({
                   <div data-testid="note-action-rail" className="flex shrink-0 items-center gap-1">
                     <Button type="button" size="xs" variant={isSelectedReviewed ? "outline" : "default"} className="h-8 whitespace-nowrap px-2 text-[11px]" data-testid={isSelectedReviewed ? "undo-card-review" : "approve-card-review"} aria-pressed={isSelectedReviewed} aria-keyshortcuts={isSelectedReviewed ? undefined : "Alt+ArrowDown"} title={isSelectedReviewed ? "Mark this note as needing review" : "Mark reviewed and move to the next note (Alt+↓)"} onClick={isSelectedReviewed ? undoCurrentReview : approveCurrent}>{isSelectedReviewed ? "Undo" : "Review"}</Button>
                     <Button type="button" size="xs" variant="outline" className="h-8 whitespace-nowrap px-2 text-[11px]" aria-label="AI Fill" disabled={!canCompleteSelected || isBusy("card:complete")} title={!selected ? undefined : !hasFilledField ? "Fill at least one field before using AI Fill" : !hasEmptyField ? "Every field is already filled" : "Fill only the empty fields from the existing note content"} onClick={() => setCompleteOpen(true)}>AI</Button>
-                    <Button type="button" size="xs" variant="ghost" className="h-8 whitespace-nowrap px-2 text-[11px] text-destructive" onClick={() => removeCard(selected.id)}>Delete</Button>
+                    <Button type="button" size="xs" variant="ghost" className="h-8 whitespace-nowrap px-2 text-[11px] text-destructive" onClick={() => setDeleteTargetId(selected.id)}>Delete</Button>
                   </div>
                 </div>
               </div>
@@ -595,6 +621,7 @@ export function CardEditor({
 
         <section className={cn(listOnly ? "hidden lg:block" : detail ? (editorPane === "preview" ? "block h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pb-16" : "hidden lg:block") : mobilePane === "preview" ? "block" : "hidden lg:block")}>{preview}</section>
       </div>
+      {deleteDialog}
       {aiDialog}
       {batchDialog}
       {completeDialog}
