@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { readSource } from "./ui/helpers/source"
+import { readSource } from "./helpers/source"
 
 const sheets = readSource("lib", "google-sheets-sync.ts")
 const syncServer = readSource("lib", "sync-server.ts")
