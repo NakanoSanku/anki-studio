@@ -1,9 +1,13 @@
 import { insertItemsAfter } from "./card-nav"
 
+export type CardReviewStatus = "approved" | "pending"
+
 export type Card = {
   id: string
   guid: string
   values: Record<string, string>
+  /** Missing means approved for backward compatibility with existing decks. */
+  reviewStatus?: CardReviewStatus
   pushedHash?: string
 }
 
@@ -427,11 +431,66 @@ export function emptyValues(fields: string[]): Record<string, string> {
   return Object.fromEntries(fields.map((field) => [field, ""]))
 }
 
+export function reviewStatusOf(card: Pick<Card, "reviewStatus">): CardReviewStatus {
+  return card.reviewStatus === "pending" ? "pending" : "approved"
+}
+
+export function isCardApproved(card: Pick<Card, "reviewStatus">): boolean {
+  return reviewStatusOf(card) === "approved"
+}
+
+function withCardReviewStatus(card: Card, status: CardReviewStatus): Card {
+  if (status === "pending") return { ...card, reviewStatus: "pending" }
+  const approved = { ...card }
+  delete approved.reviewStatus
+  return approved
+}
+
 export function createCard(fields: string[], values: Record<string, string> = {}): Card {
   return {
     id: createCardId(),
     guid: createNoteGuid(),
     values: { ...emptyValues(fields), ...values },
+  }
+}
+
+export function createPendingCard(fields: string[], values: Record<string, string> = {}): Card {
+  return withCardReviewStatus(createCard(fields, values), "pending")
+}
+
+export function setCardReviewStatus(deck: Deck, cardId: string, status: CardReviewStatus): Deck {
+  if (!deck.cards.some((card) => card.id === cardId)) return deck
+  return {
+    ...deck,
+    cards: deck.cards.map((card) => card.id === cardId ? withCardReviewStatus(card, status) : card),
+  }
+}
+
+export function approveCard(deck: Deck, cardId: string): Deck {
+  return setCardReviewStatus(deck, cardId, "approved")
+}
+
+export function markCardPending(deck: Deck, cardId: string): Deck {
+  return setCardReviewStatus(deck, cardId, "pending")
+}
+
+export function approvedCards(deck: Pick<Deck, "cards">): Card[] {
+  return deck.cards.filter(isCardApproved)
+}
+
+export function approvedDeck(deck: Deck): Deck {
+  const cards = approvedCards(deck)
+  const allowed = new Set(cards.map((card) => card.id))
+  const fsrs = fsrsOf(deck)
+  return {
+    ...deck,
+    cards,
+    fsrs: {
+      ...fsrs,
+      cards: Object.fromEntries(
+        Object.entries(fsrs.cards).filter(([, scheduled]) => allowed.has(scheduled.noteId))
+      ),
+    },
   }
 }
 
@@ -679,6 +738,7 @@ export function parseDeckJson(raw: string): Deck {
     return {
       id: typeof item.id === "string" && item.id ? item.id : createCardId(),
       guid: typeof item.guid === "string" && item.guid.trim() ? item.guid.trim() : createNoteGuid(),
+      ...(item.reviewStatus === "pending" ? { reviewStatus: "pending" as const } : {}),
       pushedHash: typeof item.pushedHash === "string" && item.pushedHash ? item.pushedHash : undefined,
       values,
     }
@@ -1053,7 +1113,9 @@ export function collectUniqueCards(
     const key = normalizeCardKey(values[currentFields[0] ?? ""] ?? "")
     if (!key || seen.has(key)) continue
     seen.add(key)
-    added.push(createCard(currentFields, values))
+    added.push(reviewStatusOf(card) === "pending"
+      ? createPendingCard(currentFields, values)
+      : createCard(currentFields, values))
   }
   return added
 }
@@ -1094,7 +1156,9 @@ export function setCardField(
     deck: {
       ...deck,
       cards: deck.cards.map((item) =>
-        item.id === cardId ? { ...item, values: { ...item.values, [field]: value } } : item
+        item.id === cardId
+          ? withCardReviewStatus({ ...item, values: { ...item.values, [field]: value } }, "pending")
+          : item
       ),
     },
   }
@@ -1128,7 +1192,9 @@ export function mergeCardAiValues(
     ok: true,
     deck: {
       ...deck,
-      cards: deck.cards.map((item) => (item.id === cardId ? { ...item, values: nextValues } : item)),
+      cards: deck.cards.map((item) => (
+        item.id === cardId ? withCardReviewStatus({ ...item, values: nextValues }, "pending") : item
+      )),
     },
   }
 }

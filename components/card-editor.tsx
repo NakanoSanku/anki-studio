@@ -10,8 +10,11 @@ import {
   cardLabel,
   cardMatchesQuery,
   cardSubtitle,
-  createCard,
+  approveCard,
+  createPendingCard,
+  isCardApproved,
   isCardEmpty,
+  markCardPending,
   mergeCardAiValues,
   mergeGeneratedCards,
   notesOf,
@@ -26,7 +29,6 @@ import {
 import {
   markReviewed,
   markUnreviewed,
-  matchesReviewFilter,
   pruneEditorState,
   readEditorState,
   writeEditorState,
@@ -129,12 +131,13 @@ export function CardEditor({
   const emptyFields = editableFields.filter((field) => !selected?.values[field]?.trim())
   const fieldTts = ttsOf(deck)
   const visibleCards = deck.cards.filter(
-    (card) => cardMatchesQuery(card, editableFields, query) && matchesReviewFilter(card, review, filter)
+    (card) => cardMatchesQuery(card, editableFields, query)
+      && (filter !== "unreviewed" || !isCardApproved(card))
   )
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
-  const reviewedCount = review.reviewed.filter((id) => deck.cards.some((card) => card.id === id)).length
-  const isSelectedReviewed = Boolean(selected && review.reviewed.includes(selected.id))
+  const reviewedCount = deck.cards.filter(isCardApproved).length
+  const isSelectedReviewed = Boolean(selected && isCardApproved(selected))
   const isBusy = (task: string) => busyKeys.includes(task)
   const listOnly = layout === "list"
   const detail = layout === "detail"
@@ -241,7 +244,7 @@ export function CardEditor({
       setQuery("")
       return
     }
-    const card = createCard(current.fields)
+    const card = createPendingCard(current.fields)
     pushDeck({ ...current, cards: insertItemsAfter(current.cards, currentSelected?.id, [card]) })
     onSelect(card.id)
     setQuery("")
@@ -261,6 +264,7 @@ export function CardEditor({
     const currentIndex = list.findIndex((card) => card.id === currentId)
     let nextId = currentIndex >= 0 ? list[currentIndex + 1]?.id ?? "" : list[0]?.id ?? ""
     if (!nextId && filter === "unreviewed") nextId = list.find((card) => card.id !== currentId)?.id ?? ""
+    pushDeck(approveCard(deckRef.current, currentId))
     setReview((state) => markReviewed(state, currentId))
     if (nextId) onSelect(nextId)
   }
@@ -268,6 +272,7 @@ export function CardEditor({
   const undoCurrentReview = () => {
     const currentId = activeRef.current
     if (!currentId) return
+    pushDeck(markCardPending(deckRef.current, currentId))
     setReview((state) => markUnreviewed(state, currentId))
   }
 
@@ -369,7 +374,7 @@ export function CardEditor({
     const anchorId = selected?.id ?? ""
     void runAi("batch", async () => {
       const generated = await requestBatchAi({ topic, count: batchAmountMode === "manual" ? Math.floor(count) : undefined, fields, existingKeys, notes, references })
-      const incoming = generated.map((values) => createCard(fields, values))
+      const incoming = generated.map((values) => createPendingCard(fields, values))
       const beforeLen = deckRef.current.cards.length
       const result = commitChange((current) => mergeGeneratedCards(current, incoming, anchorId))
       if (!result.ok) throw new Error(result.error)
@@ -553,7 +558,7 @@ export function CardEditor({
   const renderListItem = (card: Card, index: number) => {
     const absolute = deck.cards.findIndex((item) => item.id === card.id) + 1
     const active = card.id === selected?.id
-    const isReviewed = review.reviewed.includes(card.id)
+    const isReviewed = isCardApproved(card)
     return (
       <button
         id={`card-item-${card.id}`}

@@ -7,7 +7,7 @@ import { AiTutor } from "@/components/ai-tutor"
 import { StudyStage } from "@/components/study-stage"
 import { Button } from "@/components/ui/button"
 import { PATHS } from "@/lib/app-paths"
-import type { Deck } from "@/lib/deck"
+import { approvedDeck, type Deck } from "@/lib/deck"
 import { formatDueDate, getStudyQueue, getStudyStats } from "@/lib/fsrs"
 
 type StudyOverviewProps = {
@@ -19,8 +19,9 @@ type StudyOverviewProps = {
 export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) {
   const [tutorOpen, setTutorOpen] = useState(false)
   const now = new Date()
-  const queue = getStudyQueue(deck, now)
-  const stats = getStudyStats(deck, now)
+  const studyDeck = approvedDeck(deck)
+  const queue = getStudyQueue(studyDeck, now)
+  const stats = getStudyStats(studyDeck, now)
   const newCount = queue.filter((item) => item.isNew).length
   const reviewCount = queue.length - newCount
   const ready = queue.length > 0
@@ -155,7 +156,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current deck</p>
                 <p className="mt-1.5 truncate text-[16px] font-semibold tracking-[-0.025em]">{deck.name.trim() || "Untitled deck"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{deck.cards.length} notes</p>
+                <p className="mt-1 text-xs text-muted-foreground">{studyDeck.cards.length} notes</p>
               </div>
               {onAddNote ? (
                 <Button type="button" variant="outline" className="h-11 shrink-0 px-4" onClick={onAddNote}>
@@ -167,7 +168,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
         </section>
       </StudyStage>
 
-      {tutorOpen ? <AiTutor deck={deck} onExit={() => setTutorOpen(false)} /> : null}
+      {tutorOpen ? <AiTutor deck={studyDeck} onExit={() => setTutorOpen(false)} /> : null}
     </>
   )
 }

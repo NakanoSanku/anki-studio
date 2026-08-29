@@ -29,7 +29,9 @@ import {
   type ImportPreview,
 } from "@/lib/import-preview"
 import {
-  createCard,
+  approvedCards,
+  approvedDeck,
+  createPendingCard,
   createDefaultDeck,
   safeFilename,
   serializeDeck,
@@ -409,13 +411,15 @@ export function Studio() {
   }
 
   const onExportJson = () => {
-    const blob = new Blob([serializeDeck(deck)], { type: "application/json" })
+    const exportDeck = approvedDeck(deck)
+    const blob = new Blob([serializeDeck(exportDeck)], { type: "application/json" })
     downloadBlob(blob, safeFilename(deck.name, "json"))
     showStatus("已导出 JSON")
   }
 
   const onExportCsv = () => {
-    const blob = new Blob([deckToCsv(deck)], { type: "text/csv;charset=utf-8" })
+    const exportDeck = approvedDeck(deck)
+    const blob = new Blob([deckToCsv(exportDeck)], { type: "text/csv;charset=utf-8" })
     downloadBlob(blob, safeFilename(deck.name, "csv"))
     showStatus("已导出 CSV")
   }
@@ -437,7 +441,7 @@ export function Studio() {
       return
     }
 
-    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(deck)) as Deck)
+    const snapshot = withAnkiIdentity(JSON.parse(serializeDeck(approvedDeck(deck))) as Deck)
     persistIdentity(snapshot)
     const controller = new AbortController()
     exportAbort.current = controller
@@ -504,7 +508,7 @@ export function Studio() {
   )
 
   const addNote = () => {
-    const card = createCard(deck.fields)
+    const card = createPendingCard(deck.fields)
     setDeck((current) => ({ ...current, cards: [...current.cards, card] }))
     setSelectedId(card.id)
     setActiveNoteOverride(card.id)
@@ -579,7 +583,7 @@ export function Studio() {
   const deckTools = settingsSection === "deck" ? (
     <DeckToolsPanel
       deckName={deck.name.trim() || "未命名卡包"}
-      cardCount={deck.cards.length}
+      cardCount={approvedCards(deck).length}
       deckCount={libraryView.decks.length}
       busy={busy}
       exporting={exporting}
