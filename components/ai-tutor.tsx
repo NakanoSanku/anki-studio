@@ -296,12 +296,6 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
     tutorDraftRef.current = ""
     setError("")
     setPhase("connecting")
-    setupTimerRef.current = window.setTimeout(() => {
-      if (stoppedRef.current) return
-      stopSession(false)
-      setError("Gemini Live did not finish connecting. Check API access and try again.")
-      setPhase("error")
-    }, CONNECT_TIMEOUT_MS)
 
     try {
       const AudioContextCtor = window.AudioContext || (window as WindowWithWebkitAudio).webkitAudioContext
@@ -333,6 +327,12 @@ export function AiTutor({ deck, onExit }: { deck: Deck; onExit: () => void }) {
       const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)
       socket.binaryType = "arraybuffer"
       websocketRef.current = socket
+      setupTimerRef.current = window.setTimeout(() => {
+        if (stoppedRef.current || websocketRef.current !== socket) return
+        stopSession(false)
+        setError("Gemini Live did not finish connecting. Check API access and try again.")
+        setPhase("error")
+      }, CONNECT_TIMEOUT_MS)
 
       socket.onopen = () => {
         socket.send(JSON.stringify({
