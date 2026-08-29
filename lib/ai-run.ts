@@ -97,8 +97,8 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
   }
 
   const amountRule = count === null
-    ? "Auto — extract every distinct, useful note supported by the source material, up to 50. Do not pad the result or omit clear standalone items just to satisfy a quota."
-    : `Exactly ${Math.floor(count)} notes.`
+    ? "as many distinct, useful notes as the source material supports, up to 50; do not pad the result or omit clear standalone items just to satisfy a quota"
+    : String(Math.floor(count))
   const settings = parseAiSettings(body.settings)
   const notes = body.notes ?? {}
   const prompt = applyPromptWithReferences(
