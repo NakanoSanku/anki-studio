@@ -816,6 +816,6 @@ describe("Sheets quota errors", () => {
     })).toBe(true)
     expect(isSheetsQuotaError(429, { error: { message: "rate limit exceeded" } })).toBe(true)
     expect(isSheetsQuotaError(403, { error: { message: "The caller does not have permission" } })).toBe(false)
-    expect(SHEETS_QUOTA_USER_MESSAGE).toContain("过于频繁")
+    expect(SHEETS_QUOTA_USER_MESSAGE).toContain("too frequently")
   })
 })

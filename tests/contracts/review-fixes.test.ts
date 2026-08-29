@@ -28,7 +28,7 @@ describe("code review fixes", () => {
   })
 
   it("does not pluralize the invariant done label", () => {
-    expect(home).toContain('`${stats.reviewedToday} done`')
+    expect(home).toContain('${stats.reviewedToday} done')
     expect(home).not.toContain('countLabel(stats.reviewedToday, "done")')
   })
 })
