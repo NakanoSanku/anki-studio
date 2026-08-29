@@ -2,9 +2,12 @@ name: UI checks
 
 on:
   push:
-    branches: [main, fix/review-gate-sync-readme]
+    branches:
+      - main
+      - fix/review-gate-sync-readme
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -16,11 +19,11 @@ concurrency:
 
 jobs:
   apply-production-readiness:
-    if: github.actor != 'github-actions[bot]' && (github.ref_name == 'fix/review-gate-sync-readme' || github.head_ref == 'fix/review-gate-sync-readme')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/review-gate-sync-readme' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout PR branch
+      - name: Checkout branch
         uses: actions/checkout@v4
         with:
           ref: fix/review-gate-sync-readme
@@ -31,56 +34,22 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Apply cycle 1 patch
+      - name: Extract and apply hardening patch
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
-
-          source = Path('.github/workflows/temporary-production-cycle1.yml').read_text()
+          source = Path('.github/workflows/temporary-production-cycle1b.yml').read_text()
           marker = "          python - <<'PY'\n"
           start = source.index(marker) + len(marker)
-          lines = source[start:].splitlines()
           body = []
-          for line in lines:
+          for line in source[start:].splitlines():
               if line.strip() == 'PY':
                   break
               body.append(line[10:] if line.startswith('          ') else line)
-          script = '\n'.join(body) + '\n'
-
-          fragile = re.compile(
-              r"\nold_loop = '''.*?lib = lib\.replace\(old_loop, new_loop\)\n",
-              re.S,
-          )
-          robust = r'''
-lib = lib.replace(
-    '      const order: string[] = []\n      for (const entry of parsed.decks) {',
-    '      const order: string[] = []\n      const migratedKeys: string[] = []\n      for (const entry of parsed.decks) {'
-)
-lib = lib.replace(
-    '        const raw = storage.getItem(deckStorageKey(entry.id))\n        if (!raw) continue',
-    '        const key = deckStorageKey(entry.id)\n        const raw = storage.getItem(key)\n        if (!raw) continue'
-)
-lib = lib.replace(
-    '          storage.removeItem(deckStorageKey(entry.id))',
-    '          migratedKeys.push(key)'
-)
-lib = lib.replace(
-    '          // skip broken deck',
-    '          // Skip an unreadable legacy deck, but never delete it before migration commits.'
-)
-lib = lib.replace(
-    '        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })\n        storage.removeItem(LIBRARY_KEY)',
-    '        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })\n        for (const key of migratedKeys) storage.removeItem(key)\n        storage.removeItem(LIBRARY_KEY)'
-)
-'''
-          script, count = fragile.subn('\n' + robust, script, count=1)
-          if count != 1:
-              raise SystemExit(f'could not replace fragile legacy migration patch: {count}')
-          Path('/tmp/production-cycle1.py').write_text(script)
+          Path('/tmp/production-cycle1b.py').write_text('\n'.join(body) + '\n')
           PY
-          python /tmp/production-cycle1.py
+          python /tmp/production-cycle1b.py
 
       - name: Install dependencies
         run: npm ci
@@ -97,7 +66,7 @@ lib = lib.replace(
       - name: Build patched tree
         run: npm run build
 
-      - name: Commit patched tree
+      - name: Commit validated fixes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
