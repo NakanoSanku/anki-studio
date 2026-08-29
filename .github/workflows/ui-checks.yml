@@ -24,42 +24,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: fix/review-gate-sync-readme
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - name: Extract and apply hardening patch
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          source = Path('.github/workflows/temporary-production-cycle1b.yml').read_text()
-          marker = "          python - <<'PY'\n"
-          start = source.index(marker) + len(marker)
-          body = []
-          for line in source[start:].splitlines():
-              if line.strip() == 'PY':
-                  break
-              body.append(line[10:] if line.startswith('          ') else line)
-          Path('/tmp/production-cycle1b.py').write_text('\n'.join(body) + '\n')
-          PY
-          python /tmp/production-cycle1b.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('tests/unit/lib/sync-client.test.ts')
-          text = path.read_text()
-          text = text.replace(
-              'import { createMemoryStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"',
-              'import { createMemoryStore, getStudioStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"'
-          )
-          path.write_text(text)
-          PY
+      - name: Apply cycle 2 hardening
+        run: python .github/production-cycle2.py
 
       - name: Install dependencies
         run: npm ci
@@ -81,9 +57,23 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/studio-store.ts lib/studio-store-idb.ts lib/library.ts lib/sync-client.ts components/studio.tsx tests/unit/lib/library.test.ts tests/unit/lib/sync-client.test.ts tests/contracts/storage-durability.test.ts
+          git add \
+            components/studio.tsx \
+            lib/tts.ts \
+            lib/ai-upstream.ts \
+            lib/ai-compat.ts \
+            lib/request-guard.ts \
+            app/api/tts/route.ts \
+            app/api/gemini-live/token/route.ts \
+            lib/apkg.ts \
+            next.config.ts \
+            tests/unit/lib/tts.test.ts \
+            tests/unit/lib/ai-upstream.test.ts \
+            tests/unit/lib/request-guard.test.ts \
+            tests/unit/lib/apkg-import.test.ts \
+            tests/contracts/production-safety.test.ts
           git diff --cached --check
-          git commit -m "fix: harden local persistence and sync concurrency"
+          git commit -m "fix: close production safety gaps"
           git push origin HEAD:fix/review-gate-sync-readme
 
   validate:
@@ -91,10 +81,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
