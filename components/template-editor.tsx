@@ -534,7 +534,7 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
               <p className="mt-1 text-lg font-semibold tracking-[-0.03em]">Code editor</p>
               <p className="mt-1 truncate text-xs text-muted-foreground">{template.name}</p>
             </div>
-            <Button type="button" variant="outline" onClick={() => setAiOpen(true)}><Sparkles data-icon="inline-start" />AI edit</Button>
+            <Button type="button" variant="ghost" className="h-9 rounded-full border border-energy/30 bg-energy/15 px-3.5 text-xs font-semibold shadow-none hover:bg-energy/25" onClick={() => setAiOpen(true)}><Sparkles className="size-3.5" />Ask AI</Button>
           </div>
           <div className="flex items-center gap-2">
             <Tabs value={pane} className="min-w-0 flex-1 xl:flex-none" onValueChange={(next) => switchPane(next as Pane)}>

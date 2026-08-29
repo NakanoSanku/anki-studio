@@ -2,19 +2,13 @@
 
 import { useRef, useState } from "react"
 import {
-  AlertCircle,
   Check,
   ChevronRight,
   Copy,
   Eye,
   EyeOff,
-  LoaderCircle,
-  RefreshCw,
   RotateCcw,
   Save,
-  Sparkles,
-  WandSparkles,
-  Zap,
 } from "lucide-react"
 
 import {
@@ -173,110 +167,45 @@ export function AiSettingsPanel() {
   const customPromptCount = PROMPT_SPECS.filter((spec) => settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]).length
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-5 pb-12">
-      <section className="px-1 pb-1 pt-1">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            <span className="size-2 rounded-full bg-energy" />
-            AI workspace
-          </div>
-          <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs text-muted-foreground" onClick={resetAllDefaults}>
-            <RotateCcw className="size-3.5" />
-            Reset
-          </Button>
+    <div className="mx-auto w-full max-w-xl space-y-4 pb-10">
+      <section className="rounded-[20px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09]">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold tracking-[-0.03em]">Provider</h2>
+          <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground" onClick={resetAllDefaults}>Reset</Button>
         </div>
-        <h2 className="mt-3 text-[28px] font-semibold leading-[1.03] tracking-[-0.045em] sm:text-[32px]">A quiet AI assistant</h2>
-        <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-          Connect an OpenAI-compatible endpoint for field filling, batch generation, and template editing.
-        </p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-medium">
-          <span className="rounded-full border border-black/[0.07] bg-card px-3 py-1.5 font-mono dark:border-white/[0.09]">
-            {settings.model.trim() || "No model selected"}
-          </span>
-          <span className="rounded-full bg-muted px-3 py-1.5 text-muted-foreground">{customPromptCount} custom prompts</span>
-        </div>
-      </section>
 
-      <section className="rounded-[22px] border border-black/[0.065] bg-card p-4 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09] sm:p-5">
-        <div className="mb-4 flex items-end justify-between gap-3">
+        <div className="space-y-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Provider</p>
-            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Connection</h3>
-          </div>
-          <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={busy} onClick={() => void testConnection()}>
-            <Zap className={cn("size-3.5", busy && "animate-pulse")} />
-            {busy ? "Testing" : "Test"}
-          </Button>
-        </div>
-
-        <div className="overflow-hidden rounded-[18px] border border-black/[0.06] dark:border-white/[0.08]">
-          <div className="p-3.5">
             <Label htmlFor="baseURL-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Base URL</Label>
-            <Input
-              id="baseURL-input"
-              value={settings.baseURL}
-              placeholder="https://api.openai.com/v1"
-              className="mt-2 h-11 bg-background font-mono text-xs"
-              onChange={(event) => patch({ baseURL: event.target.value })}
-            />
+            <Input id="baseURL-input" value={settings.baseURL} placeholder="https://api.openai.com/v1" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ baseURL: event.target.value })} />
           </div>
 
-          <div className="border-t border-black/[0.055] p-3.5 dark:border-white/[0.07]">
+          <div>
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="model-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Model</Label>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void fetchModels()}
-                className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-35"
-              >
-                <RefreshCw className={cn("size-3", busy && "animate-spin")} />
-                {models.length > 0 ? `${models.length} models` : "Fetch models"}
-              </button>
+              <button type="button" disabled={busy} onClick={() => void fetchModels()} className="text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-35">{models.length > 0 ? `${models.length} models` : "Fetch models"}</button>
             </div>
             {models.length > 0 ? (
               <Select value={settings.model} onValueChange={(model) => patch({ model })}>
-                <SelectTrigger id="model-input" className="mt-2 h-11 w-full bg-background font-mono text-xs">
-                  <SelectValue placeholder="Select a model" />
-                </SelectTrigger>
+                <SelectTrigger id="model-input" className="mt-1.5 h-10 w-full bg-background font-mono text-xs"><SelectValue placeholder="Select a model" /></SelectTrigger>
                 <SelectContent position="popper" align="start" className="max-h-64">
                   {!models.includes(settings.model) && settings.model ? <SelectItem value={settings.model}>{settings.model}</SelectItem> : null}
                   {models.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}
                 </SelectContent>
               </Select>
             ) : (
-              <Input
-                id="model-input"
-                value={settings.model}
-                placeholder="gpt-4o-mini"
-                className="mt-2 h-11 bg-background font-mono text-xs"
-                onChange={(event) => patch({ model: event.target.value })}
-              />
+              <Input id="model-input" value={settings.model} placeholder="gpt-4o-mini" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
             )}
           </div>
 
-          <div className="border-t border-black/[0.055] p-3.5 dark:border-white/[0.07]">
+          <div>
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="apiKey-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">API Key</Label>
-              <button type="button" onClick={() => void pasteApiKey()} className="text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-                Paste from clipboard
-              </button>
+              <button type="button" onClick={() => void pasteApiKey()} className="text-[10px] font-medium text-muted-foreground hover:text-foreground">Paste</button>
             </div>
-            <div className="relative mt-2">
-              <Input
-                id="apiKey-input"
-                type={showApiKey ? "text" : "password"}
-                value={settings.apiKey}
-                placeholder="sk-… · leave blank for keyless endpoints"
-                className="h-11 bg-background pr-11 font-mono text-xs"
-                onChange={(event) => patch({ apiKey: event.target.value })}
-              />
-              <button
-                type="button"
-                aria-label={showApiKey ? "Hide API key" : "Show API key"}
-                onClick={() => setShowApiKey((visible) => !visible)}
-                className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
+            <div className="relative mt-1.5">
+              <Input id="apiKey-input" type={showApiKey ? "text" : "password"} value={settings.apiKey} placeholder="Optional for keyless endpoints" className="h-10 bg-background pr-10 font-mono text-xs" onChange={(event) => patch({ apiKey: event.target.value })} />
+              <button type="button" aria-label={showApiKey ? "Hide API key" : "Show API key"} onClick={() => setShowApiKey((visible) => !visible)} className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground hover:bg-muted hover:text-foreground">
                 {showApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
             </div>
@@ -284,63 +213,30 @@ export function AiSettingsPanel() {
         </div>
 
         {status.message ? (
-          <div
-            className={cn(
-              "mt-3 flex items-start gap-2 rounded-[14px] border px-3.5 py-3 text-xs font-medium",
-              status.type === "success"
-                ? "border-energy/30 bg-energy/12 text-foreground"
-                : status.type === "error"
-                  ? "border-destructive/20 bg-destructive/8 text-destructive"
-                  : "border-black/[0.06] bg-muted/55 text-muted-foreground dark:border-white/[0.08]"
-            )}
-            role="status"
-          >
-            {status.type === "success" ? <Check className="mt-0.5 size-4 shrink-0" /> : status.type === "error" ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <LoaderCircle className={cn("mt-0.5 size-4 shrink-0", status.type === "info" && busy && "animate-spin")} />}
-            <span className="leading-5">{status.message}</span>
-          </div>
+          <p role="status" className={cn("mt-3 rounded-[11px] px-3 py-2 text-xs font-medium", status.type === "error" ? "bg-destructive/8 text-destructive" : status.type === "success" ? "bg-energy/14 text-foreground" : "bg-muted/60 text-muted-foreground")}>{status.message}</p>
         ) : null}
 
-        <Button type="button" className="mt-3 h-[50px] w-full rounded-[15px] text-sm" disabled={busy} onClick={save}>
-          <Save className="size-4" />
-          Save AI settings
-        </Button>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void testConnection()}>{busy ? "Testing…" : "Test"}</Button>
+          <Button type="button" className="h-10" disabled={busy} onClick={save}>Save</Button>
+        </div>
       </section>
 
-      <section>
-        <div className="mb-3 flex items-end justify-between px-1">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Prompts</p>
-            <h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Prompt library</h3>
-          </div>
-          <span className="text-[10px] font-medium text-muted-foreground">Tap to edit</span>
+      <section className="overflow-hidden rounded-[20px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h2 className="text-base font-semibold tracking-[-0.025em]">Prompts</h2>
+          <span className="text-[10px] font-medium text-muted-foreground">{customPromptCount > 0 ? `${customPromptCount} custom` : "Default"}</span>
         </div>
-
-        <div className="overflow-hidden rounded-[22px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
-          {PROMPT_SPECS.map((spec, index) => {
-            const modified = settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]
-            return (
-              <button
-                key={spec.key}
-                type="button"
-                onClick={() => openPromptEditor(spec.key)}
-                className={cn(
-                  "group flex min-h-[72px] w-full items-center gap-3.5 px-4 py-3 text-left transition-colors hover:bg-muted/55 active:bg-muted/75",
-                  index > 0 && "border-t border-black/[0.055] dark:border-white/[0.07]"
-                )}
-              >
-                <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-[13px]", modified ? "bg-energy text-black" : "bg-muted text-foreground")}>
-                  {index % 2 === 0 ? <WandSparkles className="size-4" /> : <Sparkles className="size-4" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold tracking-[-0.02em]">{spec.label}</span>
-                  <span className="mt-1 block truncate text-[11px] text-muted-foreground">{modified ? "Customized" : "Using default prompt"}</span>
-                </span>
-                {modified ? <span className="size-2 shrink-0 rounded-full bg-energy" aria-label="Customized" /> : null}
-                <ChevronRight className="size-4 shrink-0 text-foreground/22 transition-transform duration-150 group-active:translate-x-0.5" />
-              </button>
-            )
-          })}
-        </div>
+        {PROMPT_SPECS.map((spec, index) => {
+          const modified = settings[spec.key] !== DEFAULT_AI_SETTINGS[spec.key]
+          return (
+            <button key={spec.key} type="button" onClick={() => openPromptEditor(spec.key)} className={cn("group flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/55 active:bg-muted/75", index >= 0 && "border-t border-black/[0.055] dark:border-white/[0.07]")}>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{spec.label}</span>
+              {modified ? <span className="text-[10px] font-medium text-muted-foreground">Custom</span> : null}
+              <ChevronRight className="size-4 shrink-0 text-foreground/20" />
+            </button>
+          )
+        })}
       </section>
 
       <Sheet open={Boolean(editingPromptKey)} onOpenChange={(open) => !open && setEditingPromptKey(null)}>
