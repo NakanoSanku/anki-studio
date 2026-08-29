@@ -1,0 +1,99 @@
+name: Temporary fix Gemini Live connecting
+
+on:
+  push:
+    branches:
+      - fix/gemini-live-connecting
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Gemini Live client
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          path = Path("components/ai-tutor.tsx")
+          source = path.read_text()
+
+          source = replace_once(
+              source,
+              'const LIVE_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"\nconst INPUT_RATE = 16_000\nconst OUTPUT_RATE = 24_000',
+              'const LIVE_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained"\nconst CONNECT_TIMEOUT_MS = 20_000\nconst INPUT_RATE = 16_000\nconst OUTPUT_RATE = 24_000',
+              "connection timeout constant",
+          )
+
+          source = replace_once(
+              source,
+              '''function decodePcm16(base64: string): Float32Array {\n  const binary = atob(base64)\n  const bytes = new Uint8Array(binary.length)\n  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)\n  const view = new DataView(bytes.buffer)\n  const output = new Float32Array(Math.floor(bytes.length / 2))\n  for (let index = 0; index < output.length; index += 1) {\n    output[index] = view.getInt16(index * 2, true) / 0x8000\n  }\n  return output\n}\n\nasync function requestLiveToken''',
+              '''function decodePcm16(base64: string): Float32Array {\n  const binary = atob(base64)\n  const bytes = new Uint8Array(binary.length)\n  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)\n  const view = new DataView(bytes.buffer)\n  const output = new Float32Array(Math.floor(bytes.length / 2))\n  for (let index = 0; index < output.length; index += 1) {\n    output[index] = view.getInt16(index * 2, true) / 0x8000\n  }\n  return output\n}\n\nasync function readLiveMessageData(data: unknown): Promise<string | null> {\n  if (typeof data === "string") return data\n  if (data instanceof Blob) return data.text()\n  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)\n  return null\n}\n\nasync function requestLiveToken''',
+              "binary websocket decoder",
+          )
+
+          source = replace_once(
+              source,
+              '  const websocketRef = useRef<WebSocket | null>(null)\n  const audioContextRef = useRef<AudioContext | null>(null)',
+              '  const websocketRef = useRef<WebSocket | null>(null)\n  const setupTimerRef = useRef(0)\n  const audioContextRef = useRef<AudioContext | null>(null)',
+              "setup timer ref",
+          )
+
+          source = replace_once(
+              source,
+              '''  const stopSession = useCallback((exit = false) => {\n    stoppedRef.current = true\n    micStartedRef.current = false\n\n    const processor = processorRef.current''',
+              '''  const stopSession = useCallback((exit = false) => {\n    stoppedRef.current = true\n    micStartedRef.current = false\n    window.clearTimeout(setupTimerRef.current)\n    setupTimerRef.current = 0\n\n    const processor = processorRef.current''',
+              "clear setup timer",
+          )
+
+          source = replace_once(
+              source,
+              '''    setError("")\n    setPhase("connecting")\n\n    try {''',
+              '''    setError("")\n    setPhase("connecting")\n    setupTimerRef.current = window.setTimeout(() => {\n      if (stoppedRef.current) return\n      stopSession(false)\n      setError("Gemini Live did not finish connecting. Check API access and try again.")\n      setPhase("error")\n    }, CONNECT_TIMEOUT_MS)\n\n    try {''',
+              "connection timeout",
+          )
+
+          source = replace_once(
+              source,
+              '''      const [{ token, model }, stream] = await Promise.all([\n        requestLiveToken(nextSettings.apiKey.trim()),\n        navigator.mediaDevices.getUserMedia({\n          audio: {\n            channelCount: 1,\n            echoCancellation: true,\n            noiseSuppression: true,\n            autoGainControl: true,\n          },\n          video: false,\n        }),\n      ])\n      if (stoppedRef.current) {\n        stream.getTracks().forEach((track) => track.stop())\n        return\n      }\n      mediaStreamRef.current = stream\n\n      const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)\n      websocketRef.current = socket''',
+              '''      const stream = await navigator.mediaDevices.getUserMedia({\n        audio: {\n          channelCount: 1,\n          echoCancellation: true,\n          noiseSuppression: true,\n          autoGainControl: true,\n        },\n        video: false,\n      })\n      if (stoppedRef.current) {\n        stream.getTracks().forEach((track) => track.stop())\n        return\n      }\n      mediaStreamRef.current = stream\n\n      // Mint the one-use ephemeral token only after microphone permission so its\n      // one-minute new-session window is not spent waiting on the user prompt.\n      const { token, model } = await requestLiveToken(nextSettings.apiKey.trim())\n      if (stoppedRef.current) return\n\n      const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)\n      socket.binaryType = "arraybuffer"\n      websocketRef.current = socket''',
+              "mint token after microphone permission",
+          )
+
+          old_message = '''      socket.onmessage = (event) => {\n        if (stoppedRef.current || typeof event.data !== "string") return\n        let message: LiveMessage\n        try {\n          message = JSON.parse(event.data) as LiveMessage\n        } catch {\n          return\n        }\n\n        if (message.setupComplete) {\n          startMicrophone(socket, context, stream)\n          setPhase("thinking")\n          socket.send(JSON.stringify({\n            realtimeInput: {\n              text: "Begin the voice lesson now. Greet briefly, then ask the first question from the deck.",\n            },\n          }))\n        }\n\n        const content = message.serverContent\n        if (!content) return\n\n        if (content.interrupted) {\n          clearPlayback()\n          flushTutor()\n          setPhase("listening")\n        }\n\n        const inputText = content.inputTranscription?.text\n        if (inputText) {\n          userDraftRef.current += inputText\n          setLiveUser(userDraftRef.current)\n          setPhase("thinking")\n        }\n\n        const outputText = content.outputTranscription?.text\n        if (outputText) {\n          if (userDraftRef.current) flushUser()\n          tutorDraftRef.current += outputText\n          setLiveTutor(tutorDraftRef.current)\n        }\n\n        for (const part of content.modelTurn?.parts ?? []) {\n          const audio = part.inlineData\n          if (!audio?.data) continue\n          if (audio.mimeType && !audio.mimeType.startsWith("audio/")) continue\n          if (userDraftRef.current) flushUser()\n          setPhase("speaking")\n          playAudio(audio.data)\n        }\n\n        if (content.turnComplete) {\n          flushUser()\n          flushTutor()\n          setPhase("listening")\n        }\n      }\n\n      socket.onerror = () => {\n        if (stoppedRef.current) return\n        setError("The Gemini Live connection failed")\n        setPhase("error")\n      }\n\n      socket.onclose = (event) => {\n        if (stoppedRef.current) return\n        stoppedRef.current = true\n        setError(event.reason || "The Gemini Live session ended. Start a new lesson to continue.")\n        setPhase("error")\n      }'''
+
+          new_message = '''      socket.onmessage = (event) => {\n        void (async () => {\n          if (stoppedRef.current) return\n          const raw = await readLiveMessageData(event.data)\n          if (stoppedRef.current || raw == null) return\n\n          let message: LiveMessage\n          try {\n            message = JSON.parse(raw) as LiveMessage\n          } catch {\n            return\n          }\n\n          if (message.setupComplete) {\n            window.clearTimeout(setupTimerRef.current)\n            setupTimerRef.current = 0\n            startMicrophone(socket, context, stream)\n            setPhase("thinking")\n            socket.send(JSON.stringify({\n              realtimeInput: {\n                text: "Begin the voice lesson now. Greet briefly, then ask the first question from the deck.",\n              },\n            }))\n          }\n\n          const content = message.serverContent\n          if (!content) return\n\n          if (content.interrupted) {\n            clearPlayback()\n            flushTutor()\n            setPhase("listening")\n          }\n\n          const inputText = content.inputTranscription?.text\n          if (inputText) {\n            userDraftRef.current += inputText\n            setLiveUser(userDraftRef.current)\n            setPhase("thinking")\n          }\n\n          const outputText = content.outputTranscription?.text\n          if (outputText) {\n            if (userDraftRef.current) flushUser()\n            tutorDraftRef.current += outputText\n            setLiveTutor(tutorDraftRef.current)\n          }\n\n          for (const part of content.modelTurn?.parts ?? []) {\n            const audio = part.inlineData\n            if (!audio?.data) continue\n            if (audio.mimeType && !audio.mimeType.startsWith("audio/")) continue\n            if (userDraftRef.current) flushUser()\n            setPhase("speaking")\n            playAudio(audio.data)\n          }\n\n          if (content.turnComplete) {\n            flushUser()\n            flushTutor()\n            setPhase("listening")\n          }\n        })().catch(() => {\n          if (stoppedRef.current) return\n          stopSession(false)\n          setError("Unable to read the Gemini Live response")\n          setPhase("error")\n        })\n      }\n\n      socket.onerror = () => {\n        if (stoppedRef.current) return\n        stopSession(false)\n        setError("The Gemini Live connection failed")\n        setPhase("error")\n      }\n\n      socket.onclose = (event) => {\n        if (stoppedRef.current) return\n        const reason = event.reason || "The Gemini Live session ended. Start a new lesson to continue."\n        stopSession(false)\n        setError(reason)\n        setPhase("error")\n      }'''
+          source = replace_once(source, old_message, new_message, "websocket message handling")
+          path.write_text(source)
+
+          test_path = Path("tests/contracts/ui/ai-tutor.test.ts")
+          tests = test_path.read_text()
+          anchor = '''  it("streams microphone PCM, receives every audio part, and clears playback on interruption", () => {\n    expect(tutor).toContain('mimeType: `audio/pcm;rate=${INPUT_RATE}`')\n    expect(tutor).toContain("inputAudioTranscription: {}")\n    expect(tutor).toContain("outputAudioTranscription: {}")\n    expect(tutor).toContain("realtimeInput")\n    expect(tutor).toContain("content.modelTurn?.parts ?? []")\n    expect(tutor).toContain("content.interrupted")\n    expect(tutor).toContain("clearPlayback()")\n    expect(tutor).toContain("OUTPUT_RATE = 24_000")\n  })\n'''
+          replacement = anchor + '''\n  it("handles binary Gemini frames and does not stay on Connecting forever", () => {\n    expect(tutor).toContain("data instanceof Blob")\n    expect(tutor).toContain("data instanceof ArrayBuffer")\n    expect(tutor).toContain("new TextDecoder().decode(data)")\n    expect(tutor).toContain('socket.binaryType = "arraybuffer"')\n    expect(tutor).toContain("CONNECT_TIMEOUT_MS = 20_000")\n    expect(tutor).toContain("setupTimerRef")\n    expect(tutor).toContain("Gemini Live did not finish connecting")\n    expect(tutor).not.toContain('typeof event.data !== "string"')\n  })\n'''
+          tests = replace_once(tests, anchor, replacement, "Gemini Live connection regression test")
+          test_path.write_text(tests)
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/ai-tutor.tsx tests/contracts/ui/ai-tutor.test.ts
+          git diff --cached --check
+          git commit -m "fix(ai): finish Gemini Live connections reliably"
+          git push origin HEAD:${GITHUB_REF_NAME}
