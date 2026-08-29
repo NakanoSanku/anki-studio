@@ -36,6 +36,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           source = Path('.github/workflows/temporary-production-cycle1.yml').read_text()
           marker = "          python - <<'PY'\n"
@@ -46,7 +47,38 @@ jobs:
               if line.strip() == 'PY':
                   break
               body.append(line[10:] if line.startswith('          ') else line)
-          Path('/tmp/production-cycle1.py').write_text('\n'.join(body) + '\n')
+          script = '\n'.join(body) + '\n'
+
+          fragile = re.compile(
+              r"\nold_loop = '''.*?lib = lib\.replace\(old_loop, new_loop\)\n",
+              re.S,
+          )
+          robust = r'''
+lib = lib.replace(
+    '      const order: string[] = []\n      for (const entry of parsed.decks) {',
+    '      const order: string[] = []\n      const migratedKeys: string[] = []\n      for (const entry of parsed.decks) {'
+)
+lib = lib.replace(
+    '        const raw = storage.getItem(deckStorageKey(entry.id))\n        if (!raw) continue',
+    '        const key = deckStorageKey(entry.id)\n        const raw = storage.getItem(key)\n        if (!raw) continue'
+)
+lib = lib.replace(
+    '          storage.removeItem(deckStorageKey(entry.id))',
+    '          migratedKeys.push(key)'
+)
+lib = lib.replace(
+    '          // skip broken deck',
+    '          // Skip an unreadable legacy deck, but never delete it before migration commits.'
+)
+lib = lib.replace(
+    '        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })\n        storage.removeItem(LIBRARY_KEY)',
+    '        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })\n        for (const key of migratedKeys) storage.removeItem(key)\n        storage.removeItem(LIBRARY_KEY)'
+)
+'''
+          script, count = fragile.subn('\n' + robust, script, count=1)
+          if count != 1:
+              raise SystemExit(f'could not replace fragile legacy migration patch: {count}')
+          Path('/tmp/production-cycle1.py').write_text(script)
           PY
           python /tmp/production-cycle1.py
 
