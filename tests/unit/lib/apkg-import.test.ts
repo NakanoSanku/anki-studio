@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { withAnkiIdentity } from "@/lib/anki-sync"
-import { apkgImportWarnings, exportApkg, importApkg, importDeckFile, setSqlWasmPath } from "@/lib/apkg"
+import { apkgImportWarnings, exportApkg, importApkg, importDeckFile, importFileSizeError, MAX_ANKI_PACKAGE_BYTES, MAX_TEXT_IMPORT_BYTES, setSqlWasmPath } from "@/lib/apkg"
 import {
   addCardTemplate,
   createCard,
@@ -51,6 +51,12 @@ describe("apkgImportWarnings", () => {
 })
 
 describe("importDeckFile", () => {
+  it("rejects oversized inputs before reading them", () => {
+    expect(importFileSizeError("huge.json", MAX_TEXT_IMPORT_BYTES + 1)).toContain("too large")
+    expect(importFileSizeError("huge.apkg", MAX_ANKI_PACKAGE_BYTES + 1)).toContain("too large")
+    expect(importFileSizeError("ok.apkg", MAX_ANKI_PACKAGE_BYTES)).toBeNull()
+  })
+
   it("returns a deck and no warnings for JSON", async () => {
     const deck = createDefaultDeck()
     const file = new File([serializeDeck(deck)], "words.json", { type: "application/json" })

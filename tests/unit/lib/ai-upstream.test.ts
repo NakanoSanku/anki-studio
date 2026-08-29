@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   describeUpstreamError,
   isBrowserNetworkError,
   isCloudflareBlocked,
   withBrowserCorsHint,
+  withProviderTimeout,
 } from "@/lib/ai-upstream"
 
 describe("describeUpstreamError", () => {
@@ -14,7 +15,7 @@ describe("describeUpstreamError", () => {
         status: 403,
         body: JSON.stringify({ error: { message: "Insufficient quota" } }),
       })
-    ).toBe("HTTP 403：Insufficient quota")
+    ).toBe("HTTP 403: Insufficient quota")
   })
 
   it("recognizes a Cloudflare HTML block", () => {
@@ -38,23 +39,44 @@ describe("describeUpstreamError", () => {
 describe("isCloudflareBlocked", () => {
   it("matches Cloudflare intercept text", () => {
     expect(
-      isCloudflareBlocked("HTTP 403：中转站前的 Cloudflare 拦截了请求，Ray a2c5e4fdac18e047-IAD")
+      isCloudflareBlocked("HTTP 403: Cloudflare blocked the provider request · Ray a2c5e4fdac18e047-IAD")
     ).toBe(true)
-    expect(isCloudflareBlocked("HTTP 403：Insufficient quota")).toBe(false)
+    expect(isCloudflareBlocked("HTTP 403: Insufficient quota")).toBe(false)
   })
 })
 
 describe("withBrowserCorsHint", () => {
   it("rewrites browser CORS failures", async () => {
     await expect(withBrowserCorsHint(() => Promise.reject(new Error("Failed to fetch")))).rejects.toThrow(
-      "未开启跨域"
+      "Enable CORS"
     )
     expect(isBrowserNetworkError("Failed to fetch")).toBe(true)
   })
 
   it("keeps provider errors unchanged", async () => {
     await expect(
-      withBrowserCorsHint(() => Promise.reject(new Error("HTTP 401：Incorrect API key")))
-    ).rejects.toThrow("HTTP 401：Incorrect API key")
+      withBrowserCorsHint(() => Promise.reject(new Error("HTTP 401: Incorrect API key")))
+    ).rejects.toThrow("HTTP 401: Incorrect API key")
+  })
+})
+
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe("withProviderTimeout", () => {
+  it("aborts a stalled request with a clear timeout error", async () => {
+    vi.useFakeTimers()
+    const pending = withProviderTimeout(
+      (signal) => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
+      }),
+      undefined,
+      25
+    )
+    const assertion = expect(pending).rejects.toThrow("AI request timed out")
+    await vi.advanceTimersByTimeAsync(25)
+    await assertion
   })
 })

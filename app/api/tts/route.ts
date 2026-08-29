@@ -1,10 +1,14 @@
 import type { TtsLang } from "@/lib/deck"
 import { RateGate } from "@/lib/rate-gate"
+import { contentLengthExceeds, createWindowRateLimiter, requestClientKey } from "@/lib/request-guard"
 
 export const dynamic = "force-dynamic"
 
 const MAX_TEXT = 200
 const MIN_GAP_MS = 400
+const MAX_BODY_BYTES = 4096
+const UPSTREAM_TIMEOUT_MS = 15_000
+const allowRequest = createWindowRateLimiter({ limit: 60, windowMs: 60_000 })
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -31,6 +35,7 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
         "User-Agent": USER_AGENT,
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
     if (!response.ok) {
       lastError = response.status === 403 ? "Google temporarily rejected the TTS request. Try again later." : `TTS service returned ${response.status}`
@@ -44,6 +49,17 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
 }
 
 export async function POST(request: Request) {
+  if (contentLengthExceeds(request, MAX_BODY_BYTES)) {
+    return Response.json({ error: "Request body is too large" }, { status: 413 })
+  }
+  const rate = allowRequest(requestClientKey(request))
+  if (!rate.allowed) {
+    return Response.json(
+      { error: "Too many TTS requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
+    )
+  }
+
   let body: { text?: unknown; lang?: unknown; slow?: unknown }
   try {
     body = (await request.json()) as { text?: unknown; lang?: unknown; slow?: unknown }

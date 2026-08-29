@@ -7,7 +7,28 @@ const DB_NAME = "anki-studio.tts.v1"
 const STORE = "clips"
 
 const memory = new Map<string, Blob>()
-let currentAudio: HTMLAudioElement | null = null
+
+type PlayingAudio = {
+  audio: HTMLAudioElement
+  url: string
+  resolve: () => void
+  reject: (error: Error) => void
+  settled: boolean
+}
+
+let currentAudio: PlayingAudio | null = null
+
+function settleAudio(entry: PlayingAudio, error?: Error): void {
+  if (entry.settled) return
+  entry.settled = true
+  entry.audio.onended = null
+  entry.audio.onerror = null
+  entry.audio.removeAttribute("src")
+  URL.revokeObjectURL(entry.url)
+  if (currentAudio === entry) currentAudio = null
+  if (error) entry.reject(error)
+  else entry.resolve()
+}
 
 export function normalizeTtsText(value: string): string {
   return value
@@ -253,31 +274,30 @@ export async function playTtsAudio(blob: Blob) {
   stopTtsAudio()
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
-  currentAudio = audio
+  const entry: PlayingAudio = {
+    audio,
+    url,
+    resolve: () => {},
+    reject: () => {},
+    settled: false,
+  }
+  currentAudio = entry
   await new Promise<void>((resolve, reject) => {
-    audio.onended = () => {
-      URL.revokeObjectURL(url)
-      if (currentAudio === audio) currentAudio = null
-      resolve()
-    }
-    audio.onerror = () => {
-      URL.revokeObjectURL(url)
-      if (currentAudio === audio) currentAudio = null
-      reject(new Error("Audio playback failed"))
-    }
+    entry.resolve = resolve
+    entry.reject = reject
+    audio.onended = () => settleAudio(entry)
+    audio.onerror = () => settleAudio(entry, new Error("Audio playback failed"))
     void audio.play().catch((error) => {
-      URL.revokeObjectURL(url)
-      if (currentAudio === audio) currentAudio = null
-      reject(error instanceof Error ? error : new Error("Audio playback failed"))
+      settleAudio(entry, error instanceof Error ? error : new Error("Audio playback failed"))
     })
   })
 }
 
 export function stopTtsAudio() {
-  if (!currentAudio) return
-  currentAudio.pause()
-  currentAudio.src = ""
-  currentAudio = null
+  const entry = currentAudio
+  if (!entry) return
+  entry.audio.pause()
+  settleAudio(entry)
 }
 
 export type TtsJob = {

@@ -1,10 +1,14 @@
 import { GEMINI_LIVE_MODEL } from "@/lib/gemini-live-settings"
+import { contentLengthExceeds, createWindowRateLimiter, requestClientKey } from "@/lib/request-guard"
 
 export const dynamic = "force-dynamic"
 
 const TOKEN_ENDPOINT = "https://generativelanguage.googleapis.com/v1alpha/auth_tokens"
 const TOKEN_LIFETIME_MS = 30 * 60 * 1000
 const NEW_SESSION_WINDOW_MS = 60 * 1000
+const MAX_BODY_BYTES = 4096
+const UPSTREAM_TIMEOUT_MS = 15_000
+const allowRequest = createWindowRateLimiter({ limit: 30, windowMs: 60_000 })
 
 type TokenPayload = {
   name?: unknown
@@ -23,6 +27,17 @@ function responseError(payload: unknown): string {
 }
 
 export async function POST(request: Request) {
+  if (contentLengthExceeds(request, MAX_BODY_BYTES)) {
+    return Response.json({ error: "Request body is too large" }, { status: 413 })
+  }
+  const rate = allowRequest(requestClientKey(request))
+  if (!rate.allowed) {
+    return Response.json(
+      { error: "Too many token requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
+    )
+  }
+
   let body: { apiKey?: unknown }
   try {
     body = (await request.json()) as { apiKey?: unknown }
@@ -51,6 +66,7 @@ export async function POST(request: Request) {
         newSessionExpireTime,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
     const payload = await response.json().catch(() => null) as TokenPayload | null
     if (!response.ok) {

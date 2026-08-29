@@ -19,6 +19,29 @@ import {
 import { cacheSet, getTtsClip, listTtsJobs, parseTtsFilename, resolveTtsFieldValue } from "./tts"
 
 const FIELD_SEP = "\x1f"
+export const MAX_TEXT_IMPORT_BYTES = 20 * 1024 * 1024
+export const MAX_ANKI_PACKAGE_BYTES = 128 * 1024 * 1024
+const MAX_ANKI_COLLECTION_BYTES = 64 * 1024 * 1024
+const MAX_ANKI_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+const MAX_ANKI_ZIP_ENTRIES = 20_000
+const MAX_TTS_MEDIA_BYTES = 16 * 1024 * 1024
+
+type SizedZipObject = JSZip.JSZipObject & {
+  _data?: { uncompressedSize?: number }
+}
+
+function declaredZipSize(file: JSZip.JSZipObject | null): number | null {
+  const value = Number((file as SizedZipObject | null)?._data?.uncompressedSize)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+export function importFileSizeError(name: string, size: number): string | null {
+  const lower = name.toLowerCase()
+  const maximum = lower.endsWith(".apkg") || lower.endsWith(".colpkg")
+    ? MAX_ANKI_PACKAGE_BYTES
+    : MAX_TEXT_IMPORT_BYTES
+  return size > maximum ? `Import file is too large (${Math.ceil(maximum / 1024 / 1024)} MB limit)` : null
+}
 const SCHEMA_SQL = `
 CREATE TABLE col (
     id              integer primary key,
@@ -487,10 +510,31 @@ export function apkgImportWarnings(input: {
 }
 
 export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
+  if (buffer.byteLength > MAX_ANKI_PACKAGE_BYTES) {
+    throw new Error("Anki package is too large to import")
+  }
   const zip = await JSZip.loadAsync(buffer)
+  const entries = Object.values(zip.files)
+  if (entries.length > MAX_ANKI_ZIP_ENTRIES) {
+    throw new Error("Anki package contains too many files")
+  }
+  let declaredTotal = 0
+  for (const entry of entries) {
+    const size = declaredZipSize(entry)
+    if (size == null) continue
+    declaredTotal += size
+    if (declaredTotal > MAX_ANKI_UNCOMPRESSED_BYTES) {
+      throw new Error("Anki package expands beyond the safe import limit")
+    }
+  }
+
   const colFile = zip.file("collection.anki2") ?? zip.file("collection.anki21")
   if (!colFile) {
     throw new Error("卡包里没有 collection 数据库")
+  }
+  const declaredCollectionSize = declaredZipSize(colFile)
+  if (declaredCollectionSize != null && declaredCollectionSize > MAX_ANKI_COLLECTION_BYTES) {
+    throw new Error("Anki collection database is too large to import")
   }
 
   const SQL = await loadSql()
@@ -589,6 +633,10 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
           const parsed = parseTtsFilename(filename)
           const bin = zip.file(index)
           if (!parsed || !bin) continue
+          const mediaSize = declaredZipSize(bin)
+          if (mediaSize != null && mediaSize > MAX_TTS_MEDIA_BYTES) {
+            throw new Error("Anki package contains an oversized TTS media file")
+          }
           await cacheSet(parsed.id, await bin.async("arraybuffer"))
         }
       }
@@ -631,6 +679,8 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
 }
 
 export async function importDeckFile(file: File, current: Deck): Promise<ImportResult> {
+  const sizeError = importFileSizeError(file.name, file.size)
+  if (sizeError) throw new Error(sizeError)
   const name = file.name.toLowerCase()
   if (name.endsWith(".json")) {
     return { deck: parseDeckJson(await file.text()), warnings: [] }

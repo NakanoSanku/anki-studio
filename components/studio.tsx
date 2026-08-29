@@ -225,14 +225,18 @@ export function Studio() {
     showStatus(message)
   }
 
-  const reloadFromStore = async () => {
+  const reloadFromStore = async (guard: () => boolean = () => true): Promise<boolean> => {
     const nextLibrary = await readLibrary()
+    if (!guard()) return false
     const record = await getStudioStore().getRecord(nextLibrary.activeId)
+    const nextDirty = await readDirtyCount()
+    if (!guard()) return false
     updateLibraryState(nextLibrary)
-    setDirty(await readDirtyCount())
-    if (!record || record.deletedAt) return
+    setDirty(nextDirty)
+    if (!record || record.deletedAt) return true
     updateDeckState(record.deck)
     setSelectedId(readEditorState(nextLibrary.activeId, record.deck).selectedId)
+    return true
   }
 
   const runSync = async (reason: "auto" | "manual") => {
@@ -266,7 +270,17 @@ conflictWaiter.current = resolve
         updateLibraryState(recoveredLibrary)
         setDirty(await readDirtyCount())
       } else {
-        await reloadFromStore()
+        const reloaded = await reloadFromStore(isLocalStateCurrent)
+        if (!reloaded) {
+          preserveLocalAfterSync = true
+          const recoveredLibrary = await persistActiveDeck(
+            libraryRef.current,
+            deckRef.current,
+            { recreateMissing: true }
+          )
+          updateLibraryState(recoveredLibrary)
+          setDirty(await readDirtyCount())
+        }
       }
       const meta = await store.getSyncMeta()
       setLastSyncAt(meta?.lastSyncAt)
