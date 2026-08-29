@@ -1,0 +1,45 @@
+name: Temporary adjust Gemini Live timeout
+
+on:
+  push:
+    branches:
+      - fix/gemini-live-connecting
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move timeout after microphone permission
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("components/ai-tutor.tsx")
+          source = path.read_text()
+          old = '''    setError("")\n    setPhase("connecting")\n    setupTimerRef.current = window.setTimeout(() => {\n      if (stoppedRef.current) return\n      stopSession(false)\n      setError("Gemini Live did not finish connecting. Check API access and try again.")\n      setPhase("error")\n    }, CONNECT_TIMEOUT_MS)\n\n    try {'''
+          new = '''    setError("")\n    setPhase("connecting")\n\n    try {'''
+          if source.count(old) != 1:
+              raise SystemExit(f"remove timer: expected 1 match, found {source.count(old)}")
+          source = source.replace(old, new, 1)
+
+          old = '''      const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)\n      socket.binaryType = "arraybuffer"\n      websocketRef.current = socket\n\n      socket.onopen = () => {'''
+          new = '''      const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`)\n      socket.binaryType = "arraybuffer"\n      websocketRef.current = socket\n      setupTimerRef.current = window.setTimeout(() => {\n        if (stoppedRef.current || websocketRef.current !== socket) return\n        stopSession(false)\n        setError("Gemini Live did not finish connecting. Check API access and try again.")\n        setPhase("error")\n      }, CONNECT_TIMEOUT_MS)\n\n      socket.onopen = () => {'''
+          if source.count(old) != 1:
+              raise SystemExit(f"add timer: expected 1 match, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/ai-tutor.tsx
+          git diff --cached --check
+          git commit -m "fix(ai): time out only Live socket setup"
+          git push origin HEAD:${GITHUB_REF_NAME}
