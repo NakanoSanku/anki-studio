@@ -1,6 +1,6 @@
 import type { TtsLang } from "@/lib/deck"
 import { RateGate } from "@/lib/rate-gate"
-import { contentLengthExceeds, createWindowRateLimiter, requestClientKey } from "@/lib/request-guard"
+import { createWindowRateLimiter, readJsonBodyWithLimit, RequestBodyTooLargeError, requestClientKey } from "@/lib/request-guard"
 
 export const dynamic = "force-dynamic"
 
@@ -49,9 +49,6 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
 }
 
 export async function POST(request: Request) {
-  if (contentLengthExceeds(request, MAX_BODY_BYTES)) {
-    return Response.json({ error: "Request body is too large" }, { status: 413 })
-  }
   const rate = allowRequest(requestClientKey(request))
   if (!rate.allowed) {
     return Response.json(
@@ -62,9 +59,15 @@ export async function POST(request: Request) {
 
   let body: { text?: unknown; lang?: unknown; slow?: unknown }
   try {
-    body = (await request.json()) as { text?: unknown; lang?: unknown; slow?: unknown }
-  } catch {
-    return Response.json({ error: "Invalid request" }, { status: 400 })
+    body = await readJsonBodyWithLimit<{ text?: unknown; lang?: unknown; slow?: unknown }>(
+      request,
+      MAX_BODY_BYTES
+    )
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof RequestBodyTooLargeError ? "Request body is too large" : "Invalid request" },
+      { status: error instanceof RequestBodyTooLargeError ? 413 : 400 }
+    )
   }
 
   const text = typeof body.text === "string" ? body.text.trim() : ""

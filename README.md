@@ -40,7 +40,7 @@ The important boundary is **review before publish**: newly created notes, AI-gen
 - **Google Sheets sync** — OAuth-based multi-device sync with editable deck previews, revision tracking, conflict handling, and stable deck-to-sheet mapping.
 - **TTS-aware export** — bind generated audio fields to note fields, preview speech, and package audio when exporting APKG.
 - **Local-first storage** — decks and study data are stored in IndexedDB; the app also ships as an installable PWA.
-- **Import and export** — CSV, JSON, APKG, and COLPKG import paths, plus JSON project backups and approved-only CSV/APKG exports.
+- **Import and export** — CSV, JSON, APKG, and COLPKG import paths, plus JSON active-deck backups and approved-only CSV/APKG exports.
 
 ## Review lifecycle
 
@@ -68,7 +68,7 @@ Editing an approved note sends it back to **Pending review**. Existing decks cre
 | Local IndexedDB | Kept | Kept | Kept |
 | Google Sheets sync payload | Synced | Synced | Synced |
 | Editable Google Sheets preview | Visible/editable | Visible/editable | Not stored in the visible preview |
-| JSON project backup | Included | Included | Included |
+| JSON active-deck backup | Included | Included | Included for the active deck |
 | CSV export | Excluded | Included | Not applicable |
 | APKG export | Excluded | Included | Exported as Anki deck data |
 | Study / Voice Tutor | Excluded | Included | Uses FSRS state |

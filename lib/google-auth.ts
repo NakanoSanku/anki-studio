@@ -19,6 +19,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 export const GOOGLE_PICKER_SCOPE = "https://www.googleapis.com/auth/drive.file"
 const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60_000
+const GOOGLE_TOKEN_TIMEOUT_MS = 15_000
 
 type GoogleToken = JWT & {
   googleAccessToken?: string
@@ -130,6 +131,7 @@ export async function refreshGoogleAccessToken(
         refresh_token: token.googleRefreshToken,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
     })
     const data = await response.json() as GoogleTokenResponse
     if (!response.ok || typeof data.access_token !== "string") {

@@ -121,7 +121,7 @@ export function DeckToolsPanel({
               <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuItem onClick={onExportApkg}><PackageOpen /><span className="font-medium">{hasTts ? "APKG · with audio" : "APKG · Anki deck"}</span></DropdownMenuItem>
                 <DropdownMenuItem onClick={onExportCsv}><Layers3 />CSV · tabular text</DropdownMenuItem>
-                <DropdownMenuItem onClick={onExportJson}><ArrowUpFromLine />JSON · full project backup</DropdownMenuItem>
+                <DropdownMenuItem onClick={onExportJson}><ArrowUpFromLine />JSON · current deck backup</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

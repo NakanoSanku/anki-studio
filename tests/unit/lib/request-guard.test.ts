@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { contentLengthExceeds, createWindowRateLimiter, requestClientKey } from "@/lib/request-guard"
+import { contentLengthExceeds, createWindowRateLimiter, readJsonBodyWithLimit, RequestBodyTooLargeError, requestClientKey } from "@/lib/request-guard"
 
 describe("request guard", () => {
   it("rejects declared oversized request bodies", () => {
@@ -22,3 +22,21 @@ describe("request guard", () => {
     expect(requestClientKey(request)).toBe("203.0.113.8")
   })
 })
+
+
+  it("rejects a streamed body that exceeds the limit without Content-Length", async () => {
+    const request = new Request("https://example.com", {
+      method: "POST",
+      body: JSON.stringify({ value: "x".repeat(128) }),
+    })
+    await expect(readJsonBodyWithLimit(request, 32)).rejects.toBeInstanceOf(RequestBodyTooLargeError)
+  })
+
+  it("keeps the limiter map bounded even when every entry is still active", () => {
+    const allow = createWindowRateLimiter({ limit: 1, windowMs: 60_000, maxEntries: 2 })
+    expect(allow("a", 0).allowed).toBe(true)
+    expect(allow("b", 0).allowed).toBe(true)
+    expect(allow("c", 0).allowed).toBe(true)
+    // a was evicted to keep the map bounded, so it starts a fresh window.
+    expect(allow("a", 1).allowed).toBe(true)
+  })

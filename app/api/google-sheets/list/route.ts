@@ -35,6 +35,7 @@ export async function GET(request: Request) {
         Authorization: `Bearer ${authorization.accessToken}`,
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
     })
 
     if (!response.ok) {

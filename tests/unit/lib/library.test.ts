@@ -58,6 +58,42 @@ describe("loadLibrarySession", () => {
     expect(session.library.decks[0]?.dirty).toBe(true)
   })
 
+  it("keeps legacy data until a failed migration can be retried", async () => {
+    const legacy = createDefaultDeck()
+    legacy.name = "Recover me"
+    const id = "legacy-retry-deck"
+    memory.set(LIBRARY_KEY, JSON.stringify({
+      version: 1,
+      activeId: id,
+      decks: [{ id, name: legacy.name, cardCount: 1, updatedAt: 10 }],
+    }))
+    memory.set(`anki-studio.deck.${id}`, serializeDeck(legacy))
+
+    const base = createMemoryStore()
+    let failMeta = true
+    setStudioStore({
+      ...base,
+      async setMeta(meta) {
+        if (failMeta) {
+          failMeta = false
+          throw new Error("simulated durable-write failure")
+        }
+        await base.setMeta(meta)
+      },
+    })
+
+    const firstAttempt = await loadLibrarySession()
+    expect(firstAttempt.deck.name).toBe("Recover me")
+    expect(memory.get(LIBRARY_KEY)).toBeTruthy()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeTruthy()
+
+    setStudioStore(base)
+    const retried = await loadLibrarySession()
+    expect(retried.deck.name).toBe("Recover me")
+    expect(memory.get(LIBRARY_KEY)).toBeUndefined()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeUndefined()
+  })
+
   it("creates a default deck when nothing is stored", async () => {
     const session = await loadLibrarySession()
     expect(session.deck.name).toBe("单词本")

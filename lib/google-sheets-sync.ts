@@ -68,6 +68,7 @@ const INDEX_HEADERS = [
 
 export const GOOGLE_SHEETS_SCHEMA_VERSION = 3
 export const MAX_SYNC_PAYLOAD_BYTES = 8 * 1024 * 1024
+export const SHEETS_REQUEST_TIMEOUT_MS = 30_000
 
 export type GoogleSheetsClient = {
   spreadsheetId: string
@@ -266,6 +267,7 @@ async function sheetsRequest<T>(
             ...init.headers,
           },
           cache: "no-store",
+          signal: AbortSignal.timeout(SHEETS_REQUEST_TIMEOUT_MS),
         }
       )
     } catch {
@@ -2070,6 +2072,7 @@ export async function createGoogleSpreadsheet(
         title: title.trim() || "Anki Studio · Flashcard Sync",
       },
     }),
+    signal: AbortSignal.timeout(SHEETS_REQUEST_TIMEOUT_MS),
   })
   const data = await response.json().catch(() => null) as unknown
   if (
