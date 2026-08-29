@@ -617,6 +617,31 @@ describe("Google Sheets API sync", () => {
     expect(previewSheets(api)[0]?.title).toBe("原有卡包")
   })
 
+  it("renames an existing preview instead of creating a new one when metadata is missing", async () => {
+    const api = createSheetsApi()
+    const deck = { ...createDefaultDeck(), name: "原有卡包" }
+    const saved = await putGoogleSheetsDeck(client, "rename-metadata-deck", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) throw new Error("expected save to succeed")
+    const preview = previewSheets(api)[0]
+    if (!preview) throw new Error("expected preview sheet")
+    api.removePreviewMetadata(preview.sheetId)
+
+    const renamed = await putGoogleSheetsDeck(client, "rename-metadata-deck", {
+      expectedRev: saved.rev,
+      deck: { ...deck, name: "重命名卡包" },
+    }, api.fetchImpl)
+    expect(renamed.ok).toBe(true)
+    expect(previewSheets(api)).toHaveLength(1)
+    expect(previewSheets(api)[0]).toMatchObject({
+      sheetId: preview.sheetId,
+      title: "重命名卡包",
+    })
+  })
+
   it("renames the existing mapped sheet and preserves optimistic conflicts", async () => {
     const api = createSheetsApi()
     const deck = { ...createDefaultDeck(), name: "Kate's Thai" }
