@@ -34,10 +34,13 @@ describe("mobile hierarchy and language", () => {
     expect(appShell).toContain('text-[25px] min-[390px]:text-[27px] sm:text-[29px]')
   })
 
-  it("uses English copy for the primary study experience", () => {
-    expect(overview).toContain("Today’s study")
+  it("uses concise English copy for the primary study experience", () => {
+    expect(overview).toContain("Today")
     expect(overview).toContain("Start studying")
+    expect(overview).toContain("Voice tutor")
     expect(overview).toContain("New note")
+    expect(overview).not.toContain("Today’s study")
+    expect(overview).not.toContain("Less friction. One clear rhythm.")
   })
 
   it("uses English copy in deep editing and sync surfaces", () => {
