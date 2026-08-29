@@ -85,24 +85,27 @@ export async function runCardAi(body: CardAiInput): Promise<Record<string, strin
 
 export async function runBatchAi(body: BatchAiInput): Promise<Record<string, string>[]> {
   const topic = typeof body.topic === "string" ? body.topic.trim() : ""
-  const count = Number(body.count)
+  const count = body.count == null ? null : Number(body.count)
   const fields = requireFields(body.fields)
   const existingKeys = Array.isArray(body.existingKeys)
     ? body.existingKeys.filter((key) => typeof key === "string" && key.trim())
     : []
 
-  if (!topic) throw new AiRequestError("请填写生成主题或词表")
-  if (!Number.isFinite(count) || count < 1 || count > 50) {
+  if (!topic) throw new AiRequestError("请填写关联信息")
+  if (count !== null && (!Number.isFinite(count) || count < 1 || count > 50)) {
     throw new AiRequestError("生成数量需要在 1 到 50 之间")
   }
 
+  const amountRule = count === null
+    ? "Auto — extract every distinct, useful note supported by the source material, up to 50. Do not pad the result or omit clear standalone items just to satisfy a quota."
+    : `Exactly ${Math.floor(count)} notes.`
   const settings = parseAiSettings(body.settings)
   const notes = body.notes ?? {}
   const prompt = applyPromptWithReferences(
     settings.batchPrompt,
     {
       topic,
-      count: String(Math.floor(count)),
+      count: amountRule,
       fields: fields.join("、"),
       key: fields[0] ?? "",
       existing: existingKeys.length > 0 ? existingKeys.join("、") : "（无）",
@@ -122,7 +125,8 @@ export async function runBatchAi(body: BatchAiInput): Promise<Record<string, str
   })
   const cards = pickCardList(parsed, fields)
   if (cards.length === 0) throw new Error("AI 没有返回卡片")
-  return cards
+  const limit = count === null ? 50 : Math.floor(count)
+  return cards.slice(0, limit)
 }
 
 export async function runTemplateAi(body: TemplateAiInput): Promise<TemplateAiResult> {

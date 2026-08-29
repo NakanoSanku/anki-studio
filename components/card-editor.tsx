@@ -34,7 +34,7 @@ import {
   type ReviewFilter,
 } from "@/lib/editor-state"
 import { useAppHeaderAction } from "@/components/app-shell"
-import { ReferenceNotesBar, ReferenceNotesPicker } from "@/components/reference-notes-bar"
+import { ReferenceNotesPicker } from "@/components/reference-notes-bar"
 import { TtsPlayButton } from "@/components/tts-play-button"
 import {
   AlertDialog,
@@ -64,6 +64,7 @@ import { useVirtualWindow } from "@/components/use-virtual-window"
 import { cn } from "@/lib/utils"
 
 type MobilePane = "list" | "editor" | "preview"
+type BatchAmountMode = "auto" | "manual"
 
 const LIST_ROW = 60
 const FILTERS: { id: ReviewFilter; label: string }[] = [
@@ -114,6 +115,7 @@ export function CardEditor({
   const [completeOpen, setCompleteOpen] = useState(false)
   const [referencePickerOpen, setReferencePickerOpen] = useState(false)
   const [batchTopic, setBatchTopic] = useState("")
+  const [batchAmountMode, setBatchAmountMode] = useState<BatchAmountMode>("auto")
   const [batchCount, setBatchCount] = useState("10")
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<ReviewFilter>("all")
@@ -349,10 +351,10 @@ export function CardEditor({
   const applyBatchAi = () => {
     const count = Number(batchCount)
     if (!batchTopic.trim()) {
-      setAlert("Enter a topic or word list")
+      setAlert("Add source material")
       return
     }
-    if (!Number.isFinite(count) || count < 1 || count > 50) {
+    if (batchAmountMode === "manual" && (!Number.isFinite(count) || count < 1 || count > 50)) {
       setAlert("Generate between 1 and 50 notes")
       return
     }
@@ -366,7 +368,7 @@ export function CardEditor({
       .filter((values): values is Record<string, string> => Boolean(values))
     const anchorId = selected?.id ?? ""
     void runAi("batch", async () => {
-      const generated = await requestBatchAi({ topic, count: Math.floor(count), fields, existingKeys, notes, references })
+      const generated = await requestBatchAi({ topic, count: batchAmountMode === "manual" ? Math.floor(count) : undefined, fields, existingKeys, notes, references })
       const incoming = generated.map((values) => createCard(fields, values))
       const beforeLen = deckRef.current.cards.length
       const result = commitChange((current) => mergeGeneratedCards(current, incoming, anchorId))
@@ -437,7 +439,6 @@ export function CardEditor({
           <div className="flex items-center rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">
             {FILTERS.map((item) => <button key={item.id} type="button" data-testid={`mobile-review-filter-${item.id}`} className={cn("h-7 rounded-[9px] px-3 text-[11px] font-medium transition-colors", filter === item.id ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]" : "text-foreground/45 hover:text-foreground")} onClick={() => setFilter(item.id)}>{item.label}</button>)}
           </div>
-          {review.referenceIds.length > 0 ? <ReferenceNotesBar referenceIds={review.referenceIds} onOpenPicker={() => setReferencePickerOpen(true)} /> : null}
         </div>
         <p className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground sm:text-xs">{query.trim() || filter !== "all" ? `${visibleCards.length} / ${deck.cards.length}` : `${deck.cards.length}`}</p>
       </div>
@@ -496,7 +497,7 @@ export function CardEditor({
         <div className="flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-card text-foreground"><BookOpen className="size-4" /></div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5"><span className="text-xs font-semibold text-foreground">Reference notes</span>{review.referenceIds.length > 0 ? <span className="rounded-[7px] bg-energy px-1.5 py-0.5 text-[9px] font-semibold text-black">{review.referenceIds.length}</span> : null}</div>
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{review.referenceIds.length > 0 ? "Match the style of the selected examples" : "Choose 1–3 example notes from this deck"}</p>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Optional style examples</p>
         </div>
       </div>
       <Button type="button" size="xs" variant="outline" className="h-8 shrink-0 text-xs" onClick={() => setReferencePickerOpen(true)}>{review.referenceIds.length > 0 ? "Change" : "Choose"}</Button>
@@ -505,14 +506,30 @@ export function CardEditor({
 
   const batchDialog = (
     <Dialog open={batchOpen && !referencePickerOpen} onOpenChange={(open) => { if (!open && referencePickerOpen) return; setBatchOpen(open) }}>
-      <DialogContent>
-        <DialogHeader><div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span className="size-2 rounded-full bg-energy" />AI batch</div><DialogTitle>Generate notes</DialogTitle><DialogDescription>Generate multiple notes from a topic or pasted word list. Existing key-field values are skipped and new notes are inserted after the current note.</DialogDescription></DialogHeader>
-        <div className="flex flex-col gap-3">
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader><div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span className="size-2 rounded-full bg-energy" />AI batch</div><DialogTitle>Generate notes</DialogTitle></DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="batch-source">Source material</Label>
+            <Textarea id="batch-source" value={batchTopic} placeholder="Topic, word list, article, notes…" className="min-h-32 bg-background" onChange={(event) => setBatchTopic(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label>Amount</Label>
+              <div className="flex items-center rounded-[11px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">
+                <button type="button" data-testid="batch-amount-auto" aria-pressed={batchAmountMode === "auto"} className={cn("h-7 rounded-[8px] px-3 text-[11px] font-medium transition-colors", batchAmountMode === "auto" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")} onClick={() => setBatchAmountMode("auto")}>Auto</button>
+                <button type="button" data-testid="batch-amount-manual" aria-pressed={batchAmountMode === "manual"} className={cn("h-7 rounded-[8px] px-3 text-[11px] font-medium transition-colors", batchAmountMode === "manual" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")} onClick={() => setBatchAmountMode("manual")}>Manual</button>
+              </div>
+            </div>
+            {batchAmountMode === "manual" ? (
+              <Input id="batch-count" aria-label="Note count" type="number" min={1} max={50} value={batchCount} className="h-10 bg-background" onChange={(event) => setBatchCount(event.target.value)} />
+            ) : (
+              <p className="text-[11px] text-muted-foreground">Adapts to the source · up to 50 notes</p>
+            )}
+          </div>
           {referenceChoice}
-          <div className="flex flex-col gap-2 rounded-[15px] border border-black/[0.06] bg-background/55 p-3.5 dark:border-white/[0.08]"><Label htmlFor="batch-topic">Topic or word list</Label><Textarea id="batch-topic" value={batchTopic} placeholder="e.g. TOEFL high-frequency verbs, or one word per line" className="min-h-28" onChange={(event) => setBatchTopic(event.target.value)} /></div>
-          <div className="flex flex-col gap-2 rounded-[15px] border border-black/[0.06] bg-background/55 p-3.5 dark:border-white/[0.08]"><Label htmlFor="batch-count">Count</Label><Input id="batch-count" type="number" min={1} max={50} value={batchCount} onChange={(event) => setBatchCount(event.target.value)} /></div>
         </div>
-        <DialogFooter className="flex flex-row justify-end gap-2 pt-1"><Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setBatchOpen(false)}>Cancel</Button><Button type="button" className="flex-1 sm:flex-initial" disabled={isBusy("batch")} onClick={applyBatchAi}>{isBusy("batch") ? "Generating…" : "Generate"}</Button></DialogFooter>
+        <DialogFooter className="flex flex-row justify-end gap-2 pt-1"><Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setBatchOpen(false)}>Cancel</Button><Button type="button" className="flex-1 sm:flex-initial" disabled={isBusy("batch") || !batchTopic.trim()} onClick={applyBatchAi}>{isBusy("batch") ? "Generating…" : "Generate"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )

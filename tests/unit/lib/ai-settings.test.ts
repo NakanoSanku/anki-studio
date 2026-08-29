@@ -28,7 +28,8 @@ describe("parseAiSettings", () => {
   it("ships English default prompts", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("Anki vocabulary cards")
     expect(DEFAULT_CARD_COMPLETE_PROMPT).toContain("Fill only the fields")
-    expect(DEFAULT_BATCH_PROMPT).toContain("Generate {{count}} unique vocabulary cards")
+    expect(DEFAULT_BATCH_PROMPT).toContain("Source material:")
+    expect(DEFAULT_BATCH_PROMPT).toContain("Amount:\n{{count}}")
   })
 })
 
