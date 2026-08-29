@@ -569,8 +569,8 @@ describe("Google Sheets API sync", () => {
       rev: editedRevision,
       deck: {
         cards: [
-          { id: deck.cards[0]!.id, values: { Word: "edited from Sheets" } },
-          { values: { Word: "new from Sheets", Translation: "新增" } },
+          { id: deck.cards[0]!.id, reviewStatus: "pending", values: { Word: "edited from Sheets" } },
+          { reviewStatus: "pending", values: { Word: "new from Sheets", Translation: "新增" } },
         ],
       },
     })
@@ -589,7 +589,7 @@ describe("Google Sheets API sync", () => {
     expect(deletedRevision).toBeGreaterThan(editedRevision)
     await expect(getGoogleSheetsDeck(client, "editable-deck", api.fetchImpl)).resolves.toMatchObject({
       rev: deletedRevision,
-      deck: { cards: [{ id: deck.cards[0]!.id }] },
+      deck: { cards: [{ id: deck.cards[0]!.id, reviewStatus: "pending" }] },
     })
   })
 
