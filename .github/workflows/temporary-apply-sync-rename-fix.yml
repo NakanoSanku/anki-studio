@@ -1,0 +1,70 @@
+name: Temporary apply sync rename fix
+
+on:
+  push:
+    branches:
+      - fix/retention-scale-deck-rename-sync
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply sync rename regression fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          sync_path = Path("lib/google-sheets-sync.ts")
+          sync = sync_path.read_text()
+          sync = replace_once(
+              sync,
+              "for (const properties of [...titled, tagged]) {",
+              "for (const properties of [tagged, ...titled]) {",
+              "prefer tagged preview",
+          )
+          sync = replace_once(
+              sync,
+              "  let dataSheet: DeckDataSheet | null = null\n  let previewReady = Boolean(deletedAt)\n\n  if (!deletedAt) {",
+              "  let dataSheet: DeckDataSheet | null = null\n  let previewReady = Boolean(deletedAt)\n  const existingPreviewSheetId = currentPayload?.deck\n    ? previewSheetCandidates(storage.metadata, id, currentPayload.deck.name)[0]?.sheetId\n    : undefined\n\n  if (!deletedAt) {",
+              "remember existing preview",
+          )
+          sync = replace_once(
+              sync,
+              "      await writeDeckPreview(client, storage.metadata, id, deck!, fetchImpl)\n      previewReady = true",
+              "      await writeDeckPreview(\n        client,\n        storage.metadata,\n        id,\n        deck!,\n        fetchImpl,\n        existingPreviewSheetId\n      )\n      previewReady = true",
+              "reuse existing preview on write",
+          )
+          sync_path.write_text(sync)
+
+          test_path = Path("tests/unit/lib/google-sheets-sync.test.ts")
+          tests = test_path.read_text()
+          anchor = '  it("renames the existing mapped sheet and preserves optimistic conflicts", async () => {'
+          regression = '''  it("renames an existing preview instead of creating a new one when metadata is missing", async () => {\n    const api = createSheetsApi()\n    const deck = { ...createDefaultDeck(), name: "原有卡包" }\n    const saved = await putGoogleSheetsDeck(client, "rename-metadata-deck", {\n      expectedRev: 0,\n      deck,\n    }, api.fetchImpl)\n    expect(saved.ok).toBe(true)\n    if (!saved.ok) throw new Error("expected save to succeed")\n    const preview = previewSheets(api)[0]\n    if (!preview) throw new Error("expected preview sheet")\n    api.removePreviewMetadata(preview.sheetId)\n\n    const renamed = await putGoogleSheetsDeck(client, "rename-metadata-deck", {\n      expectedRev: saved.rev,\n      deck: { ...deck, name: "重命名卡包" },\n    }, api.fetchImpl)\n    expect(renamed.ok).toBe(true)\n    expect(previewSheets(api)).toHaveLength(1)\n    expect(previewSheets(api)[0]).toMatchObject({\n      sheetId: preview.sheetId,\n      title: "重命名卡包",\n    })\n  })\n\n'''
+          tests = replace_once(tests, anchor, regression + anchor, "insert rename regression test")
+          test_path.write_text(tests)
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/google-sheets-sync.ts tests/unit/lib/google-sheets-sync.test.ts
+          git diff --cached --check
+          git commit -m "fix: preserve cloud sheet on deck rename"
+          git push origin HEAD:${GITHUB_REF_NAME}
