@@ -906,7 +906,7 @@ function previewSheetCandidates(
     )
   })
   const candidates: SheetProperties[] = []
-  for (const properties of [...titled, tagged]) {
+  for (const properties of [tagged, ...titled]) {
     if (!properties || typeof properties.sheetId !== "number" || !properties.title) continue
     if (candidates.some((candidate) => candidate.sheetId === properties.sheetId)) continue
     candidates.push(properties)
@@ -2200,6 +2200,9 @@ export async function putGoogleSheetsDeck(
   const cardCount = deck?.cards.length ?? current?.row.cardCount ?? 0
   let dataSheet: DeckDataSheet | null = null
   let previewReady = Boolean(deletedAt)
+  const existingPreviewSheetId = currentPayload?.deck
+    ? previewSheetCandidates(storage.metadata, id, currentPayload.deck.name)[0]?.sheetId
+    : undefined
 
   if (!deletedAt) {
     dataSheet = await ensureDeckSheet(
@@ -2277,7 +2280,14 @@ export async function putGoogleSheetsDeck(
       }))
     }
     try {
-      await writeDeckPreview(client, storage.metadata, id, deck!, fetchImpl)
+      await writeDeckPreview(
+        client,
+        storage.metadata,
+        id,
+        deck!,
+        fetchImpl,
+        existingPreviewSheetId
+      )
       previewReady = true
     } catch (error) {
       console.error(JSON.stringify({
