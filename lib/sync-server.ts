@@ -12,6 +12,7 @@ import {
   type GoogleSession,
 } from "./google-auth"
 import { GOOGLE_SHEET_ID_HEADER, isGoogleSpreadsheetId } from "./google-sheet-id"
+import { SyncRequestError } from "./sync-errors"
 
 type SessionResolver = () => Promise<GoogleSession | null>
 
@@ -131,6 +132,12 @@ export function jsonError(message: string, status: number): Response {
 }
 
 export function googleSheetsErrorResponse(error: unknown, fallback: string): Response {
+  if (error instanceof SyncRequestError) {
+    return Response.json(
+      { error: error.message, code: error.code, available: false },
+      { status: error.status }
+    )
+  }
   if (error instanceof GoogleSheetsApiError) {
     const quota = error.message === SHEETS_QUOTA_USER_MESSAGE
     const status = quota

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GOOGLE_SHEET_ID_HEADER } from "@/lib/google-sheet-id"
-import { getSyncEnv } from "@/lib/sync-server"
+import { getSyncEnv, googleSheetsErrorResponse } from "@/lib/sync-server"
+import { parsePutBody } from "@/lib/sync-payload"
 
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
@@ -106,5 +107,20 @@ describe("getSyncEnv", () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.response.status).toBe(403)
+  })
+
+  it("keeps invalid sync payloads as typed 400 responses", async () => {
+    let error: unknown
+    try {
+      parsePutBody({ expectedRev: 0 })
+    } catch (caught) {
+      error = caught
+    }
+    const response = googleSheetsErrorResponse(error, "Unexpected sync failure")
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      code: "missing_deck_content",
+      error: "Deck content is missing",
+    })
   })
 })

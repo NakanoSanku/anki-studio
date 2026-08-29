@@ -123,7 +123,7 @@ The `UI checks` workflow runs the same validation sequence for pull requests and
 Anki Studio uses Google OAuth and the Sheets API directly. One spreadsheet can contain multiple decks. Each deck has:
 
 - a visible worksheet for human-readable note preview/editing;
-- a hidden payload worksheet for full deck state and revision history;
+- a hidden payload worksheet for the current full deck state and revision metadata; old payload revisions are compacted after a successful write;
 - an entry in the hidden `_anki_studio_sync` index for stable mapping and tombstones.
 
 The visible worksheet keeps a hidden first column containing stable note IDs. Do not rename its headers or manually modify/delete the hidden sync worksheets.

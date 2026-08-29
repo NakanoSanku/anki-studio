@@ -38,7 +38,6 @@ const PREVIEW_SCHEMA_METADATA_KEY = "anki_studio_preview_schema"
 const PREVIEW_SCHEMA_VERSION = "2"
 const LEGACY_SCHEMA_VERSION = 2
 const CHUNK_SIZE = 40_000
-const PREVIEW_READ_RANGE = "A1:Z"
 const PREVIEW_CELL_LIMIT = 50_000
 const PREVIEW_ID_HEADER = "__anki_studio_card_id"
 const DATA_HEADERS = [
@@ -923,6 +922,10 @@ function columnName(column: number): string {
     current = Math.floor((current - 1) / 26)
   }
   return result
+}
+
+function previewReadRange(deck: Pick<Deck, "fields">): string {
+  return `A1:${columnName(deck.fields.length + 1)}`
 }
 
 function internalDeckSheetTitle(deckId: string): string {
@@ -1880,27 +1883,12 @@ async function materializePreviewEdits(
   const readable = dataQueries.filter((item): item is typeof item & { dataSheet: DeckDataSheet } => (
     item.dataSheet != null
   ))
-  const previewJobs = currents.flatMap((current) => (
-    previewSheetCandidates(storage.metadata, current.row.id, current.row.name)
-      .filter((properties) => properties.title)
-      .map((properties) => ({
-        current,
-        properties,
-        sheetTitle: properties.title!,
-        range: PREVIEW_READ_RANGE,
-      }))
-  ))
-  const batched = await readValuesMany(
+  const dataValues = await readValuesMany(
     client,
-    [
-      ...readable.map((item) => ({ sheetTitle: item.dataSheet.title, range: "A2:K" })),
-      ...previewJobs.map((job) => ({ sheetTitle: job.sheetTitle, range: job.range })),
-    ],
+    readable.map((item) => ({ sheetTitle: item.dataSheet.title, range: "A2:K" })),
     fetchImpl,
     session
   )
-  const dataValues = batched.slice(0, readable.length)
-  const previewValues = batched.slice(readable.length)
 
   const loaded: Array<{
     current: IndexVersion
@@ -1929,29 +1917,70 @@ async function materializePreviewEdits(
   }
 
   const payloadById = new Map(loaded.map((item) => [item.current.row.id, item.payload]))
-  const parsedByDeck = new Map<string, Array<{ properties: SheetProperties; deck: Deck }>>()
+  const previewJobs = loaded.flatMap((item) => {
+    const deck = item.payload.deck
+    if (!deck) return []
+    return previewSheetCandidates(storage.metadata, item.current.row.id, deck.name)
+      .filter((properties) => properties.title)
+      .map((properties) => ({
+        current: item.current,
+        properties,
+        sheetTitle: properties.title!,
+        range: previewReadRange(deck),
+      }))
+  })
+  const previewValues = await readValuesMany(
+    client,
+    previewJobs.map((job) => ({ sheetTitle: job.sheetTitle, range: job.range })),
+    fetchImpl,
+    session
+  )
+
+  type PreviewParseResult = {
+    properties: SheetProperties
+    deck: Deck | null
+    error: Error | null
+  }
+  const previewResultsByDeck = new Map<string, PreviewParseResult[]>()
   previewJobs.forEach((job, index) => {
     const deck = payloadById.get(job.current.row.id)?.deck
     if (!deck) return
+    const list = previewResultsByDeck.get(job.current.row.id) ?? []
     try {
-      const parsed = parsePreviewValues(deck, job.properties, previewValues[index] ?? [])
-      const list = parsedByDeck.get(job.current.row.id) ?? []
-      list.push({ properties: job.properties, deck: parsed })
-      parsedByDeck.set(job.current.row.id, list)
-    } catch {
-      // Keep scanning other candidates; readDeckPreview-equivalent throws only if none parse.
+      list.push({
+        properties: job.properties,
+        deck: parsePreviewValues(deck, job.properties, previewValues[index] ?? []),
+        error: null,
+      })
+    } catch (error) {
+      list.push({
+        properties: job.properties,
+        deck: null,
+        error: error instanceof Error ? error : new Error("Unable to parse deck preview worksheet"),
+      })
     }
+    previewResultsByDeck.set(job.current.row.id, list)
   })
 
   for (const item of loaded) {
     if (!item.payload.deck) continue
-    const parsed = parsedByDeck.get(item.current.row.id) ?? []
+    const results = previewResultsByDeck.get(item.current.row.id) ?? []
+    const taggedId = findTaggedDeckPreviewSheet(storage.metadata, item.current.row.id)?.sheetId
+    const taggedResult = typeof taggedId === "number"
+      ? results.find((result) => result.properties.sheetId === taggedId)
+      : undefined
+    if (taggedResult?.error) throw taggedResult.error
+
+    const parsed = results.flatMap((result) => (
+      result.deck ? [{ properties: result.properties, deck: result.deck }] : []
+    ))
     if (parsed.length === 0) {
-      if (previewSheetCandidates(storage.metadata, item.current.row.id, item.payload.deck.name).length === 0) {
-        await writeDeckPreview(client, storage.metadata, item.current.row.id, item.payload.deck, fetchImpl)
-      }
+      const parseError = results.find((result) => result.error)?.error
+      if (parseError) throw parseError
+      await writeDeckPreview(client, storage.metadata, item.current.row.id, item.payload.deck, fetchImpl)
       continue
     }
+
     const selected = selectParsedPreview(storage.metadata, item.current.row.id, item.payload.deck, parsed)
     if (typeof selected.properties.sheetId === "number") {
       await tagDeckPreviewSheet(client, storage.metadata, selected.properties.sheetId, item.current.row.id, fetchImpl)

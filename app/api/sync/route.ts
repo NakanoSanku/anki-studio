@@ -10,6 +10,6 @@ export async function GET(request: Request) {
     const decks = await listGoogleSheetsIndex(ctx.client)
     return Response.json({ decks })
   } catch (error) {
-    return googleSheetsErrorResponse(error, "读取云端目录失败")
+    return googleSheetsErrorResponse(error, "Couldn’t read the cloud index")
   }
 }

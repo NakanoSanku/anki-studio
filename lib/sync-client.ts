@@ -40,8 +40,13 @@ async function applyPayload(
     }
     return
   }
-  if (!payload.deck) throw new Error("云端卡包是空的")
-  const deck = parseDeckJson(JSON.stringify(payload.deck))
+  if (!payload.deck) throw new Error("Cloud deck payload is empty")
+  let deck
+  try {
+    deck = parseDeckJson(JSON.stringify(payload.deck))
+  } catch {
+    throw new Error("Cloud deck content is invalid")
+  }
   await store.setRecord({
     id,
     deck,
@@ -139,7 +144,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncSummary> 
 
   const status = await transport.status()
   if (!status.available) {
-    summary.unavailable = status.reason ?? "云同步不可用"
+    summary.unavailable = status.reason ?? "Cloud sync unavailable"
     await store.setSyncMeta({
       ...((await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }),
       lastError: summary.unavailable,
@@ -182,12 +187,12 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncSummary> 
             const record = await store.getRecord(action.id)
             const choice = await resolveConflict({
               id: action.id,
-              name: record?.deck.name ?? "未命名卡包",
+              name: record?.deck.name ?? "Untitled deck",
               localUpdatedAt: record?.updatedAt ?? Date.now(),
               localDeleted: Boolean(record?.deletedAt),
               remoteRev: pushed.server.rev,
               remoteDeleted: Boolean(pushed.server.deletedAt),
-              remoteName: pushed.server.deck?.name ?? "未命名卡包",
+              remoteName: pushed.server.deck?.name ?? "Untitled deck",
             })
             if (choice === "defer") {
               summary.deferred = true
@@ -218,7 +223,7 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncSummary> 
       lastError: summary.deferred ? meta.lastError : undefined,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "同步失败"
+    const message = error instanceof Error ? error.message : "Sync failed"
     summary.error = message
     const meta = (await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }
     await store.setSyncMeta({ ...meta, lastError: message })
@@ -237,7 +242,7 @@ export async function applyConflictChoice(
   if (!local) return
 
   if (choice === "copy") {
-    await addInactiveDeckCopy(cloneDeckAsCopy(local.deck, `${local.deck.name} 本机`), `${local.deck.name} 本机`)
+    await addInactiveDeckCopy(cloneDeckAsCopy(local.deck, `${local.deck.name} (local copy)`), `${local.deck.name} (local copy)`)
     const remote = await transport.getDeck(id)
     if (remote) await applyPayload(store, id, remote)
     return
@@ -269,7 +274,7 @@ export async function applyConflictChoice(
     }
     expectedRev = result.server.rev
   }
-  throw new Error("覆盖云端失败，请稍后再同步")
+  throw new Error("Couldn’t overwrite the cloud deck. Try syncing again.")
 }
 
 export async function dirtyCount(store: StudioStore): Promise<number> {

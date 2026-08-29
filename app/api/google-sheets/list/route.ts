@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       const errorText = await response.text()
       console.warn("Drive files list warning:", response.status, errorText)
       return Response.json(
-        { files: [], error: "无法直接列出云端硬盘文件，您可以使用上方新建表格或直接粘贴表格链接" },
+        { files: [], error: "Couldn’t list Google Drive files. Create a spreadsheet or paste a Google Sheet link instead." },
         { status: 200 }
       )
     }
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Error fetching spreadsheets from drive:", error)
     return Response.json(
-      { files: [], error: "列出表格时发生错误" },
+      { files: [], error: "An error occurred while listing spreadsheets" },
       { status: 200 }
     )
   }
