@@ -64,7 +64,7 @@ export function readGoogleOAuthConfiguration(
   )
 
   if (!hasAnySetting) {
-    return { state: "disabled", issue: "Google OAuth 尚未配置" }
+    return { state: "disabled", issue: "Google OAuth is not configured" }
   }
 
   const missing: string[] = []
@@ -72,11 +72,11 @@ export function readGoogleOAuthConfiguration(
   if (!clientSecret) missing.push("GOOGLE_CLIENT_SECRET")
   if (!authSecret) missing.push("AUTH_SECRET")
   if (missing.length > 0) {
-    return { state: "invalid", issue: `Google OAuth 缺少 ${missing.join("、")}` }
+    return { state: "invalid", issue: `Google OAuth is missing ${missing.join(", ")}` }
   }
 
   if (allowedEmails.length > 0 && allowedEmails.some((email) => !EMAIL_PATTERN.test(email))) {
-    return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS 包含无效邮箱" }
+    return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS contains an invalid email address" }
   }
 
   return { state: "ready", clientId, clientSecret, authSecret, allowedEmails }

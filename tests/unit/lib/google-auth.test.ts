@@ -27,14 +27,14 @@ describe("Google OAuth configuration", () => {
   it("stays disabled when no OAuth setting is present", () => {
     expect(readGoogleOAuthConfiguration({})).toEqual({
       state: "disabled",
-      issue: "Google OAuth 尚未配置",
+      issue: "Google OAuth is not configured",
     })
   })
 
   it("requires a complete single-user configuration", () => {
     expect(readGoogleOAuthConfiguration({ GOOGLE_CLIENT_ID: "client-id" })).toEqual({
       state: "invalid",
-      issue: "Google OAuth 缺少 GOOGLE_CLIENT_SECRET、AUTH_SECRET",
+      issue: "Google OAuth is missing GOOGLE_CLIENT_SECRET, AUTH_SECRET",
     })
   })
 
