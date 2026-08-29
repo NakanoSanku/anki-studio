@@ -1,0 +1,158 @@
+name: Temporary AI generation reference UX
+
+on:
+  push:
+    branches:
+      - fix/ai-generation-reference-ux
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply AI generation UX changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          # Notes UI: references only inside AI flows, generic source material,
+          # and automatic/manual amount modes.
+          path = Path("components/card-editor.tsx")
+          source = path.read_text()
+          source = replace_once(
+              source,
+              'import { ReferenceNotesBar, ReferenceNotesPicker } from "@/components/reference-notes-bar"',
+              'import { ReferenceNotesPicker } from "@/components/reference-notes-bar"',
+              "reference picker import",
+          )
+          source = replace_once(
+              source,
+              'type MobilePane = "list" | "editor" | "preview"\n\nconst LIST_ROW = 60',
+              'type MobilePane = "list" | "editor" | "preview"\ntype BatchAmountMode = "auto" | "manual"\n\nconst LIST_ROW = 60',
+              "batch amount type",
+          )
+          source = replace_once(
+              source,
+              '  const [batchTopic, setBatchTopic] = useState("")\n  const [batchCount, setBatchCount] = useState("10")',
+              '  const [batchTopic, setBatchTopic] = useState("")\n  const [batchAmountMode, setBatchAmountMode] = useState<BatchAmountMode>("auto")\n  const [batchCount, setBatchCount] = useState("10")',
+              "batch amount state",
+          )
+          source = replace_once(
+              source,
+              '''  const applyBatchAi = () => {\n    const count = Number(batchCount)\n    if (!batchTopic.trim()) {\n      setAlert("Enter a topic or word list")\n      return\n    }\n    if (!Number.isFinite(count) || count < 1 || count > 50) {\n      setAlert("Generate between 1 and 50 notes")\n      return\n    }''',
+              '''  const applyBatchAi = () => {\n    const count = Number(batchCount)\n    if (!batchTopic.trim()) {\n      setAlert("Add source material")\n      return\n    }\n    if (batchAmountMode === "manual" && (!Number.isFinite(count) || count < 1 || count > 50)) {\n      setAlert("Generate between 1 and 50 notes")\n      return\n    }''',
+              "batch validation",
+          )
+          source = replace_once(
+              source,
+              'const generated = await requestBatchAi({ topic, count: Math.floor(count), fields, existingKeys, notes, references })',
+              'const generated = await requestBatchAi({ topic, count: batchAmountMode === "manual" ? Math.floor(count) : undefined, fields, existingKeys, notes, references })',
+              "batch request amount",
+          )
+          source = replace_once(
+              source,
+              '''        <div className="flex min-w-0 items-center gap-2">\n          <div className="flex items-center rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">\n            {FILTERS.map((item) => <button key={item.id} type="button" data-testid={`mobile-review-filter-${item.id}`} className={cn("h-7 rounded-[9px] px-3 text-[11px] font-medium transition-colors", filter === item.id ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]" : "text-foreground/45 hover:text-foreground")} onClick={() => setFilter(item.id)}>{item.label}</button>)}\n          </div>\n          {review.referenceIds.length > 0 ? <ReferenceNotesBar referenceIds={review.referenceIds} onOpenPicker={() => setReferencePickerOpen(true)} /> : null}\n        </div>''',
+              '''        <div className="flex min-w-0 items-center gap-2">\n          <div className="flex items-center rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">\n            {FILTERS.map((item) => <button key={item.id} type="button" data-testid={`mobile-review-filter-${item.id}`} className={cn("h-7 rounded-[9px] px-3 text-[11px] font-medium transition-colors", filter === item.id ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]" : "text-foreground/45 hover:text-foreground")} onClick={() => setFilter(item.id)}>{item.label}</button>)}\n          </div>\n        </div>''',
+              "remove references from note list",
+          )
+          source = replace_once(
+              source,
+              '<p className="mt-0.5 truncate text-[11px] text-muted-foreground">{review.referenceIds.length > 0 ? "Match the style of the selected examples" : "Choose 1–3 example notes from this deck"}</p>',
+              '<p className="mt-0.5 truncate text-[11px] text-muted-foreground">Optional style examples</p>',
+              "reference choice copy",
+          )
+          old_batch = '''  const batchDialog = (\n    <Dialog open={batchOpen && !referencePickerOpen} onOpenChange={(open) => { if (!open && referencePickerOpen) return; setBatchOpen(open) }}>\n      <DialogContent>\n        <DialogHeader><div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span className="size-2 rounded-full bg-energy" />AI batch</div><DialogTitle>Generate notes</DialogTitle><DialogDescription>Generate multiple notes from a topic or pasted word list. Existing key-field values are skipped and new notes are inserted after the current note.</DialogDescription></DialogHeader>\n        <div className="flex flex-col gap-3">\n          {referenceChoice}\n          <div className="flex flex-col gap-2 rounded-[15px] border border-black/[0.06] bg-background/55 p-3.5 dark:border-white/[0.08]"><Label htmlFor="batch-topic">Topic or word list</Label><Textarea id="batch-topic" value={batchTopic} placeholder="e.g. TOEFL high-frequency verbs, or one word per line" className="min-h-28" onChange={(event) => setBatchTopic(event.target.value)} /></div>\n          <div className="flex flex-col gap-2 rounded-[15px] border border-black/[0.06] bg-background/55 p-3.5 dark:border-white/[0.08]"><Label htmlFor="batch-count">Count</Label><Input id="batch-count" type="number" min={1} max={50} value={batchCount} onChange={(event) => setBatchCount(event.target.value)} /></div>\n        </div>\n        <DialogFooter className="flex flex-row justify-end gap-2 pt-1"><Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setBatchOpen(false)}>Cancel</Button><Button type="button" className="flex-1 sm:flex-initial" disabled={isBusy("batch")} onClick={applyBatchAi}>{isBusy("batch") ? "Generating…" : "Generate"}</Button></DialogFooter>\n      </DialogContent>\n    </Dialog>\n  )'''
+          new_batch = '''  const batchDialog = (\n    <Dialog open={batchOpen && !referencePickerOpen} onOpenChange={(open) => { if (!open && referencePickerOpen) return; setBatchOpen(open) }}>\n      <DialogContent aria-describedby={undefined}>\n        <DialogHeader><div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span className="size-2 rounded-full bg-energy" />AI batch</div><DialogTitle>Generate notes</DialogTitle></DialogHeader>\n        <div className="flex flex-col gap-4">\n          <div className="space-y-2">\n            <Label htmlFor="batch-source">Source material</Label>\n            <Textarea id="batch-source" value={batchTopic} placeholder="Topic, word list, article, notes…" className="min-h-32 bg-background" onChange={(event) => setBatchTopic(event.target.value)} />\n          </div>\n          <div className="space-y-2">\n            <div className="flex items-center justify-between gap-3">\n              <Label>Amount</Label>\n              <div className="flex items-center rounded-[11px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">\n                <button type="button" data-testid="batch-amount-auto" aria-pressed={batchAmountMode === "auto"} className={cn("h-7 rounded-[8px] px-3 text-[11px] font-medium transition-colors", batchAmountMode === "auto" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")} onClick={() => setBatchAmountMode("auto")}>Auto</button>\n                <button type="button" data-testid="batch-amount-manual" aria-pressed={batchAmountMode === "manual"} className={cn("h-7 rounded-[8px] px-3 text-[11px] font-medium transition-colors", batchAmountMode === "manual" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")} onClick={() => setBatchAmountMode("manual")}>Manual</button>\n              </div>\n            </div>\n            {batchAmountMode === "manual" ? (\n              <Input id="batch-count" aria-label="Note count" type="number" min={1} max={50} value={batchCount} className="h-10 bg-background" onChange={(event) => setBatchCount(event.target.value)} />\n            ) : (\n              <p className="text-[11px] text-muted-foreground">Adapts to the source · up to 50 notes</p>\n            )}\n          </div>\n          {referenceChoice}\n        </div>\n        <DialogFooter className="flex flex-row justify-end gap-2 pt-1"><Button type="button" variant="outline" className="flex-1 sm:flex-initial" onClick={() => setBatchOpen(false)}>Cancel</Button><Button type="button" className="flex-1 sm:flex-initial" disabled={isBusy("batch") || !batchTopic.trim()} onClick={applyBatchAi}>{isBusy("batch") ? "Generating…" : "Generate"}</Button></DialogFooter>\n      </DialogContent>\n    </Dialog>\n  )'''
+          source = replace_once(source, old_batch, new_batch, "batch dialog")
+          path.write_text(source)
+
+          # Batch API accepts omitted count for automatic extraction.
+          path = Path("lib/ai.ts")
+          source = path.read_text()
+          source = replace_once(source, "  count: number\n  fields: string[]", "  count?: number\n  fields: string[]", "optional batch count")
+          path.write_text(source)
+
+          path = Path("lib/ai-run.ts")
+          source = path.read_text()
+          source = replace_once(source, "  const count = Number(body.count)", "  const count = body.count == null ? null : Number(body.count)", "optional count parse")
+          source = replace_once(
+              source,
+              '''  if (!topic) throw new AiRequestError("请填写生成主题或词表")\n  if (!Number.isFinite(count) || count < 1 || count > 50) {\n    throw new AiRequestError("生成数量需要在 1 到 50 之间")\n  }\n\n  const settings = parseAiSettings(body.settings)''',
+              '''  if (!topic) throw new AiRequestError("请填写关联信息")\n  if (count !== null && (!Number.isFinite(count) || count < 1 || count > 50)) {\n    throw new AiRequestError("生成数量需要在 1 到 50 之间")\n  }\n\n  const amountRule = count === null\n    ? "Auto — extract every distinct, useful note supported by the source material, up to 50. Do not pad the result or omit clear standalone items just to satisfy a quota."\n    : `Exactly ${Math.floor(count)} notes.`\n  const settings = parseAiSettings(body.settings)''',
+              "auto amount validation",
+          )
+          source = replace_once(source, "      count: String(Math.floor(count)),", "      count: amountRule,", "batch amount prompt")
+          source = replace_once(
+              source,
+              '''  const cards = pickCardList(parsed, fields)\n  if (cards.length === 0) throw new Error("AI 没有返回卡片")\n  return cards''',
+              '''  const cards = pickCardList(parsed, fields)\n  if (cards.length === 0) throw new Error("AI 没有返回卡片")\n  const limit = count === null ? 50 : Math.floor(count)\n  return cards.slice(0, limit)''',
+              "batch result limit",
+          )
+          path.write_text(source)
+
+          # Make the default prompt generic and migrate users who still have the
+          # previous untouched default.
+          path = Path("lib/ai-settings.ts")
+          source = path.read_text()
+          old_default = '''export const DEFAULT_BATCH_PROMPT = `Generate {{count}} unique vocabulary cards.\nTopic or word list:\n{{topic}}\nFields: {{fields}}\nField notes:\n{{notes}}\nDo not use these existing key values: {{existing}}\nEvery card must have a unique value for "{{key}}".\nReference notes (match their style, but do not copy their entries):\n{{references}}`'''
+          new_default = '''const PREVIOUS_DEFAULT_BATCH_PROMPT = `Generate {{count}} unique vocabulary cards.\nTopic or word list:\n{{topic}}\nFields: {{fields}}\nField notes:\n{{notes}}\nDo not use these existing key values: {{existing}}\nEvery card must have a unique value for "{{key}}".\nReference notes (match their style, but do not copy their entries):\n{{references}}`\n\nexport const DEFAULT_BATCH_PROMPT = `Create Anki vocabulary notes from the source material below.\nSource material:\n{{topic}}\nAmount:\n{{count}}\nFields: {{fields}}\nField notes:\n{{notes}}\nDo not use these existing key values: {{existing}}\nEvery note must have a unique value for "{{key}}".\nReference notes (match their style, but do not copy their entries):\n{{references}}`'''
+          source = replace_once(source, old_default, new_default, "batch default prompt")
+          source = replace_once(
+              source,
+              '    batchPrompt: migrateDefault(raw.batchPrompt, LEGACY_DEFAULT_BATCH_PROMPT, DEFAULT_BATCH_PROMPT),',
+              '''    batchPrompt: migrateDefault(\n      migrateDefault(raw.batchPrompt, LEGACY_DEFAULT_BATCH_PROMPT, PREVIOUS_DEFAULT_BATCH_PROMPT),\n      PREVIOUS_DEFAULT_BATCH_PROMPT,\n      DEFAULT_BATCH_PROMPT\n    ),''',
+              "batch prompt migration",
+          )
+          source = replace_once(source, '{ id: "topic", label: "Topic or word list" },\n      { id: "count", label: "Count" },', '{ id: "topic", label: "Source material" },\n      { id: "count", label: "Amount rule" },', "prompt variable labels")
+          path.write_text(source)
+
+          # Regression contracts for the redesigned UX.
+          path = Path("tests/contracts/ui/notes-list.test.ts")
+          source = path.read_text()
+          source = replace_once(
+              source,
+              '''  it("keeps reference notes available for AI Fill and batch generation", () => {\n    expect(editor).toContain("ReferenceNotesBar")\n    expect(editor).toContain("ReferenceNotesPicker")\n    expect(editor).toContain("referenceValuesForComplete")\n    expect(editor).toContain("references")\n  })''',
+              '''  it("keeps reference notes inside AI flows instead of the note-list toolbar", () => {\n    expect(editor).not.toContain("ReferenceNotesBar")\n    expect(editor).toContain("ReferenceNotesPicker")\n    expect(editor).toContain("referenceValuesForComplete")\n    expect(editor).toContain("Optional style examples")\n  })''',
+              "reference visibility contract",
+          )
+          source = replace_once(
+              source,
+              '''  it("keeps clear selection in the upper-right of the reference picker", () => {\n    expect(references).toContain('className="mb-2 flex items-center justify-between gap-3 pr-8"')\n    expect(references).toContain('aria-label="Clear reference selection"')\n    expect(references).toContain("Clear selection")\n    expect(references).not.toContain('className="mt-1 h-8 w-fit px-2 text-xs text-muted-foreground"')\n  })''',
+              '''  it("keeps reference picker controls stable and supports full-note preview", () => {\n    expect(references).toContain('aria-label="Clear reference selection"')\n    expect(references).toContain("disabled={referenceIds.length === 0}")\n    expect(references).not.toContain("Sparkles")\n    expect(references).toContain('aria-label={`Preview ${label || "note"}`}')\n    expect(references).toContain("Note preview")\n    expect(references).toContain("Use as reference")\n    expect(references).toContain("Pick notes whose style you want AI to follow.")\n  })\n\n  it("uses compact source-material generation with auto and manual amounts", () => {\n    expect(editor).toContain("Source material")\n    expect(editor).toContain("Topic, word list, article, notes…")\n    expect(editor).toContain('data-testid="batch-amount-auto"')\n    expect(editor).toContain('data-testid="batch-amount-manual"')\n    expect(editor).toContain("Adapts to the source · up to 50 notes")\n    expect(editor).toContain('count: batchAmountMode === "manual" ? Math.floor(count) : undefined')\n    expect(editor).not.toContain("Generate multiple notes from a topic or pasted word list")\n  })''',
+              "reference and batch UX contracts",
+          )
+          path.write_text(source)
+
+          path = Path("tests/unit/lib/ai-settings.test.ts")
+          source = path.read_text()
+          source = replace_once(
+              source,
+              '    expect(DEFAULT_BATCH_PROMPT).toContain("Generate {{count}} unique vocabulary cards")',
+              '    expect(DEFAULT_BATCH_PROMPT).toContain("Source material:")\n    expect(DEFAULT_BATCH_PROMPT).toContain("Amount:\\n{{count}}")',
+              "batch prompt test",
+          )
+          path.write_text(source)
+          PY
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/card-editor.tsx lib/ai.ts lib/ai-run.ts lib/ai-settings.ts tests/contracts/ui/notes-list.test.ts tests/unit/lib/ai-settings.test.ts
+          git diff --cached --check
+          git commit -m "refactor: streamline AI generation workflow"
+          git push origin HEAD:${GITHUB_REF_NAME}
