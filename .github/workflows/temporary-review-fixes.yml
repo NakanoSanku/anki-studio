@@ -1,0 +1,161 @@
+name: Temporary review fixes
+
+on:
+  push:
+    branches:
+      - fix/review-gate-sync-readme
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply review fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          # 1) Google Sheets preview edits must re-enter the approval queue.
+          path = Path("lib/google-sheets-sync.ts")
+          source = path.read_text()
+          source = replace_once(
+              source,
+              '  createCard,\n  cardKeyValue,',
+              '  createPendingCard,\n  cardKeyValue,',
+              "pending card import",
+          )
+          source = replace_once(
+              source,
+              '''    const current = id && !usedIds.has(id) ? existing.get(id) : undefined\n    const card = current ?? createCard(deck.fields)\n    const values = { ...card.values }\n    for (const [index, field] of deck.fields.entries()) {\n      if (isTtsField(deck, field)) {\n        values[field] = ""\n        continue\n      }\n      values[field] = previewText(rowValues[index])\n    }\n    const nextCard = { ...card, values }''',
+              '''    const current = id && !usedIds.has(id) ? existing.get(id) : undefined\n    const card = current ?? createPendingCard(deck.fields)\n    const values = { ...card.values }\n    for (const [index, field] of deck.fields.entries()) {\n      if (isTtsField(deck, field)) {\n        values[field] = ""\n        continue\n      }\n      values[field] = previewText(rowValues[index])\n    }\n    const changed = !current || deck.fields.some((field) => values[field] !== (current.values[field] ?? ""))\n    const nextCard: Card = changed\n      ? { ...card, reviewStatus: "pending", values }\n      : { ...card, values }''',
+              "preview approval gate",
+          )
+
+          # 3) Keep sync user-facing copy English end-to-end.
+          replacements = {
+              '"表格读取过于频繁，请稍后再试"': '"Google Sheets is being read too frequently. Try again shortly."',
+              '"Google Sheet ID 无效"': '"Invalid Google Sheet ID"',
+              '"Google 授权已失效"': '"Google authorization has expired"',
+              '"Google 授权已失效，请重新连接帐号"': '"Google authorization has expired. Reconnect your account."',
+              '`当前帐号无权访问这个 Google Sheet：${message.slice(0, 180)}`': '`Your Google account cannot access this Sheet: ${message.slice(0, 180)}`',
+              '"当前帐号无权访问这个 Google Sheet"': '"Your Google account cannot access this Sheet"',
+              '"找不到这个 Google Sheet"': '"Google Sheet not found"',
+              '`Google Sheets API 响应 ${status}`': '`Google Sheets API returned ${status}`',
+              '"无法连接 Google Sheets"': '"Unable to connect to Google Sheets"',
+              '"未命名卡包"': '"Untitled deck"',
+              '"Google Sheet 同步数据已损坏，请先从备份恢复"': '"Google Sheet sync data is corrupted. Restore from a backup before syncing."',
+              '"Google Sheet 同步目录已损坏，请先从备份恢复"': '"Google Sheet sync index is corrupted. Restore from a backup before syncing."',
+              '"Google Sheet 中的卡包分块不完整"': '"Google Sheet deck payload is incomplete"',
+              '"Google Sheet 中的卡包分块无效"': '"Google Sheet deck payload chunks are invalid"',
+              '"Google Sheet 中的卡包内容无法解析"': '"Google Sheet deck payload could not be parsed"',
+              '"Google Sheet 中的卡包版本无效"': '"Google Sheet deck revision is invalid"',
+              '"卡包太大，无法同步"': '"Deck is too large to sync"',
+              '"Google Sheet 中可用的卡包标签名已耗尽"': '"No available worksheet name remains for this deck"',
+              '`卡片预览包含重复的首字段「${values[deck.fields[0] ?? ""] ?? ""}」`': '`Preview contains a duplicate key field “${values[deck.fields[0] ?? ""] ?? ""}”`',
+              '"Google Sheet 工作表 ID 生成失败"': '"Unable to generate a Google Sheet worksheet ID"',
+              '"Google Sheet 同步索引初始化失败"': '"Google Sheet sync index could not be initialized"',
+              '`卡包「${deckName || "Untitled deck"}」对应的工作表已被删除，请先从备份恢复`': '`The worksheet for deck “${deckName || "Untitled deck"}” was deleted. Restore it from a backup before syncing.`',
+              '"Google Sheet 卡包工作表无效"': '"Google Sheet deck worksheet is invalid"',
+              '"Google Sheet 卡包工作表映射冲突"': '"Google Sheet deck worksheet mapping conflicts with another deck"',
+              '`卡包工作表「${properties.title}」结构不兼容`': '`Deck worksheet “${properties.title}” has an incompatible structure`',
+              '"Google Sheet 卡包预览工作表无效"': '"Google Sheet deck preview worksheet is invalid"',
+              '"Google Sheet 卡包预览工作表映射冲突"': '"Google Sheet deck preview worksheet mapping conflicts with another deck"',
+              '`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`': '`Deck preview worksheet “${properties.title}” has a modified header. Restore it before syncing.`',
+              '`卡包工作表「${dataSheet.title}」缺少目录指定的版本`': '`Deck worksheet “${dataSheet.title}” is missing the revision referenced by the sync index`',
+              '`卡包工作表「${item.dataSheet.title}」缺少目录指定的版本`': '`Deck worksheet “${item.dataSheet.title}” is missing the revision referenced by the sync index`',
+              '"Google Sheet 旧同步工作表无效"': '"Legacy Google Sheet sync worksheet is invalid"',
+              '"Google Sheet 旧卡包缺少内容"': '"Legacy Google Sheet deck payload is missing"',
+              '"Google Sheet 同步索引已被删除，请先从备份恢复"': '"Google Sheet sync index was deleted. Restore from a backup before syncing."',
+              '"Google Sheet 同步索引表头已被清空，请先从备份恢复"': '"Google Sheet sync index header was cleared. Restore from a backup before syncing."',
+              '"Google Sheet 同步索引结构不兼容"': '"Google Sheet sync index has an incompatible structure"',
+              '"Google Sheet 同步目录已被清空，请先从备份恢复"': '"Google Sheet sync index was cleared. Restore from a backup before syncing."',
+              '"Google Sheet 同步目录缺少卡包工作表"': '"Google Sheet sync index is missing the deck worksheet"',
+              '"Anki Studio · 闪卡同步"': '"Anki Studio · Flashcard Sync"',
+              '"创建 Google 表格失败"': '"Failed to create Google Sheet"',
+              '"缺少卡包内容"': '"Deck content is missing"',
+              '"Google Sheet 卡包数据写入不完整"': '"Google Sheet deck write is incomplete"',
+          }
+          for old, new in replacements.items():
+              source = source.replace(old, new)
+          path.write_text(source)
+
+          # 2) JSON is a project backup, not a published-only export.
+          path = Path("components/studio.tsx")
+          studio = path.read_text()
+          studio = replace_once(
+              studio,
+              '''  const onExportJson = () => {\n    const exportDeck = approvedDeck(deck)\n    const blob = new Blob([serializeDeck(exportDeck)], { type: "application/json" })''',
+              '''  const onExportJson = () => {\n    const blob = new Blob([serializeDeck(deck)], { type: "application/json" })''',
+              "full JSON backup",
+          )
+          path.write_text(studio)
+
+          # 4) "done" is already an invariant label and must not be pluralized.
+          path = Path("components/study-overview.tsx")
+          overview = path.read_text()
+          overview = replace_once(
+              overview,
+              '{stats.reviewedToday > 0 ? ` · ${countLabel(stats.reviewedToday, "done")}` : ""}',
+              '{stats.reviewedToday > 0 ? ` · ${stats.reviewedToday} done` : ""}',
+              "done label",
+          )
+          path.write_text(overview)
+
+          # Translate server-side sync errors and make status classification work with English messages.
+          path = Path("lib/sync-server.ts")
+          server = path.read_text()
+          server_replacements = {
+              '"Google 登录服务暂时不可用"': '"Google sign-in is temporarily unavailable"',
+              '"请先连接 Google 帐号"': '"Connect your Google account first"',
+              '"当前 Google 帐号无权访问同步数据"': '"This Google account is not allowed to access sync data"',
+              '"请重新连接 Google 帐号并授权表格访问"': '"Reconnect your Google account and grant Google Sheets access"',
+              '"请先选择用于同步的 Google Sheet"': '"Choose a Google Sheet for sync first"',
+          }
+          for old, new in server_replacements.items():
+              server = server.replace(old, new)
+          server = replace_once(
+              server,
+              '''  if (\n    message.includes("无效")\n    || message.includes("缺少")\n    || message.includes("太大")\n    || message.includes("无法解析")\n  ) {''',
+              '''  if (\n    /invalid|missing|too large|could not be parsed|corrupt|incompatible|duplicate/i.test(message)\n    || /无效|缺少|太大|无法解析/.test(message)\n  ) {''',
+              "sync error classification",
+          )
+          path.write_text(server)
+
+          # Regression coverage for all review findings.
+          Path("tests/contracts/review-fixes.test.ts").write_text('''import { describe, expect, it } from "vitest"\n\nimport { readSource } from "./ui/helpers/source"\n\nconst sheets = readSource("lib", "google-sheets-sync.ts")\nconst syncServer = readSource("lib", "sync-server.ts")\nconst studio = readSource("components", "studio.tsx")\nconst home = readSource("components", "study-overview.tsx")\n\ndescribe("code review fixes", () => {\n  it("returns Google Sheets additions and edits to pending review", () => {\n    expect(sheets).toContain("createPendingCard")\n    expect(sheets).toContain("const changed = !current ||")\n    expect(sheets).toContain('reviewStatus: "pending"')\n    expect(sheets).not.toContain("const card = current ?? createCard(deck.fields)")\n  })\n\n  it("keeps JSON as a full project backup while published exports stay approval-gated", () => {\n    expect(studio).toContain('new Blob([serializeDeck(deck)], { type: "application/json" })')\n    expect(studio).toContain("const exportDeck = approvedDeck(deck)")\n    expect(studio).toContain("deckToCsv(exportDeck)")\n    expect(studio).toContain("serializeDeck(approvedDeck(deck))")\n  })\n\n  it("keeps sync errors English while retaining the legacy preview header", () => {\n    expect(sheets.replace('"序号"', "")).not.toMatch(/[\\u3400-\\u9fff]/)\n    expect(syncServer).not.toMatch(/[\\u3400-\\u9fff]/)\n  })\n\n  it("does not pluralize the invariant done label", () => {\n    expect(home).toContain('`${stats.reviewedToday} done`')\n    expect(home).not.toContain('countLabel(stats.reviewedToday, "done")')\n  })\n})\n''')
+
+          # Audit unexpected untranslated strings in the two sync surfaces. Legacy "序号" is data compatibility.
+          for target in [Path("lib/google-sheets-sync.ts"), Path("lib/sync-server.ts")]:
+              text = target.read_text()
+              check = text.replace('"序号"', '"legacy-index"')
+              remaining = [(i, line) for i, line in enumerate(check.splitlines(), 1) if re.search(r'[\u3400-\u9fff]', line)]
+              if remaining:
+                  print(f"Untranslated CJK remains in {target}:")
+                  for line_no, line in remaining:
+                      print(f"{line_no}: {line}")
+                  raise SystemExit(1)
+          PY
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/google-sheets-sync.ts lib/sync-server.ts components/studio.tsx components/study-overview.tsx tests/contracts/review-fixes.test.ts
+          git diff --cached --check
+          git commit -m "fix: close review and sync integrity gaps"
+          git push origin HEAD:${GITHUB_REF_NAME}
