@@ -69,6 +69,10 @@ type MobilePane = "list" | "editor" | "preview"
 type BatchAmountMode = "auto" | "manual"
 
 const LIST_ROW = 60
+
+function formatCompactCount(value: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)
+}
 const FILTERS: { id: ReviewFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "unreviewed", label: "Needs review" },
@@ -137,6 +141,7 @@ export function CardEditor({
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
   const reviewedCount = deck.cards.filter(isCardApproved).length
+  const needsReviewCount = deck.cards.length - reviewedCount
   const isSelectedReviewed = Boolean(selected && isCardApproved(selected))
   const isBusy = (task: string) => busyKeys.includes(task)
   const listOnly = layout === "list"
@@ -419,14 +424,11 @@ export function CardEditor({
 
   const listToolbar = (
     <div className="space-y-3 rounded-[20px] border border-black/[0.065] bg-card p-3.5 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground"><span className="size-1.5 rounded-full bg-energy" />Note library</p>
-          <div className="mt-1 flex items-baseline gap-2">
-            <p className="text-lg font-semibold tracking-[-0.035em] text-foreground">{deck.cards.length} notes</p>
-            <span className="text-[11px] font-medium text-muted-foreground">{reviewedCount} reviewed</span>
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex min-w-0 items-center gap-2 truncate text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">
+          <span className="size-1.5 shrink-0 rounded-full bg-energy" />
+          Note library
+        </p>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>Generate</Button>
           <Button type="button" size="sm" className="h-9 px-3 text-xs" aria-label="Create note" title="Create after the current note" onClick={addCard}><Plus className="mr-1 size-3.5" />New</Button>
@@ -439,13 +441,27 @@ export function CardEditor({
         {query.trim() ? <button type="button" aria-label="Clear search" className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3" /></button> : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex items-center rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">
-            {FILTERS.map((item) => <button key={item.id} type="button" data-testid={`mobile-review-filter-${item.id}`} className={cn("h-7 rounded-[9px] px-3 text-[11px] font-medium transition-colors", filter === item.id ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]" : "text-foreground/45 hover:text-foreground")} onClick={() => setFilter(item.id)}>{item.label}</button>)}
-          </div>
-        </div>
-        <p className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground sm:text-xs">{query.trim() || filter !== "all" ? `${visibleCards.length} / ${deck.cards.length}` : `${deck.cards.length}`}</p>
+      <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">
+        {FILTERS.map((item) => {
+          const count = item.id === "all" ? deck.cards.length : needsReviewCount
+          return (
+            <button
+              key={item.id}
+              type="button"
+              data-testid={`mobile-review-filter-${item.id}`}
+              className={cn(
+                "flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 text-[11px] font-medium transition-colors",
+                filter === item.id
+                  ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"
+                  : "text-foreground/45 hover:text-foreground"
+              )}
+              onClick={() => setFilter(item.id)}
+            >
+              <span className="truncate">{item.label}</span>
+              <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-65">{formatCompactCount(count)}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

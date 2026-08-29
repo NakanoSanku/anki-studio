@@ -75,6 +75,15 @@ describe("notes mobile chrome", () => {
     expect(references).toContain("Pick notes whose style you want AI to follow.")
   })
 
+  it("keeps note-library counts inside fixed filter tabs instead of the action row", () => {
+    expect(editor).toContain("formatCompactCount")
+    expect(editor).toContain("needsReviewCount")
+    expect(editor).toContain("grid grid-cols-2 gap-1")
+    expect(editor).toContain("item.id === \"all\" ? deck.cards.length : needsReviewCount")
+    expect(editor).not.toContain("{deck.cards.length} notes</p>")
+    expect(editor).not.toContain("{reviewedCount} reviewed</span>")
+  })
+
   it("uses compact source-material generation with auto and manual amounts", () => {
     expect(editor).toContain("Source material")
     expect(editor).toContain("Topic, word list, article, notes…")
