@@ -52,7 +52,7 @@ export async function getGoogleSheetsAuthorization(
     return {
       ok: false,
       response: Response.json(
-        { error: "Google 登录服务暂时不可用", available: false },
+        { error: "Google sign-in is temporarily unavailable", available: false },
         { status: 503 }
       ),
     }
@@ -62,7 +62,7 @@ export async function getGoogleSheetsAuthorization(
     return {
       ok: false,
       response: Response.json(
-        { error: "请先连接 Google 帐号", available: false, authRequired: true },
+        { error: "Connect your Google account first", available: false, authRequired: true },
         { status: 401 }
       ),
     }
@@ -72,7 +72,7 @@ export async function getGoogleSheetsAuthorization(
     return {
       ok: false,
       response: Response.json(
-        { error: "当前 Google 帐号无权访问同步数据", available: false },
+        { error: "This Google account is not allowed to access sync data", available: false },
         { status: 403 }
       ),
     }
@@ -87,7 +87,7 @@ export async function getGoogleSheetsAuthorization(
       ok: false,
       response: Response.json(
         {
-          error: "请重新连接 Google 帐号并授权表格访问",
+          error: "Reconnect your Google account and grant Google Sheets access",
           available: false,
           authRequired: true,
           reauthorize: true,
@@ -112,7 +112,7 @@ export async function getSyncEnv(
     return {
       ok: false,
       response: Response.json(
-        { error: "请先选择用于同步的 Google Sheet", available: false },
+        { error: "Choose a Google Sheet for sync first", available: false },
         { status: 400 }
       ),
     }
@@ -143,12 +143,7 @@ export function googleSheetsErrorResponse(error: unknown, fallback: string): Res
     }, { status })
   }
   const message = error instanceof Error ? error.message : fallback
-  if (
-    message.includes("无效")
-    || message.includes("缺少")
-    || message.includes("太大")
-    || message.includes("无法解析")
-  ) {
+  if (/invalid|missing|too large|could not be parsed|corrupt|incompatible|duplicate/i.test(message)) {
     return jsonError(message, 400)
   }
   console.error(JSON.stringify({ message: fallback, error: message }))

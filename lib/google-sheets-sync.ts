@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer"
 
 import {
-  createCard,
+  createPendingCard,
   cardKeyValue,
   fsrsOf,
   isTtsField,
@@ -183,7 +183,7 @@ export class GoogleSheetsApiError extends Error {
   }
 }
 
-export const SHEETS_QUOTA_USER_MESSAGE = "表格读取过于频繁，请稍后再试"
+export const SHEETS_QUOTA_USER_MESSAGE = "Google Sheets is being read too frequently. Try again shortly."
 export const SHEETS_QUOTA_RETRY_DELAYS_MS = [400, 800]
 
 type SheetsSession = {
@@ -220,9 +220,9 @@ export function createGoogleSheetsClient(input: {
   accessToken: string
 }): GoogleSheetsClient {
   if (!isGoogleSpreadsheetId(input.spreadsheetId)) {
-    throw new Error("Google Sheet ID 无效")
+    throw new Error("Invalid Google Sheet ID")
   }
-  if (!input.accessToken.trim()) throw new Error("Google 授权已失效")
+  if (!input.accessToken.trim()) throw new Error("Google authorization has expired")
   return {
     spreadsheetId: input.spreadsheetId,
     accessToken: input.accessToken.trim(),
@@ -232,14 +232,14 @@ export function createGoogleSheetsClient(input: {
 function apiMessage(status: number, payload: unknown): string {
   if (isSheetsQuotaError(status, payload)) return SHEETS_QUOTA_USER_MESSAGE
   const message = googleErrorMessage(payload)
-  if (status === 401) return "Google 授权已失效，请重新连接帐号"
+  if (status === 401) return "Google authorization has expired. Reconnect your account."
   if (status === 403) {
     return message
-      ? `当前帐号无权访问这个 Google Sheet：${message.slice(0, 180)}`
-      : "当前帐号无权访问这个 Google Sheet"
+      ? `Your Google account cannot access this Sheet: ${message.slice(0, 180)}`
+      : "Your Google account cannot access this Sheet"
   }
-  if (status === 404) return "找不到这个 Google Sheet"
-  return message ? message.slice(0, 240) : `Google Sheets API 响应 ${status}`
+  if (status === 404) return "Google Sheet not found"
+  return message ? message.slice(0, 240) : `Google Sheets API returned ${status}`
 }
 
 async function sheetsRequest<T>(
@@ -270,7 +270,7 @@ async function sheetsRequest<T>(
         }
       )
     } catch {
-      throw new GoogleSheetsApiError("无法连接 Google Sheets", 503)
+      throw new GoogleSheetsApiError("Unable to connect to Google Sheets", 503)
     }
 
     const data = await response.json().catch(() => null) as unknown
@@ -282,7 +282,7 @@ async function sheetsRequest<T>(
     await sleep(retryDelay)
   }
 
-  throw lastError ?? new GoogleSheetsApiError("无法连接 Google Sheets", 503)
+  throw lastError ?? new GoogleSheetsApiError("Unable to connect to Google Sheets", 503)
 }
 
 function quotedRange(sheetTitle: string, range: string): string {
@@ -512,7 +512,7 @@ function spreadsheetInventoryFromMetadata(
     const current = findCurrentIndexVersion(indexRows, id)
     if (current && !current.row.deletedAt) {
       activeIndexDecks.set(id, {
-        name: current.row.name || "未命名卡包",
+        name: current.row.name || "Untitled deck",
         sheetId: current.row.sheetId ?? undefined,
       })
     }
@@ -574,7 +574,7 @@ function spreadsheetInventoryFromMetadata(
   const decks = [...allDeckIds]
     .map((deckId) => ({
       deckId,
-      name: names.get(deckId) || "未命名卡包",
+      name: names.get(deckId) || "Untitled deck",
       sheets: sheets.filter((sheet) => sheet.deckId === deckId),
     }))
     .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"))
@@ -673,7 +673,7 @@ function parseSyncRows(
       || row.schemaVersion !== expectedSchemaVersion
       || !/^[A-Za-z0-9_-]{16,80}$/.test(row.versionId)
     ) {
-      throw new Error("Google Sheet 同步数据已损坏，请先从备份恢复")
+      throw new Error("Google Sheet sync data is corrupted. Restore from a backup before syncing.")
     }
     rows.push(row)
   })
@@ -712,7 +712,7 @@ function parseIndexRows(values: unknown[][]): IndexRow[] {
       || row.schemaVersion !== GOOGLE_SHEETS_SCHEMA_VERSION
       || !/^[A-Za-z0-9_-]{16,80}$/.test(row.versionId)
     ) {
-      throw new Error("Google Sheet 同步目录已损坏，请先从备份恢复")
+      throw new Error("Google Sheet sync index is corrupted. Restore from a backup before syncing.")
     }
     rows.push(row)
   })
@@ -763,7 +763,7 @@ function decodePayload(version: SyncVersion, expectedSchemaVersion: number): Rem
   const rows = version.rows.slice().sort((left, right) => left.partIndex - right.partIndex)
   const partCount = rows.length > 0 ? rows[0]!.partCount : 0
   if (!partCount || rows.length !== partCount) {
-    throw new Error("Google Sheet 中的卡包分块不完整")
+    throw new Error("Google Sheet deck payload is incomplete")
   }
   rows.forEach((row, index) => {
     if (
@@ -772,18 +772,18 @@ function decodePayload(version: SyncVersion, expectedSchemaVersion: number): Rem
       || row.schemaVersion !== expectedSchemaVersion
       || row.versionId !== version.versionId
     ) {
-      throw new Error("Google Sheet 中的卡包分块无效")
+      throw new Error("Google Sheet deck payload chunks are invalid")
     }
   })
   let raw: unknown
   try {
     raw = JSON.parse(Buffer.from(rows.map((row) => row.payload).join(""), "base64url").toString("utf8"))
   } catch {
-    throw new Error("Google Sheet 中的卡包内容无法解析")
+    throw new Error("Google Sheet deck payload could not be parsed")
   }
   const payload = parseRemoteDeckPayload(raw)
   if (payload.rev !== version.revision) {
-    throw new Error("Google Sheet 中的卡包版本无效")
+    throw new Error("Google Sheet deck revision is invalid")
   }
   return payload
 }
@@ -808,10 +808,10 @@ function dataRowsForPayload(
 ): unknown[][] {
   const json = JSON.stringify(payload)
   if (Buffer.byteLength(json, "utf8") > MAX_SYNC_PAYLOAD_BYTES) {
-    throw new Error("卡包太大，无法同步")
+    throw new Error("Deck is too large to sync")
   }
   const parts = chunk(Buffer.from(json, "utf8").toString("base64url"))
-  const name = payload.deck?.name.trim().slice(0, 200) || "未命名卡包"
+  const name = payload.deck?.name.trim().slice(0, 200) || "Untitled deck"
   const cardCount = payload.deck?.cards.length ?? 0
   return parts.map((part, index) => [
     id,
@@ -859,7 +859,7 @@ function sanitizedSheetTitle(value: string): string {
     .replace(/[\\/?*\[\]:\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-  return (title || "未命名卡包").slice(0, 100)
+  return (title || "Untitled deck").slice(0, 100)
 }
 
 function uniqueSheetTitle(
@@ -877,7 +877,7 @@ function uniqueSheetTitle(
     const candidate = `${base.slice(0, 100 - suffix.length).trimEnd()}${suffix}`
     if (!used.has(candidate.toLocaleLowerCase())) return candidate
   }
-  throw new Error("Google Sheet 中可用的卡包标签名已耗尽")
+  throw new Error("No available worksheet name remains for this deck")
 }
 
 function previewTitleMatches(title: string, deckName: string): boolean {
@@ -984,7 +984,7 @@ function deckFromPreviewRows(deck: Deck, rows: unknown[][]): Deck {
     if (!id && !hasFieldValue) continue
 
     const current = id && !usedIds.has(id) ? existing.get(id) : undefined
-    const card = current ?? createCard(deck.fields)
+    const card = current ?? createPendingCard(deck.fields)
     const values = { ...card.values }
     for (const [index, field] of deck.fields.entries()) {
       if (isTtsField(deck, field)) {
@@ -993,10 +993,13 @@ function deckFromPreviewRows(deck: Deck, rows: unknown[][]): Deck {
       }
       values[field] = previewText(rowValues[index])
     }
-    const nextCard = { ...card, values }
+    const changed = !current || deck.fields.some((field) => values[field] !== (current.values[field] ?? ""))
+    const nextCard: Card = changed
+      ? { ...card, reviewStatus: "pending", values }
+      : { ...card, values }
     const key = cardKeyValue(nextCard, deck.fields)
     if (key && usedKeys.has(key)) {
-      throw new Error(`卡片预览包含重复的首字段「${values[deck.fields[0] ?? ""] ?? ""}」`)
+      throw new Error(`Preview contains a duplicate key field “${values[deck.fields[0] ?? ""] ?? ""}”`)
     }
     if (key) usedKeys.add(key)
     cards.push(nextCard)
@@ -1025,7 +1028,7 @@ function randomSheetId(metadata: SpreadsheetMetadata): number {
     const id = crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff
     if (!used.has(id)) return id
   }
-  throw new Error("Google Sheet 工作表 ID 生成失败")
+  throw new Error("Unable to generate a Google Sheet worksheet ID")
 }
 
 async function markHasWrittenData(
@@ -1112,7 +1115,7 @@ async function ensureIndexProperties(
   fetchImpl: typeof fetch
 ): Promise<void> {
   if (typeof properties.sheetId !== "number") {
-    throw new Error("Google Sheet 同步索引初始化失败")
+    throw new Error("Google Sheet sync index could not be initialized")
   }
   if (properties.hidden === true && properties.gridProperties?.frozenRowCount === 1) return
   await batchUpdate(client, [{
@@ -1190,17 +1193,17 @@ async function ensureDeckSheet(
 
   if (!properties) {
     if (preferredSheetId != null) {
-      throw new Error(`卡包「${deckName || "未命名卡包"}」对应的工作表已被删除，请先从备份恢复`)
+      throw new Error(`The worksheet for deck “${deckName || "Untitled deck"}” was deleted. Restore it from a backup before syncing.`)
     }
     return createDeckSheet(client, metadata, deckId, deckName, fetchImpl)
   }
   if (typeof properties.sheetId !== "number" || !properties.title) {
-    throw new Error("Google Sheet 卡包工作表无效")
+    throw new Error("Google Sheet deck worksheet is invalid")
   }
 
   const taggedDeckId = deckIdForSheet(metadata, properties.sheetId)
   if (taggedDeckId && taggedDeckId !== deckId) {
-    throw new Error("Google Sheet 卡包工作表映射冲突")
+    throw new Error("Google Sheet deck worksheet mapping conflicts with another deck")
   }
 
   const batchRequests: unknown[] = []
@@ -1261,7 +1264,7 @@ async function ensureDeckSheet(
     if (!rowHasValue(header)) {
       await updateValues(client, properties.title, "A1:K1", [[...DATA_HEADERS]], fetchImpl)
     } else if (!headerMatches(header, DATA_HEADERS)) {
-      throw new Error(`卡包工作表「${properties.title}」结构不兼容`)
+      throw new Error(`Deck worksheet “${properties.title}” has an incompatible structure`)
     }
   }
 
@@ -1377,12 +1380,12 @@ async function replaceDeckPreview(
     return createDeckPreviewSheet(client, metadata, deckId, deck, fetchImpl)
   }
   if (typeof properties.sheetId !== "number" || !properties.title) {
-    throw new Error("Google Sheet 卡包预览工作表无效")
+    throw new Error("Google Sheet deck preview worksheet is invalid")
   }
 
   const taggedDeckId = previewDeckIdForSheet(metadata, properties.sheetId)
   if (taggedDeckId && taggedDeckId !== deckId) {
-    throw new Error("Google Sheet 卡包预览工作表映射冲突")
+    throw new Error("Google Sheet deck preview worksheet mapping conflicts with another deck")
   }
 
   const batchRequests: unknown[] = []
@@ -1531,7 +1534,7 @@ function parsePreviewValues(
       .map((row, index) => [deck.cards[index]?.id ?? "", ...row.slice(1)])
     return deckFromPreviewRows(deck, rows)
   }
-  throw new Error(`卡包预览工作表「${properties.title}」表头已被修改，请恢复后再同步`)
+  throw new Error(`Deck preview worksheet “${properties.title}” has a modified header. Restore it before syncing.`)
 }
 
 function selectParsedPreview(
@@ -1652,7 +1655,7 @@ async function compactSyncHistory(
     const dataRows = await readDeckRows(client, dataSheet, fetchImpl)
     const version = findExactVersion(dataRows, current.id, current.revision, current.versionId)
     if (!version) {
-      throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
+      throw new Error(`Deck worksheet “${dataSheet.title}” is missing the revision referenced by the sync index`)
     }
     const payload = decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
     await replaceSheetData(
@@ -1663,7 +1666,7 @@ async function compactSyncHistory(
     )
     compactedRows.push({
       ...current,
-      name: payload.deck?.name.trim().slice(0, 200) || current.name || "未命名卡包",
+      name: payload.deck?.name.trim().slice(0, 200) || current.name || "Untitled deck",
       cardCount: payload.deck?.cards.length ?? current.cardCount,
       sheetId: dataSheet.sheetId,
       sheetTitle: dataSheet.title,
@@ -1681,7 +1684,7 @@ async function migrateLegacyStorage(
   fetchImpl: typeof fetch
 ): Promise<SyncStorage> {
   if (typeof indexProperties.sheetId !== "number" || !indexProperties.title) {
-    throw new Error("Google Sheet 旧同步工作表无效")
+    throw new Error("Legacy Google Sheet sync worksheet is invalid")
   }
   const legacyValues = await readValues(client, indexProperties.title, "A2:K", fetchImpl)
   const legacyRows = parseSyncRows(legacyValues, LEGACY_SCHEMA_VERSION)
@@ -1696,7 +1699,7 @@ async function migrateLegacyStorage(
     const deletedAt = positiveNumberOrNull(payload.deletedAt)
     let dataSheet: DeckDataSheet | null = null
     if (!deletedAt) {
-      if (!payload.deck) throw new Error("Google Sheet 旧卡包缺少内容")
+      if (!payload.deck) throw new Error("Legacy Google Sheet deck payload is missing")
       dataSheet = await ensureDeckSheet(
         client,
         metadata,
@@ -1718,7 +1721,7 @@ async function migrateLegacyStorage(
       revision: current.revision,
       updatedAt: payload.updatedAt,
       deletedAt,
-      name: payload.deck?.name.trim().slice(0, 200) || first.name || "未命名卡包",
+      name: payload.deck?.name.trim().slice(0, 200) || first.name || "Untitled deck",
       cardCount: payload.deck?.cards.length ?? Math.max(0, first.cardCount || 0),
       sheetId: dataSheet?.sheetId ?? null,
       sheetTitle: dataSheet?.title ?? "",
@@ -1754,7 +1757,7 @@ async function ensureSyncStorage(
 
   if (!properties) {
     if (alreadyWritten) {
-      throw new Error("Google Sheet 同步索引已被删除，请先从备份恢复")
+      throw new Error("Google Sheet sync index was deleted. Restore from a backup before syncing.")
     }
     const created = await batchUpdate(client, [{
       addSheet: {
@@ -1774,7 +1777,7 @@ async function ensureSyncStorage(
   }
 
   if (typeof properties?.sheetId !== "number" || !properties.title) {
-    throw new Error("Google Sheet 同步索引初始化失败")
+    throw new Error("Google Sheet sync index could not be initialized")
   }
 
   const grid = session?.indexGrid ?? await readValues(client, properties.title, "A1:K", fetchImpl, session)
@@ -1782,18 +1785,18 @@ async function ensureSyncStorage(
   const header = grid[0] ?? []
   if (!rowHasValue(header)) {
     if (alreadyWritten) {
-      throw new Error("Google Sheet 同步索引表头已被清空，请先从备份恢复")
+      throw new Error("Google Sheet sync index header was cleared. Restore from a backup before syncing.")
     }
     await updateValues(client, properties.title, "A1:J1", [[...INDEX_HEADERS]], fetchImpl, session)
     if (session) session.indexGrid = [[...INDEX_HEADERS]]
   } else if (headerMatches(header, DATA_HEADERS)) {
     return migrateLegacyStorage(client, metadata, properties, fetchImpl)
   } else if (!headerMatches(header, INDEX_HEADERS)) {
-    throw new Error("Google Sheet 同步索引结构不兼容")
+    throw new Error("Google Sheet sync index has an incompatible structure")
   }
 
   if (alreadyWritten && !rowHasValue(grid[1])) {
-    throw new Error("Google Sheet 同步目录已被清空，请先从备份恢复")
+    throw new Error("Google Sheet sync index was cleared. Restore from a backup before syncing.")
   }
   await ensureIndexProperties(client, properties, fetchImpl)
   return {
@@ -1848,7 +1851,7 @@ async function ensureExistingDeckPreviews(
     const dataRows = await readDeckRows(client, dataSheet, fetchImpl, session)
     const version = findExactVersion(dataRows, id, current.revision, current.versionId)
     if (!version) {
-      throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
+      throw new Error(`Deck worksheet “${dataSheet.title}” is missing the revision referenced by the sync index`)
     }
     const payload = decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
     if (payload.deck) await writeDeckPreview(client, storage.metadata, id, payload.deck, fetchImpl)
@@ -1912,7 +1915,7 @@ async function materializePreviewEdits(
       item.current.versionId
     )
     if (!version) {
-      throw new Error(`卡包工作表「${item.dataSheet.title}」缺少目录指定的版本`)
+      throw new Error(`Deck worksheet “${item.dataSheet.title}” is missing the revision referenced by the sync index`)
     }
     loaded.push({
       current: item.current,
@@ -1982,7 +1985,7 @@ async function payloadForIndexVersion(
 ): Promise<RemoteDeckPayload> {
   if (current.row.deletedAt) return tombstonePayload(current.row)
   if (current.row.sheetId == null) {
-    throw new Error("Google Sheet 同步目录缺少卡包工作表")
+    throw new Error("Google Sheet sync index is missing the deck worksheet")
   }
   const dataSheet = await ensureDeckSheet(
     client,
@@ -1994,7 +1997,7 @@ async function payloadForIndexVersion(
   )
   const rows = await readDeckRows(client, dataSheet, fetchImpl, session)
   const version = findExactVersion(rows, current.row.id, current.revision, current.versionId)
-  if (!version) throw new Error(`卡包工作表「${dataSheet.title}」缺少目录指定的版本`)
+  if (!version) throw new Error(`Deck worksheet “${dataSheet.title}” is missing the revision referenced by the sync index`)
   return decodePayload(version, GOOGLE_SHEETS_SCHEMA_VERSION)
 }
 
@@ -2024,7 +2027,7 @@ async function deleteDeckSheet(
 
 export async function createGoogleSpreadsheet(
   accessToken: string,
-  title: string = "Anki Studio · 闪卡同步",
+  title: string = "Anki Studio · Flashcard Sync",
   fetchImpl: typeof fetch = fetch
 ): Promise<GoogleSheetDetails> {
   const response = await fetchImpl(SHEETS_API_ROOT, {
@@ -2035,7 +2038,7 @@ export async function createGoogleSpreadsheet(
     },
     body: JSON.stringify({
       properties: {
-        title: title.trim() || "Anki Studio · 闪卡同步",
+        title: title.trim() || "Anki Studio · Flashcard Sync",
       },
     }),
   })
@@ -2048,7 +2051,7 @@ export async function createGoogleSpreadsheet(
   ) {
     const errorMsg = data && typeof data === "object" && "error" in data && typeof (data as { error?: { message?: unknown } }).error?.message === "string"
       ? (data as { error: { message: string } }).error.message
-      : "创建 Google 表格失败"
+      : "Failed to create Google Sheet"
     throw new GoogleSheetsApiError(errorMsg, response.status)
   }
   const spreadsheetId = (data as { spreadsheetId: string }).spreadsheetId
@@ -2139,7 +2142,7 @@ export async function listGoogleSheetsIndex(
     return {
       id,
       rev: current.revision,
-      name: current.row.name || "未命名卡包",
+      name: current.row.name || "Untitled deck",
       cardCount: Math.max(0, current.row.cardCount || 0),
       updatedAt: Math.max(0, current.row.updatedAt || 0),
       deletedAt: current.row.deletedAt,
@@ -2184,7 +2187,7 @@ export async function putGoogleSheetsDeck(
 
   const deletedAt = positiveNumberOrNull(body.deletedAt)
   const deck = body.deck ?? currentPayload?.deck ?? null
-  if (!deletedAt && !deck) throw new Error("缺少卡包内容")
+  if (!deletedAt && !deck) throw new Error("Deck content is missing")
 
   const revision = nextRevision(currentRevision)
   const updatedAt = Date.now()
@@ -2196,7 +2199,7 @@ export async function putGoogleSheetsDeck(
     deck,
     editorState: deletedAt ? null : body.editorState ?? currentPayload?.editorState ?? null,
   }
-  const name = deck?.name.trim().slice(0, 200) || current?.row.name || "未命名卡包"
+  const name = deck?.name.trim().slice(0, 200) || current?.row.name || "Untitled deck"
   const cardCount = deck?.cards.length ?? current?.row.cardCount ?? 0
   let dataSheet: DeckDataSheet | null = null
   let previewReady = Boolean(deletedAt)
@@ -2261,7 +2264,7 @@ export async function putGoogleSheetsDeck(
   if (dataSheet) {
     const writtenRows = await readDeckRows(client, dataSheet, fetchImpl, active)
     const writtenVersion = findExactVersion(writtenRows, id, revision, versionId)
-    if (!writtenVersion) throw new Error("Google Sheet 卡包数据写入不完整")
+    if (!writtenVersion) throw new Error("Google Sheet deck write is incomplete")
     decodePayload(writtenVersion, GOOGLE_SHEETS_SCHEMA_VERSION)
     try {
       // The append above makes optimistic concurrent writes safe. Once this

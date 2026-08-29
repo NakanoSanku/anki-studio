@@ -85,7 +85,7 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
                 </div>
                 <p className="mt-2 text-sm font-medium text-background/60">
                   {countLabel(reviewCount, "review")} · {countLabel(newCount, "new card")}
-                  {stats.reviewedToday > 0 ? ` · ${countLabel(stats.reviewedToday, "done")}` : ""}
+                  {stats.reviewedToday > 0 ? ` · ${stats.reviewedToday} done` : ""}
                 </p>
 
                 <Button

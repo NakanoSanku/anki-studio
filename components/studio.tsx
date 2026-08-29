@@ -411,8 +411,7 @@ export function Studio() {
   }
 
   const onExportJson = () => {
-    const exportDeck = approvedDeck(deck)
-    const blob = new Blob([serializeDeck(exportDeck)], { type: "application/json" })
+    const blob = new Blob([serializeDeck(deck)], { type: "application/json" })
     downloadBlob(blob, safeFilename(deck.name, "json"))
     showStatus("已导出 JSON")
   }
