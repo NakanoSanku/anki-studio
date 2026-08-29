@@ -29,7 +29,6 @@ import {
 import {
   markReviewed,
   markUnreviewed,
-  matchesReviewFilter,
   pruneEditorState,
   readEditorState,
   writeEditorState,

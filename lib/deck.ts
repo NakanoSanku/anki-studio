@@ -441,7 +441,8 @@ export function isCardApproved(card: Pick<Card, "reviewStatus">): boolean {
 
 function withCardReviewStatus(card: Card, status: CardReviewStatus): Card {
   if (status === "pending") return { ...card, reviewStatus: "pending" }
-  const { reviewStatus: _reviewStatus, ...approved } = card
+  const approved = { ...card }
+  delete approved.reviewStatus
   return approved
 }
 
