@@ -4,6 +4,9 @@ const LEGACY_SYNC_MESSAGES: Record<string, string> = {
   "有冲突未处理": "Conflict pending",
   "同步失败": "Sync failed",
   "已是最新": "Up to date",
+  "请先选择用于同步的 Google Sheet": "Choose a Google Sheet for sync",
+  "请先连接 Google 帐号": "Connect Google first",
+  "Google Sheets 同步未配置": "Google Sheets sync is not configured",
 }
 
 const LEGACY_STATUS_MESSAGES: Record<string, string> = {

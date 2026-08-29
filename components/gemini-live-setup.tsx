@@ -101,6 +101,39 @@ export function GeminiLiveSetup({
 
   const onboarding = mode === "onboarding"
 
+  if (!onboarding) {
+    return (
+      <section data-testid="gemini-live-compact" className="mx-auto w-full max-w-xl rounded-[20px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09]">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold tracking-[-0.025em]">Gemini Live</h3>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Get key</a>
+        </div>
+        <div className="relative mt-3">
+          <Input
+            id="gemini-live-key"
+            type={showKey ? "text" : "password"}
+            value={settings.apiKey}
+            autoComplete="off"
+            placeholder="Gemini API key"
+            className="h-10 bg-background pr-10 font-mono text-xs"
+            onChange={(event) => {
+              setSettings({ apiKey: event.target.value })
+              setStatus({ type: "idle", message: "" })
+            }}
+          />
+          <button type="button" aria-label={showKey ? "Hide Gemini API key" : "Show Gemini API key"} onClick={() => setShowKey((visible) => !visible)} className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground hover:bg-muted hover:text-foreground">
+            {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          </button>
+        </div>
+        {status.message ? <p role="status" className={cn("mt-3 rounded-[11px] px-3 py-2 text-xs font-medium", status.type === "error" ? "bg-destructive/8 text-destructive" : status.type === "success" ? "bg-energy/14 text-foreground" : "bg-muted/60 text-muted-foreground")}>{status.message}</p> : null}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void test()}>{busy ? "Testing…" : "Test"}</Button>
+          <Button type="button" className="h-10" disabled={busy} onClick={save}>Save</Button>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section
       className={cn(

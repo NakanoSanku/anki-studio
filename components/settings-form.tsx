@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 import { productSyncMessage } from "@/lib/product-copy"
-import { BrainCircuit, FolderCog, Gauge, RefreshCw, Table2 } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 
 import { fsrsOf, type Deck } from "@/lib/deck"
 import { Button } from "@/components/ui/button"
@@ -24,10 +24,10 @@ export type SyncPanelState = {
 }
 
 const SETTINGS_SECTIONS = [
-  { value: "deck", shortLabel: "Deck", icon: FolderCog },
-  { value: "study", shortLabel: "Study", icon: Gauge },
-  { value: "ai", shortLabel: "AI", icon: BrainCircuit },
-  { value: "sync", shortLabel: "Sync", icon: Table2 },
+  { value: "deck", shortLabel: "Deck" },
+  { value: "study", shortLabel: "Study" },
+  { value: "ai", shortLabel: "AI" },
+  { value: "sync", shortLabel: "Sync" },
 ] as const
 
 export type SettingsSection = "deck" | "study" | "ai" | "sync"
@@ -104,14 +104,12 @@ export function SettingsForm({
         <div className="sticky top-14 z-20 -mx-4 bg-background/90 px-4 py-2 backdrop-blur-xl sm:top-16 sm:-mx-6 sm:px-6 lg:top-24 lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
           <TabsList className="grid h-12 w-full grid-cols-4 lg:h-auto lg:grid-cols-1 lg:gap-1 lg:p-1.5">
             {SETTINGS_SECTIONS.map((item) => {
-              const Icon = item.icon
               return (
                 <TabsTrigger
                   key={item.value}
                   value={item.value}
                   className="h-10 min-w-0 px-1 text-xs lg:h-12 lg:justify-start lg:gap-3 lg:px-3 lg:text-sm"
                 >
-                  <Icon className="size-4" />
                   <span className="min-w-0 truncate text-left">{item.shortLabel}</span>
                 </TabsTrigger>
               )
