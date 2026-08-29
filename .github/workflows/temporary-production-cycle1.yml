@@ -1,0 +1,1375 @@
+name: Temporary production readiness cycle 1
+
+on:
+  push:
+    branches:
+      - fix/review-gate-sync-readme
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply data-integrity hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          # ---- Store contract: durable writes, atomic CAS updates, atomic bootstrap replacement ----
+          Path("lib/studio-store.ts").write_text(r'''import { serializeDeck, type Deck } from "./deck"
+
+export type DeckRecord = {
+  id: string
+  deck: Deck
+  rev: number
+  dirty: boolean
+  updatedAt: number
+  deletedAt?: number
+}
+
+export type LibraryMeta = {
+  version: 1
+  activeId: string
+  order: string[]
+}
+
+export type SyncMeta = {
+  hasSynced: boolean
+  hasLocalEdits: boolean
+  lastSyncAt?: number
+  lastError?: string
+}
+
+export type StudioStore = {
+  getMeta(): Promise<LibraryMeta | null>
+  setMeta(meta: LibraryMeta): Promise<void>
+  getRecord(id: string): Promise<DeckRecord | null>
+  setRecord(record: DeckRecord): Promise<void>
+  updateRecord(
+    id: string,
+    update: (current: DeckRecord | null) => DeckRecord | null
+  ): Promise<DeckRecord | null>
+  deleteRecord(id: string): Promise<void>
+  listRecords(): Promise<DeckRecord[]>
+  replaceRecordsIfUnchanged(
+    expected: DeckRecord[],
+    records: DeckRecord[],
+    meta: LibraryMeta
+  ): Promise<boolean>
+  getSyncMeta(): Promise<SyncMeta | null>
+  setSyncMeta(meta: SyncMeta): Promise<void>
+}
+
+let store: StudioStore | null = null
+
+export function setStudioStore(next: StudioStore | null): void {
+  store = next
+}
+
+export function getStudioStore(): StudioStore {
+  if (!store) throw new Error("本机存储未初始化")
+  return store
+}
+
+export function hasStudioStore(): boolean {
+  return store !== null
+}
+
+export function isDeckId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]{6,80}$/.test(id)
+}
+
+export function cloneRecord(record: DeckRecord): DeckRecord {
+  return {
+    id: record.id,
+    deck: record.deck,
+    rev: record.rev,
+    dirty: record.dirty,
+    updatedAt: record.updatedAt,
+    deletedAt: record.deletedAt,
+  }
+}
+
+export function sameDeckRecord(
+  left: DeckRecord | null | undefined,
+  right: DeckRecord | null | undefined
+): boolean {
+  if (!left || !right) return left == null && right == null
+  return left.id === right.id
+    && left.rev === right.rev
+    && left.dirty === right.dirty
+    && left.updatedAt === right.updatedAt
+    && left.deletedAt === right.deletedAt
+    && serializeDeck(left.deck) === serializeDeck(right.deck)
+}
+
+export function sameDeckRecordSets(left: DeckRecord[], right: DeckRecord[]): boolean {
+  if (left.length !== right.length) return false
+  const leftSorted = [...left].sort((a, b) => a.id.localeCompare(b.id))
+  const rightSorted = [...right].sort((a, b) => a.id.localeCompare(b.id))
+  return leftSorted.every((record, index) => sameDeckRecord(record, rightSorted[index]))
+}
+
+export function createMemoryStore(seed?: {
+  meta?: LibraryMeta | null
+  records?: DeckRecord[]
+  syncMeta?: SyncMeta | null
+}): StudioStore {
+  const records = new Map<string, DeckRecord>()
+  for (const record of seed?.records ?? []) {
+    records.set(record.id, cloneRecord(record))
+  }
+  let meta = seed?.meta ? { ...seed.meta, order: [...seed.meta.order] } : null
+  let syncMeta = seed?.syncMeta ? { ...seed.syncMeta } : null
+
+  return {
+    async getMeta() {
+      return meta ? { ...meta, order: [...meta.order] } : null
+    },
+    async setMeta(next) {
+      meta = { ...next, order: [...next.order] }
+    },
+    async getRecord(id) {
+      const record = records.get(id)
+      return record ? cloneRecord(record) : null
+    },
+    async setRecord(record) {
+      records.set(record.id, cloneRecord(record))
+    },
+    async updateRecord(id, update) {
+      const current = records.get(id)
+      const next = update(current ? cloneRecord(current) : null)
+      if (next) records.set(id, cloneRecord(next))
+      else records.delete(id)
+      return next ? cloneRecord(next) : null
+    },
+    async deleteRecord(id) {
+      records.delete(id)
+    },
+    async listRecords() {
+      return [...records.values()].map(cloneRecord)
+    },
+    async replaceRecordsIfUnchanged(expected, nextRecords, nextMeta) {
+      if (!sameDeckRecordSets([...records.values()], expected)) return false
+      records.clear()
+      for (const record of nextRecords) records.set(record.id, cloneRecord(record))
+      meta = { ...nextMeta, order: [...nextMeta.order] }
+      return true
+    },
+    async getSyncMeta() {
+      return syncMeta ? { ...syncMeta } : null
+    },
+    async setSyncMeta(next) {
+      syncMeta = { ...next }
+    },
+  }
+}
+''')
+
+          Path("lib/studio-store-idb.ts").write_text(r'''import {
+  sameDeckRecordSets,
+  type DeckRecord,
+  type LibraryMeta,
+  type StudioStore,
+  type SyncMeta,
+} from "./studio-store"
+
+const DB_NAME = "anki-studio.data.v1"
+const DB_VERSION = 1
+const KV = "kv"
+const DECKS = "decks"
+const META_KEY = "library"
+const SYNC_KEY = "sync-meta"
+
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(KV)) db.createObjectStore(KV)
+      if (!db.objectStoreNames.contains(DECKS)) db.createObjectStore(DECKS, { keyPath: "id" })
+    }
+    request.onsuccess = () => {
+      const db = request.result
+      db.onversionchange = () => db.close()
+      resolve(db)
+    }
+    request.onerror = () => reject(request.error ?? new Error("Unable to open the local database"))
+  })
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error("Local database operation failed"))
+  })
+}
+
+function transactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error ?? new Error("Local database transaction failed"))
+    transaction.onabort = () => reject(transaction.error ?? new Error("Local database transaction was aborted"))
+  })
+}
+
+export function createIdbStore(): StudioStore {
+  let dbPromise: Promise<IDBDatabase> | null = null
+
+  const db = () => {
+    if (!dbPromise) {
+      dbPromise = openDb().catch((error) => {
+        dbPromise = null
+        throw error
+      })
+    }
+    return dbPromise
+  }
+
+  return {
+    async getMeta() {
+      const conn = await db()
+      const value = await requestToPromise(
+        conn.transaction(KV, "readonly").objectStore(KV).get(META_KEY)
+      )
+      return (value as LibraryMeta | undefined) ?? null
+    },
+    async setMeta(meta) {
+      const conn = await db()
+      const transaction = conn.transaction(KV, "readwrite")
+      transaction.objectStore(KV).put(meta, META_KEY)
+      await transactionDone(transaction)
+    },
+    async getRecord(id) {
+      const conn = await db()
+      const value = await requestToPromise(
+        conn.transaction(DECKS, "readonly").objectStore(DECKS).get(id)
+      )
+      return (value as DeckRecord | undefined) ?? null
+    },
+    async setRecord(record) {
+      const conn = await db()
+      const transaction = conn.transaction(DECKS, "readwrite")
+      transaction.objectStore(DECKS).put(record)
+      await transactionDone(transaction)
+    },
+    async updateRecord(id, update) {
+      const conn = await db()
+      const transaction = conn.transaction(DECKS, "readwrite")
+      const store = transaction.objectStore(DECKS)
+      let next: DeckRecord | null = null
+      let updateError: unknown = null
+
+      const done = new Promise<DeckRecord | null>((resolve, reject) => {
+        transaction.oncomplete = () => resolve(next)
+        transaction.onerror = () => reject(transaction.error ?? new Error("Local database transaction failed"))
+        transaction.onabort = () => reject(updateError ?? transaction.error ?? new Error("Local database transaction was aborted"))
+      })
+
+      const request = store.get(id)
+      request.onsuccess = () => {
+        try {
+          const current = (request.result as DeckRecord | undefined) ?? null
+          next = update(current)
+          if (next) store.put(next)
+          else if (current) store.delete(id)
+        } catch (error) {
+          updateError = error
+          transaction.abort()
+        }
+      }
+      return done
+    },
+    async deleteRecord(id) {
+      const conn = await db()
+      const transaction = conn.transaction(DECKS, "readwrite")
+      transaction.objectStore(DECKS).delete(id)
+      await transactionDone(transaction)
+    },
+    async listRecords() {
+      const conn = await db()
+      const value = await requestToPromise(
+        conn.transaction(DECKS, "readonly").objectStore(DECKS).getAll()
+      )
+      return (value as DeckRecord[]) ?? []
+    },
+    async replaceRecordsIfUnchanged(expected, records, meta) {
+      const conn = await db()
+      const transaction = conn.transaction([DECKS, KV], "readwrite")
+      const deckStore = transaction.objectStore(DECKS)
+      const metaStore = transaction.objectStore(KV)
+      let replaced = false
+      let updateError: unknown = null
+
+      const done = new Promise<boolean>((resolve, reject) => {
+        transaction.oncomplete = () => resolve(replaced)
+        transaction.onerror = () => reject(transaction.error ?? new Error("Local database transaction failed"))
+        transaction.onabort = () => reject(updateError ?? transaction.error ?? new Error("Local database transaction was aborted"))
+      })
+
+      const request = deckStore.getAll()
+      request.onsuccess = () => {
+        try {
+          const current = (request.result as DeckRecord[]) ?? []
+          if (!sameDeckRecordSets(current, expected)) return
+          replaced = true
+          deckStore.clear()
+          for (const record of records) deckStore.put(record)
+          metaStore.put(meta, META_KEY)
+        } catch (error) {
+          updateError = error
+          transaction.abort()
+        }
+      }
+      return done
+    },
+    async getSyncMeta() {
+      const conn = await db()
+      const value = await requestToPromise(
+        conn.transaction(KV, "readonly").objectStore(KV).get(SYNC_KEY)
+      )
+      return (value as SyncMeta | undefined) ?? null
+    },
+    async setSyncMeta(meta) {
+      const conn = await db()
+      const transaction = conn.transaction(KV, "readwrite")
+      transaction.objectStore(KV).put(meta, SYNC_KEY)
+      await transactionDone(transaction)
+    },
+  }
+}
+''')
+
+          # ---- Library migration and copy semantics ----
+          path = Path("lib/library.ts")
+          lib = path.read_text()
+          lib = lib.replace(
+              '  getStudioStore,\n  type DeckRecord,',
+              '  getStudioStore,\n  isDeckId,\n  type DeckRecord,'
+          )
+          lib = lib.replace(
+              'export const LIBRARY_KEY = "anki-studio.library.v1"\n',
+              'export const LIBRARY_KEY = "anki-studio.library.v1"\nconst LEGACY_SINGLE_MIGRATION_ID_KEY = "anki-studio.migration.single-deck-id.v1"\n'
+          )
+          lib = lib.replace(
+              'async function createFresh(\n  deck: Deck,\n  extra: { dirty: boolean; hasLocalEdits: boolean }\n): Promise<LibrarySession> {\n  const store = getStudioStore()\n  const id = createDeckId()',
+              'async function createFresh(\n  deck: Deck,\n  extra: { dirty: boolean; hasLocalEdits: boolean },\n  requestedId?: string\n): Promise<LibrarySession> {\n  const store = getStudioStore()\n  const id = requestedId && isDeckId(requestedId) ? requestedId : createDeckId()'
+          )
+          old_loop = '''      const records: DeckRecord[] = []
+      const order: string[] = []
+      for (const entry of parsed.decks) {
+        const raw = storage.getItem(deckStorageKey(entry.id))
+        if (!raw) continue
+        try {
+          const deck = parseDeckJson(raw)
+          records.push({
+            id: entry.id,
+            deck,
+            rev: 0,
+            dirty: true,
+            updatedAt: entry.updatedAt,
+          })
+          order.push(entry.id)
+          storage.removeItem(deckStorageKey(entry.id))
+        } catch {
+          // skip broken deck
+        }
+      }
+      if (records.length > 0) {
+        const activeId = records.some((record) => record.id === parsed.activeId)
+          ? parsed.activeId
+          : records[0]!.id
+        for (const record of records) {
+          await store.setRecord(record)
+        }
+        await store.setMeta({ version: 1, activeId, order })
+        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })
+        storage.removeItem(LIBRARY_KEY)
+        storage.removeItem(STORAGE_KEY)
+        const active = records.find((record) => record.id === activeId)!
+        return { library: libraryFrom({ version: 1, activeId, order }, records), deck: active.deck }
+      }'''
+          new_loop = '''      const records: DeckRecord[] = []
+      const order: string[] = []
+      const migratedKeys: string[] = []
+      for (const entry of parsed.decks) {
+        const key = deckStorageKey(entry.id)
+        const raw = storage.getItem(key)
+        if (!raw) continue
+        try {
+          const deck = parseDeckJson(raw)
+          records.push({
+            id: entry.id,
+            deck,
+            rev: 0,
+            dirty: true,
+            updatedAt: entry.updatedAt,
+          })
+          order.push(entry.id)
+          migratedKeys.push(key)
+        } catch {
+          // Skip an unreadable legacy deck, but never delete it before migration commits.
+        }
+      }
+      if (records.length > 0) {
+        const activeId = records.some((record) => record.id === parsed.activeId)
+          ? parsed.activeId
+          : records[0]!.id
+        for (const record of records) {
+          await store.setRecord(record)
+        }
+        await store.setMeta({ version: 1, activeId, order })
+        await store.setSyncMeta({ hasSynced: false, hasLocalEdits: true })
+        for (const key of migratedKeys) storage.removeItem(key)
+        storage.removeItem(LIBRARY_KEY)
+        storage.removeItem(STORAGE_KEY)
+        const active = records.find((record) => record.id === activeId)!
+        return { library: libraryFrom({ version: 1, activeId, order }, records), deck: active.deck }
+      }'''
+          if old_loop not in lib:
+              raise SystemExit("legacy multi-deck migration block not found")
+          lib = lib.replace(old_loop, new_loop)
+          old_single = '''  const rawDeck = storage.getItem(STORAGE_KEY)
+  if (!rawDeck) return null
+  let deck: Deck
+  try {
+    deck = parseDeckJson(rawDeck)
+  } catch {
+    deck = createDefaultDeck()
+  }
+  storage.removeItem(STORAGE_KEY)
+  return createFresh(deck, { dirty: true, hasLocalEdits: true })'''
+          new_single = '''  const rawDeck = storage.getItem(STORAGE_KEY)
+  if (!rawDeck) return null
+  let deck: Deck
+  try {
+    deck = parseDeckJson(rawDeck)
+  } catch {
+    deck = createDefaultDeck()
+  }
+  let migrationId = storage.getItem(LEGACY_SINGLE_MIGRATION_ID_KEY)?.trim() ?? ""
+  if (!isDeckId(migrationId)) {
+    migrationId = createDeckId()
+    storage.setItem(LEGACY_SINGLE_MIGRATION_ID_KEY, migrationId)
+  }
+  const migrated = await createFresh(deck, { dirty: true, hasLocalEdits: true }, migrationId)
+  storage.removeItem(STORAGE_KEY)
+  storage.removeItem(LEGACY_SINGLE_MIGRATION_ID_KEY)
+  return migrated'''
+          if old_single not in lib:
+              raise SystemExit("legacy single-deck migration block not found")
+          lib = lib.replace(old_single, new_single)
+
+          old_load = '''async function loadLibrarySessionUncached(): Promise<LibrarySession> {
+  const store = getStudioStore()
+  const rawRecords = await store.listRecords()'''
+          new_load = '''async function loadLibrarySessionUncached(): Promise<LibrarySession> {
+  const store = getStudioStore()
+  // Legacy keys are the migration journal. Retry them before trusting a partial
+  // IndexedDB write from an interrupted previous migration.
+  const migrated = await migrateLegacy()
+  if (migrated) return migrated
+
+  const rawRecords = await store.listRecords()'''
+          if old_load not in lib:
+              raise SystemExit("load library start not found")
+          lib = lib.replace(old_load, new_load)
+          lib = lib.replace(
+              '''  const migrated = await migrateLegacy()
+  if (migrated) return migrated
+
+  return createFresh(createDefaultDeck(), { dirty: false, hasLocalEdits: false })''',
+              '  return createFresh(createDefaultDeck(), { dirty: false, hasLocalEdits: false })'
+          )
+
+          old_persist = '''export async function persistActiveDeck(library: Library, deck: Deck): Promise<Library> {
+  const store = getStudioStore()
+  if (library.activeId === "pending") return library
+  const current = await store.getRecord(library.activeId)
+  if (!current || current.deletedAt) {
+    return libraryFrom(await store.getMeta(), await store.listRecords())
+  }
+  const normalized = parseDeckJson(serializeDeck(deck))'''
+          new_persist = '''export async function persistActiveDeck(
+  library: Library,
+  deck: Deck,
+  options: { recreateMissing?: boolean } = {}
+): Promise<Library> {
+  const store = getStudioStore()
+  if (library.activeId === "pending") return library
+  const current = await store.getRecord(library.activeId)
+  const normalized = parseDeckJson(serializeDeck(deck))
+  if (!current || current.deletedAt) {
+    if (!options.recreateMissing) {
+      return libraryFrom(await store.getMeta(), await store.listRecords())
+    }
+    const record: DeckRecord = current
+      ? {
+          ...current,
+          deck: normalized,
+          dirty: true,
+          updatedAt: Date.now(),
+          deletedAt: undefined,
+        }
+      : {
+          id: library.activeId,
+          deck: normalized,
+          rev: 0,
+          dirty: true,
+          updatedAt: Date.now(),
+        }
+    await store.setRecord(record)
+    const meta = await store.getMeta()
+    const order = meta?.order.includes(record.id)
+      ? meta.order
+      : [...(meta?.order ?? []), record.id]
+    await store.setMeta({ version: 1, activeId: record.id, order })
+    await markLocalEdits(store)
+    return libraryFrom(await store.getMeta(), await store.listRecords())
+  }'''
+          if old_persist not in lib:
+              raise SystemExit("persist block not found")
+          lib = lib.replace(old_persist, new_persist)
+
+          old_clone = '''    cards: deck.cards.map((card) => ({
+      id: createCardId(),
+      guid: createNoteGuid(),
+      values: { ...card.values },
+    })),'''
+          new_clone = '''    cards: deck.cards.map((card) => ({
+      id: createCardId(),
+      guid: createNoteGuid(),
+      ...(card.reviewStatus === "pending" ? { reviewStatus: "pending" as const } : {}),
+      values: { ...card.values },
+    })),'''
+          if old_clone not in lib:
+              raise SystemExit("clone block not found")
+          lib = lib.replace(old_clone, new_clone)
+          path.write_text(lib)
+
+          # ---- Sync client: compare-and-update around every network boundary ----
+          Path("lib/sync-client.ts").write_text(r'''import { parseDeckJson } from "./deck"
+import {
+  defaultEditorState,
+  deleteEditorState,
+  pruneEditorState,
+  readEditorState,
+  writeEditorState,
+  type EditorState,
+} from "./editor-state"
+import { addInactiveDeckCopy, cloneDeckAsCopy, libraryFrom } from "./library"
+import { isPristineLocalLibrary, planSync, remoteHasVisibleDecks } from "./sync-plan"
+import {
+  sameDeckRecord,
+  type DeckRecord,
+  type LibraryMeta,
+  type StudioStore,
+} from "./studio-store"
+import type { SyncTransport } from "./sync-transport"
+import type {
+  ConflictChoice,
+  RemoteDeckPayload,
+  SyncConflict,
+  SyncSummary,
+} from "./sync-types"
+
+export type SyncCycleInput = {
+  store: StudioStore
+  transport: SyncTransport
+  resolveConflict: (conflict: SyncConflict) => Promise<ConflictChoice>
+  /**
+   * Optional UI-level guard for edits that exist in React state but have not
+   * reached persistent storage yet. Store-level CAS still protects persisted edits.
+   */
+  isLocalStateCurrent?: () => boolean
+}
+
+type PreparedPayload = {
+  record: DeckRecord
+  editor: EditorState
+}
+
+function parseLivePayload(id: string, payload: RemoteDeckPayload): PreparedPayload {
+  if (!payload.deck) throw new Error("Cloud deck payload is empty")
+  let deck
+  try {
+    deck = parseDeckJson(JSON.stringify(payload.deck))
+  } catch {
+    throw new Error("Cloud deck content is invalid")
+  }
+  return {
+    record: {
+      id,
+      deck,
+      rev: payload.rev,
+      dirty: false,
+      updatedAt: payload.updatedAt,
+      deletedAt: undefined,
+    },
+    editor: payload.editorState
+      ? pruneEditorState(payload.editorState, deck.cards)
+      : defaultEditorState(deck),
+  }
+}
+
+function sameOptionalRecord(
+  current: DeckRecord | null,
+  expected: DeckRecord | null
+): boolean {
+  return current === null || expected === null
+    ? current === expected
+    : sameDeckRecord(current, expected)
+}
+
+async function applyPayloadIfUnchanged(
+  store: StudioStore,
+  id: string,
+  payload: RemoteDeckPayload,
+  expected: DeckRecord | null
+): Promise<boolean> {
+  if (payload.deletedAt) {
+    let applied = false
+    await store.updateRecord(id, (current) => {
+      if (!sameOptionalRecord(current, expected)) return current
+      applied = true
+      if (!current) return null
+      return {
+        ...current,
+        rev: payload.rev,
+        dirty: false,
+        updatedAt: payload.updatedAt,
+        deletedAt: payload.deletedAt ?? Date.now(),
+      }
+    })
+    if (applied) deleteEditorState(id)
+    return applied
+  }
+
+  const prepared = parseLivePayload(id, payload)
+  let applied = false
+  await store.updateRecord(id, (current) => {
+    if (!sameOptionalRecord(current, expected)) return current
+    applied = true
+    return prepared.record
+  })
+  if (applied) writeEditorState(id, prepared.editor, prepared.record.deck.cards)
+  return applied
+}
+
+async function applyTombstoneIfUnchanged(
+  store: StudioStore,
+  id: string,
+  remoteRev: number,
+  remoteUpdatedAt: number,
+  expected: DeckRecord | null
+): Promise<boolean> {
+  let applied = false
+  await store.updateRecord(id, (current) => {
+    if (!sameOptionalRecord(current, expected)) return current
+    applied = true
+    if (!current) return null
+    return {
+      ...current,
+      rev: remoteRev,
+      dirty: false,
+      updatedAt: remoteUpdatedAt || Date.now(),
+      deletedAt: current.deletedAt ?? Date.now(),
+    }
+  })
+  if (applied) deleteEditorState(id)
+  return applied
+}
+
+async function finalizePush(
+  store: StudioStore,
+  id: string,
+  sent: DeckRecord,
+  result: { rev: number; updatedAt: number },
+  deletedAt: number | null,
+  localStateCurrent: () => boolean
+): Promise<boolean> {
+  let changed = !localStateCurrent()
+  await store.updateRecord(id, (current) => {
+    if (!current) {
+      changed = true
+      return null
+    }
+    if (!sameDeckRecord(current, sent)) {
+      changed = true
+      return {
+        ...current,
+        rev: Math.max(current.rev, result.rev),
+        dirty: true,
+      }
+    }
+    if (changed) {
+      return {
+        ...current,
+        rev: result.rev,
+        dirty: true,
+        deletedAt: deletedAt ?? current.deletedAt,
+      }
+    }
+    return {
+      ...sent,
+      rev: result.rev,
+      dirty: false,
+      updatedAt: result.updatedAt,
+      deletedAt: deletedAt ?? undefined,
+    }
+  })
+  return changed
+}
+
+async function pushRecord(
+  store: StudioStore,
+  transport: SyncTransport,
+  id: string,
+  tombstone: boolean,
+  localStateCurrent: () => boolean
+): Promise<
+  | { status: "ok"; localChanged: boolean }
+  | { status: "conflict"; server: RemoteDeckPayload }
+> {
+  const record = await store.getRecord(id)
+  if (!record) return { status: "ok", localChanged: false }
+  const deletedAt = tombstone || record.deletedAt ? record.deletedAt ?? Date.now() : null
+  const result = await transport.putDeck(id, {
+    expectedRev: record.rev,
+    deck: record.deck,
+    deletedAt,
+    editorState: deletedAt ? null : readEditorState(id, record.deck),
+  })
+  if (!result.ok) {
+    return { status: "conflict", server: result.server }
+  }
+  const localChanged = await finalizePush(
+    store,
+    id,
+    record,
+    result,
+    deletedAt,
+    localStateCurrent
+  )
+  return { status: "ok", localChanged }
+}
+
+async function replaceWithRemote(
+  store: StudioStore,
+  transport: SyncTransport,
+  remoteIds: string[],
+  expectedLocal: DeckRecord[],
+  localStateCurrent: () => boolean
+): Promise<{ pulled: number; deferred: boolean }> {
+  // Fetch and validate every remote payload before touching local records.
+  const payloads = await Promise.all(
+    remoteIds.map(async (id) => ({ id, payload: await transport.getDeck(id) }))
+  )
+  if (!localStateCurrent()) return { pulled: 0, deferred: true }
+
+  const prepared: Array<{ id: string; payload: RemoteDeckPayload; data: PreparedPayload }> = []
+  for (const { id, payload } of payloads) {
+    if (!payload) {
+      throw new Error("A cloud deck disappeared while the library was being loaded. Sync again.")
+    }
+    if (payload.deletedAt) continue
+    prepared.push({ id, payload, data: parseLivePayload(id, payload) })
+  }
+  if (prepared.length === 0) return { pulled: 0, deferred: true }
+
+  const order = prepared.map((item) => item.id)
+  const meta: LibraryMeta = { version: 1, activeId: order[0]!, order }
+  const replaced = await store.replaceRecordsIfUnchanged(
+    expectedLocal,
+    prepared.map((item) => item.data.record),
+    meta
+  )
+  if (!replaced) return { pulled: 0, deferred: true }
+
+  for (const item of prepared) {
+    writeEditorState(item.id, item.data.editor, item.data.record.deck.cards)
+  }
+  for (const local of expectedLocal) {
+    if (!order.includes(local.id)) deleteEditorState(local.id)
+  }
+  return { pulled: prepared.length, deferred: false }
+}
+
+export async function runSyncCycle(input: SyncCycleInput): Promise<SyncSummary> {
+  const { store, transport, resolveConflict } = input
+  const localStateCurrent = input.isLocalStateCurrent ?? (() => true)
+  const summary: SyncSummary = { pulled: 0, pushed: 0, conflicts: 0, deferred: false }
+
+  const status = await transport.status()
+  if (!status.available) {
+    summary.unavailable = status.reason ?? "Cloud sync unavailable"
+    await store.setSyncMeta({
+      ...((await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }),
+      lastError: summary.unavailable,
+    })
+    return summary
+  }
+
+  try {
+    const remote = await transport.index()
+    const local = await store.listRecords()
+    const sync = (await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }
+
+    if (isPristineLocalLibrary(local, sync) && remoteHasVisibleDecks(remote)) {
+      const replaced = await replaceWithRemote(
+        store,
+        transport,
+        remote.filter((entry) => !entry.deletedAt).map((entry) => entry.id),
+        local,
+        localStateCurrent
+      )
+      summary.pulled = replaced.pulled
+      summary.deferred = replaced.deferred
+    } else {
+      const actions = planSync(local, remote)
+      for (const action of actions) {
+        if (!localStateCurrent()) {
+          summary.deferred = true
+          break
+        }
+
+        if (action.type === "pull") {
+          const baseline = await store.getRecord(action.id)
+          const payload = await transport.getDeck(action.id)
+          if (!payload) continue
+          if (!localStateCurrent()) {
+            summary.deferred = true
+            break
+          }
+          const applied = await applyPayloadIfUnchanged(store, action.id, payload, baseline)
+          if (!applied) {
+            summary.deferred = true
+            break
+          }
+          const meta = await store.getMeta()
+          if (meta && !meta.order.includes(action.id)) {
+            await store.setMeta({ ...meta, order: [...meta.order, action.id] })
+          }
+          summary.pulled += 1
+          continue
+        }
+
+        if (action.type === "apply-tombstone") {
+          const baseline = await store.getRecord(action.id)
+          const applied = await applyTombstoneIfUnchanged(
+            store,
+            action.id,
+            action.remoteRev,
+            action.remoteUpdatedAt,
+            baseline
+          )
+          if (!applied) {
+            summary.deferred = true
+            break
+          }
+          summary.pulled += 1
+          continue
+        }
+
+        if (action.type === "push" || action.type === "push-tombstone") {
+          const pushed = await pushRecord(
+            store,
+            transport,
+            action.id,
+            action.type === "push-tombstone",
+            localStateCurrent
+          )
+          if (pushed.status === "conflict") {
+            summary.conflicts += 1
+            const record = await store.getRecord(action.id)
+            const choice = await resolveConflict({
+              id: action.id,
+              name: record?.deck.name ?? "Untitled deck",
+              localUpdatedAt: record?.updatedAt ?? Date.now(),
+              localDeleted: Boolean(record?.deletedAt),
+              remoteRev: pushed.server.rev,
+              remoteDeleted: Boolean(pushed.server.deletedAt),
+              remoteName: pushed.server.deck?.name ?? "Untitled deck",
+            })
+            if (choice === "defer") {
+              summary.deferred = true
+              break
+            }
+            const applied = await applyConflictChoice(store, transport, action.id, choice)
+            if (!applied) {
+              summary.deferred = true
+              break
+            }
+          } else {
+            summary.pushed += 1
+            if (pushed.localChanged) {
+              summary.deferred = true
+              break
+            }
+          }
+          continue
+        }
+
+        summary.conflicts += 1
+        const choice = await resolveConflict(action.conflict)
+        if (choice === "defer") {
+          summary.deferred = true
+          break
+        }
+        const applied = await applyConflictChoice(store, transport, action.conflict.id, choice)
+        if (!applied) {
+          summary.deferred = true
+          break
+        }
+      }
+    }
+
+    const meta = (await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }
+    await store.setSyncMeta({
+      ...meta,
+      hasSynced: true,
+      lastSyncAt: Date.now(),
+      lastError: summary.deferred ? meta.lastError : undefined,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sync failed"
+    summary.error = message
+    const meta = (await store.getSyncMeta()) ?? { hasSynced: false, hasLocalEdits: false }
+    await store.setSyncMeta({ ...meta, lastError: message })
+  }
+
+  return summary
+}
+
+export async function applyConflictChoice(
+  store: StudioStore,
+  transport: SyncTransport,
+  id: string,
+  choice: Exclude<ConflictChoice, "defer">
+): Promise<boolean> {
+  const local = await store.getRecord(id)
+  if (!local) return true
+
+  if (choice === "copy") {
+    const remote = await transport.getDeck(id)
+    if (!remote) return false
+    const current = await store.getRecord(id)
+    if (!current || !sameDeckRecord(current, local)) return false
+    await addInactiveDeckCopy(
+      cloneDeckAsCopy(local.deck, `${local.deck.name} (local copy)`),
+      `${local.deck.name} (local copy)`
+    )
+    return applyPayloadIfUnchanged(store, id, remote, local)
+  }
+
+  if (choice === "remote") {
+    const remote = await transport.getDeck(id)
+    if (!remote) return false
+    return applyPayloadIfUnchanged(store, id, remote, local)
+  }
+
+  const remote = await transport.getDeck(id)
+  let expectedRev = remote?.rev ?? local.rev
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await transport.putDeck(id, {
+      expectedRev,
+      deck: local.deck,
+      deletedAt: local.deletedAt ?? null,
+      editorState: local.deletedAt ? null : readEditorState(id, local.deck),
+    })
+    if (result.ok) {
+      const changed = await finalizePush(
+        store,
+        id,
+        local,
+        result,
+        local.deletedAt ?? null,
+        () => true
+      )
+      return !changed
+    }
+    expectedRev = result.server.rev
+  }
+  throw new Error("Couldn’t overwrite the cloud deck. Try syncing again.")
+}
+
+export async function dirtyCount(store: StudioStore): Promise<number> {
+  const records = await store.listRecords()
+  return records.filter((record) => record.dirty).length
+}
+
+export async function currentLibrary(store: StudioStore) {
+  return libraryFrom(await store.getMeta(), await store.listRecords())
+}
+''')
+
+          # ---- Studio UI: keep a synchronous ref for in-memory edits and never reload over them ----
+          path = Path("components/studio.tsx")
+          studio = path.read_text()
+          studio = studio.replace("setDeck(", "updateDeckState(")
+          studio = studio.replace("setLibrary(", "updateLibraryState(")
+          studio = studio.replace("onChange={setDeck}", "onChange={updateDeckState}")
+          studio = studio.replace("onDeckChange={setDeck}", "onDeckChange={updateDeckState}")
+          marker = '''  const conflictWaiter = useRef<((choice: ConflictChoice) => void) | null>(null)
+  const syncingRef = useRef(false)
+'''
+          insertion = marker + '''
+  const updateDeckState = (next: Deck | ((current: Deck) => Deck)) => {
+    const resolved = typeof next === "function" ? next(deckRef.current) : next
+    deckRef.current = resolved
+    setDeck(resolved)
+  }
+
+  const updateLibraryState = (next: Library) => {
+    libraryRef.current = next
+    setLibrary(next)
+  }
+'''
+          if marker not in studio:
+              raise SystemExit("studio ref marker not found")
+          studio = studio.replace(marker, insertion, 1)
+
+          start = studio.index('  const runSync = async (reason: "auto" | "manual") => {')
+          end = studio.index('\n  useEffect(() => {\n    let cancelled = false', start)
+          run_sync = r'''  const runSync = async (reason: "auto" | "manual") => {
+    if (syncingRef.current || conflictWaiter.current) return
+    syncingRef.current = true
+    setSyncing(true)
+    let preserveLocalAfterSync = false
+    try {
+      const persistedLibrary = await persistActiveDeck(libraryRef.current, deckRef.current)
+      updateLibraryState(persistedLibrary)
+      const syncDeckId = persistedLibrary.activeId
+      const syncDeckSnapshot = serializeDeck(deckRef.current)
+      const isLocalStateCurrent = () => (
+        libraryRef.current.activeId === syncDeckId
+        && serializeDeck(deckRef.current) === syncDeckSnapshot
+      )
+
+      const store = getStudioStore()
+      const [{ runSyncCycle }, { createHttpTransport }] = await Promise.all([
+        import("@/lib/sync-client"),
+        import("@/lib/sync-transport"),
+      ])
+      const summary = await runSyncCycle({
+        store,
+        transport: createHttpTransport(),
+        isLocalStateCurrent,
+        resolveConflict: (item) =>
+          new Promise((resolve) => {
+            setConflict(item)
+            conflictWaiter.current = resolve
+          }),
+      })
+
+      preserveLocalAfterSync = !isLocalStateCurrent()
+      if (preserveLocalAfterSync) {
+        const recoveredLibrary = await persistActiveDeck(
+          libraryRef.current,
+          deckRef.current,
+          { recreateMissing: true }
+        )
+        updateLibraryState(recoveredLibrary)
+        setDirty(await readDirtyCount())
+      } else {
+        await reloadFromStore()
+      }
+
+      const meta = await store.getSyncMeta()
+      setLastSyncAt(meta?.lastSyncAt)
+      if (summary.unavailable) {
+        setSyncUnavailable(summary.unavailable)
+        setSyncMessage(summary.unavailable)
+        if (reason === "manual") showStatus(summary.unavailable)
+      } else if (summary.error) {
+        setSyncUnavailable(undefined)
+        setSyncMessage(summary.error)
+        showStatus(summary.error)
+      } else if (summary.deferred) {
+        setSyncUnavailable(undefined)
+        setSyncMessage("Local changes arrived during sync")
+        if (reason === "manual") showStatus("Saved newer local changes. Sync again to finish.")
+      } else {
+        setSyncUnavailable(undefined)
+        setSyncMessage("Synced")
+        if (reason === "manual") {
+          showStatus(
+            summary.pulled + summary.pushed === 0
+              ? "Up to date"
+              : `Synced · ${summary.pushed} uploaded · ${summary.pulled} downloaded`
+          )
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sync failed"
+      setSyncMessage(message)
+      showStatus(message)
+    } finally {
+      syncingRef.current = false
+      setSyncing(false)
+    }
+
+    if (preserveLocalAfterSync) {
+      // One last write after releasing the sync lock catches an edit that landed
+      // while the first recovery write itself was in flight. Future edits are
+      // handled by the normal persistence effect.
+      void persistActiveDeck(libraryRef.current, deckRef.current, { recreateMissing: true })
+        .then((nextLibrary) => {
+          updateLibraryState(nextLibrary)
+          return readDirtyCount()
+        })
+        .then(setDirty)
+        .catch((error: unknown) => {
+          showStatus(error instanceof Error ? error.message : "Couldn’t save on this device")
+        })
+    }
+  }
+'''
+          studio = studio[:start] + run_sync + studio[end:]
+          studio = studio.replace('    if (!ready) return\n    let cancelIdle', '    if (!ready || syncingRef.current) return\n    let cancelIdle', 1)
+          path.write_text(studio)
+
+          # ---- Regression tests ----
+          path = Path("tests/unit/lib/library.test.ts")
+          test = path.read_text()
+          test = test.replace(
+              'import { createDefaultDeck, serializeDeck, STORAGE_KEY } from "@/lib/deck"',
+              'import { createDefaultDeck, isCardApproved, serializeDeck, STORAGE_KEY } from "@/lib/deck"'
+          )
+          test = test.replace(
+              '  createLibraryDeck,\n  deleteLibraryDeck,',
+              '  cloneDeckAsCopy,\n  createLibraryDeck,\n  deleteLibraryDeck,'
+          )
+          insert_after = '''  it("migrates the multi-deck localStorage library", async () => {
+    const first = createDefaultDeck()
+    first.name = "一号"
+    const id = "deck-one-id"
+    memory.set(LIBRARY_KEY, JSON.stringify({
+      version: 1,
+      activeId: id,
+      decks: [{ id, name: "一号", cardCount: 1, updatedAt: 10 }],
+    }))
+    memory.set(`anki-studio.deck.${id}`, serializeDeck(first))
+    const session = await loadLibrarySession()
+    expect(session.deck.name).toBe("一号")
+    expect(memory.get(LIBRARY_KEY)).toBeUndefined()
+    expect(await getStudioStore().getRecord(id)).toBeTruthy()
+  })
+'''
+          extra = r'''
+
+  it("keeps legacy storage intact until an interrupted migration can retry", async () => {
+    const first = createDefaultDeck()
+    first.name = "Recover me"
+    const id = "legacy-retry-deck"
+    memory.set(LIBRARY_KEY, JSON.stringify({
+      version: 1,
+      activeId: id,
+      decks: [{ id, name: first.name, cardCount: 1, updatedAt: 10 }],
+    }))
+    memory.set(`anki-studio.deck.${id}`, serializeDeck(first))
+
+    const base = createMemoryStore()
+    let failMeta = true
+    setStudioStore({
+      ...base,
+      async setMeta(meta) {
+        if (failMeta) {
+          failMeta = false
+          throw new Error("simulated durable-write failure")
+        }
+        return base.setMeta(meta)
+      },
+    })
+
+    await expect(loadLibrarySession()).rejects.toThrow("simulated durable-write failure")
+    expect(memory.get(LIBRARY_KEY)).toBeTruthy()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeTruthy()
+
+    setStudioStore(base)
+    const retried = await loadLibrarySession()
+    expect(retried.deck.name).toBe("Recover me")
+    expect(memory.get(LIBRARY_KEY)).toBeUndefined()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeUndefined()
+  })
+'''
+          if insert_after not in test:
+              raise SystemExit("library migration test anchor not found")
+          test = test.replace(insert_after, insert_after + extra)
+          before_last = '\n  it("imports a deck as a new library item", async () => {'
+          pending_test = r'''
+  it("preserves pending review status when duplicating a deck", () => {
+    const source = createDefaultDeck()
+    source.cards = source.cards.map((card) => ({ ...card, reviewStatus: "pending" as const }))
+    const copy = cloneDeckAsCopy(source, "Copy")
+    expect(copy.cards).toHaveLength(source.cards.length)
+    expect(copy.cards.every((card) => !isCardApproved(card))).toBe(true)
+    expect(copy.cards[0]?.id).not.toBe(source.cards[0]?.id)
+  })
+
+'''
+          if before_last not in test:
+              raise SystemExit("library test insert anchor not found")
+          test = test.replace(before_last, '\n' + pending_test + '  it("imports a deck as a new library item", async () => {', 1)
+          path.write_text(test)
+
+          path = Path("tests/unit/lib/sync-client.test.ts")
+          sync_test = path.read_text()
+          anchor = '\n  it("keeps local data when a conflict is deferred", async () => {'
+          extra_sync = r'''
+  it("preserves a newer local write that lands while a push is in flight", async () => {
+    const { getStudioStore } = await import("@/lib/studio-store")
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const id = session.library.activeId
+    const sentDeck = { ...session.deck, name: "sent version" }
+    await store.setRecord({ id, deck: sentDeck, rev: 0, dirty: true, updatedAt: 1 })
+    await store.setSyncMeta({ hasSynced: true, hasLocalEdits: true })
+
+    const transport = memoryTransport({ decks: {} })
+    const originalPut = transport.putDeck.bind(transport)
+    let release!: () => void
+    let started!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const began = new Promise<void>((resolve) => { started = resolve })
+    transport.putDeck = async (deckId, body) => {
+      started()
+      await blocked
+      return originalPut(deckId, body)
+    }
+
+    const sync = runSyncCycle({ store, transport, resolveConflict: async () => "defer" })
+    await began
+    const newerDeck = { ...sentDeck, name: "newer local edit" }
+    await store.setRecord({ id, deck: newerDeck, rev: 0, dirty: true, updatedAt: 2 })
+    release()
+    const summary = await sync
+
+    expect(summary.pushed).toBe(1)
+    expect(summary.deferred).toBe(true)
+    const current = await store.getRecord(id)
+    expect(current?.deck.name).toBe("newer local edit")
+    expect(current?.rev).toBe(1)
+    expect(current?.dirty).toBe(true)
+    expect(transport.decks[id]?.deck?.name).toBe("sent version")
+  })
+
+  it("does not overwrite a local edit that lands while a pull is in flight", async () => {
+    const { getStudioStore } = await import("@/lib/studio-store")
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const id = session.library.activeId
+    const localDeck = { ...session.deck, name: "clean local" }
+    await store.setRecord({ id, deck: localDeck, rev: 1, dirty: false, updatedAt: 1 })
+    await store.setSyncMeta({ hasSynced: true, hasLocalEdits: false })
+
+    const remoteDeck = { ...createDefaultDeck(), name: "cloud update" }
+    const transport = memoryTransport({
+      decks: { [id]: { rev: 2, updatedAt: 3, deck: remoteDeck } },
+    })
+    const originalGet = transport.getDeck.bind(transport)
+    let release!: () => void
+    let started!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const began = new Promise<void>((resolve) => { started = resolve })
+    transport.getDeck = async (deckId) => {
+      started()
+      await blocked
+      return originalGet(deckId)
+    }
+
+    const sync = runSyncCycle({ store, transport, resolveConflict: async () => "defer" })
+    await began
+    await store.setRecord({
+      id,
+      deck: { ...localDeck, name: "local edit during pull" },
+      rev: 1,
+      dirty: true,
+      updatedAt: 4,
+    })
+    release()
+    const summary = await sync
+
+    expect(summary.deferred).toBe(true)
+    const current = await store.getRecord(id)
+    expect(current?.deck.name).toBe("local edit during pull")
+    expect(current?.rev).toBe(1)
+    expect(current?.dirty).toBe(true)
+  })
+
+  it("keeps the pristine starter if in-memory state changes during initial cloud loading", async () => {
+    const { getStudioStore } = await import("@/lib/studio-store")
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const originalId = session.library.activeId
+    const transport = memoryTransport({
+      decks: {
+        "remote-guarded": { rev: 2, updatedAt: 5, deck: { ...createDefaultDeck(), name: "Cloud" } },
+      },
+    })
+    let current = true
+    const originalGet = transport.getDeck.bind(transport)
+    transport.getDeck = async (id) => {
+      const result = await originalGet(id)
+      current = false
+      return result
+    }
+
+    const summary = await runSyncCycle({
+      store,
+      transport,
+      isLocalStateCurrent: () => current,
+      resolveConflict: async () => "defer",
+    })
+
+    expect(summary.deferred).toBe(true)
+    expect(await store.getRecord(originalId)).not.toBeNull()
+    expect((await store.listRecords()).some((record) => record.id === "remote-guarded")).toBe(false)
+  })
+
+'''
+          if anchor not in sync_test:
+              raise SystemExit("sync test anchor not found")
+          sync_test = sync_test.replace(anchor, '\n' + extra_sync + '  it("keeps local data when a conflict is deferred", async () => {', 1)
+          path.write_text(sync_test)
+
+          Path("tests/contracts/storage-durability.test.ts").write_text(r'''import { describe, expect, it } from "vitest"
+
+import { readSource } from "./helpers/source"
+
+const idb = readSource("lib", "studio-store-idb.ts")
+const studio = readSource("components", "studio.tsx")
+
+describe("production data durability", () => {
+  it("waits for IndexedDB transaction completion on durable writes", () => {
+    expect(idb).toContain("transaction.oncomplete")
+    expect(idb).toContain("async updateRecord(id, update)")
+    expect(idb).toContain("async replaceRecordsIfUnchanged(expected, records, meta)")
+  })
+
+  it("guards sync reloads against newer in-memory edits", () => {
+    expect(studio).toContain("isLocalStateCurrent")
+    expect(studio).toContain("preserveLocalAfterSync")
+    expect(studio).toContain("{ recreateMissing: true }")
+    expect(studio).toContain("if (!ready || syncingRef.current) return")
+  })
+})
+''')
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/studio-store.ts lib/studio-store-idb.ts lib/library.ts lib/sync-client.ts components/studio.tsx tests/unit/lib/library.test.ts tests/unit/lib/sync-client.test.ts tests/contracts/storage-durability.test.ts
+          git diff --cached --check
+          git commit -m "fix: harden local persistence and sync concurrency"
+          git push origin HEAD:${GITHUB_REF_NAME}
