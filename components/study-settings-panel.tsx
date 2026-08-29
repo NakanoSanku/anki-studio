@@ -26,15 +26,6 @@ const RETENTION_PRESETS = [
 
 const RETENTION_MIN = 70
 const RETENTION_MAX = 99
-const RETENTION_MARKS = [
-  { value: 70, label: "70 · light" },
-  { value: 90, label: "90 · balanced" },
-  { value: 99, label: "99 · strongest" },
-] as const
-
-function retentionMarkPosition(value: number): number {
-  return ((value - RETENTION_MIN) / (RETENTION_MAX - RETENTION_MIN)) * 100
-}
 
 function Stepper({
   value,
@@ -103,25 +94,6 @@ export function StudySettingsPanel({ deck, fsrsSettings, onDeckChange }: { deck:
             onValueChange={(value) => update({ requestRetention: (value[0] ?? 90) / 100 })}
             className="py-2 [&_[data-slot=slider-range]]:bg-energy [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-card [&_[data-slot=slider-thumb]]:bg-foreground [&_[data-slot=slider-track]]:bg-foreground/10"
           />
-          <div className="relative mt-1 h-5 font-mono text-[9px] font-medium text-muted-foreground" data-testid="retention-scale">
-            {RETENTION_MARKS.map((mark) => (
-              <span
-                key={mark.value}
-                data-retention-mark={mark.value}
-                style={{ left: `${retentionMarkPosition(mark.value)}%` }}
-                className={cn(
-                  "absolute top-0 whitespace-nowrap",
-                  mark.value === RETENTION_MIN
-                    ? "translate-x-0 text-left"
-                    : mark.value === RETENTION_MAX
-                      ? "-translate-x-full text-right"
-                      : "-translate-x-1/2 text-center"
-                )}
-              >
-                {mark.label}
-              </span>
-            ))}
-          </div>
         </div>
       </section>
 
