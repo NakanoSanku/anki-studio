@@ -1,0 +1,83 @@
+name: Temporary English sync and OAuth copy
+
+on:
+  push:
+    branches:
+      - refactor/compact-settings-ai-ui
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Replace legacy Chinese copy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          path = Path("lib/google-auth.ts")
+          source = path.read_text()
+          source = replace_once(source, 'return { state: "disabled", issue: "Google OAuth 尚未配置" }', 'return { state: "disabled", issue: "Google OAuth is not configured" }', "oauth disabled copy")
+          source = replace_once(source, 'return { state: "invalid", issue: `Google OAuth 缺少 ${missing.join("、")}` }', 'return { state: "invalid", issue: `Google OAuth is missing ${missing.join(", ")}` }', "oauth missing copy")
+          source = replace_once(source, 'return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS 包含无效邮箱" }', 'return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS contains an invalid email address" }', "oauth email copy")
+          path.write_text(source)
+
+          path = Path("lib/sync-transport.ts")
+          source = path.read_text()
+          replacements = [
+              ('"请先选择用于同步的 Google Sheet"', '"Choose a Google Sheet for sync first"'),
+              ('"请先连接 Google 帐号"', '"Connect your Google account first"'),
+              ('"Google Sheets 同步未配置"', '"Google Sheets sync is not configured"'),
+              ('`同步服务 ${res.status}`', '`Sync service error ${res.status}`'),
+              ('"同步服务响应无效"', '"Invalid sync service response"'),
+              ('`读取云端目录失败 ${res.status}`', '`Couldn’t read the cloud index (${res.status})`'),
+              ('"云端目录格式无效"', '"Invalid cloud index response"'),
+              ('`读取云端卡包失败 ${res.status}`', '`Couldn’t read the cloud deck (${res.status})`'),
+              ('`上传卡包失败 ${res.status}`', '`Couldn’t upload the deck (${res.status})`'),
+              ('"云端未返回版本"', '"Cloud sync did not return a revision"'),
+          ]
+          for old, new in replacements:
+              source = source.replace(old, new)
+          path.write_text(source)
+
+          path = Path("lib/product-copy.ts")
+          source = path.read_text()
+          anchor = '  "已是最新": "Up to date",\n'
+          addition = (
+              '  "请先选择用于同步的 Google Sheet": "Choose a Google Sheet for sync",\n'
+              '  "请先连接 Google 帐号": "Connect Google first",\n'
+              '  "Google Sheets 同步未配置": "Google Sheets sync is not configured",\n'
+          )
+          if addition not in source:
+              source = replace_once(source, anchor, anchor + addition, "legacy sync copy")
+          path.write_text(source)
+
+          path = Path("tests/unit/lib/google-auth.test.ts")
+          tests = path.read_text()
+          tests = tests.replace('issue: "Google OAuth 尚未配置"', 'issue: "Google OAuth is not configured"')
+          tests = tests.replace('issue: "Google OAuth 缺少 GOOGLE_CLIENT_SECRET、AUTH_SECRET"', 'issue: "Google OAuth is missing GOOGLE_CLIENT_SECRET, AUTH_SECRET"')
+          path.write_text(tests)
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/google-auth.ts lib/sync-transport.ts lib/product-copy.ts tests/unit/lib/google-auth.test.ts
+          git diff --cached --check
+          git commit -m "fix: keep sync and OAuth copy in English"
+          git push origin HEAD:${GITHUB_REF_NAME}
