@@ -6,6 +6,8 @@ import {
   applyTextImport,
   inspectImportFile,
   inspectImportText,
+  MAX_TEXT_PREVIEW_BYTES,
+  textImportSizeError,
 } from "@/lib/import-preview"
 
 const current = {
@@ -113,5 +115,13 @@ describe("inspectImportFile", () => {
     expect(preview.encoding).toBe("utf-8-bom")
     expect(preview.canImport).toBe(true)
     expect(preview.cardCount).toBe(1)
+  })
+})
+
+
+describe("text import size budget", () => {
+  it("rejects oversized CSV/JSON previews before reading the file", () => {
+    expect(textImportSizeError(MAX_TEXT_PREVIEW_BYTES)).toBeNull()
+    expect(textImportSizeError(MAX_TEXT_PREVIEW_BYTES + 1)).toContain("too large")
   })
 })

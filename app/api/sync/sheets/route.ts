@@ -10,6 +10,6 @@ export async function GET(request: Request) {
     const inventory = await listSpreadsheetInventory(ctx.client)
     return Response.json(inventory)
   } catch (error) {
-    return googleSheetsErrorResponse(error, "无法读取表格工作表")
+    return googleSheetsErrorResponse(error, "Couldn’t read Google Sheet worksheets")
   }
 }

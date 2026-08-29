@@ -569,8 +569,8 @@ describe("Google Sheets API sync", () => {
       rev: editedRevision,
       deck: {
         cards: [
-          { id: deck.cards[0]!.id, values: { Word: "edited from Sheets" } },
-          { values: { Word: "new from Sheets", Translation: "新增" } },
+          { id: deck.cards[0]!.id, reviewStatus: "pending", values: { Word: "edited from Sheets" } },
+          { reviewStatus: "pending", values: { Word: "new from Sheets", Translation: "新增" } },
         ],
       },
     })
@@ -589,7 +589,68 @@ describe("Google Sheets API sync", () => {
     expect(deletedRevision).toBeGreaterThan(editedRevision)
     await expect(getGoogleSheetsDeck(client, "editable-deck", api.fetchImpl)).resolves.toMatchObject({
       rev: deletedRevision,
-      deck: { cards: [{ id: deck.cards[0]!.id }] },
+      deck: { cards: [{ id: deck.cards[0]!.id, reviewStatus: "pending" }] },
+    })
+  })
+
+  it("surfaces a malformed authoritative preview instead of silently skipping it", async () => {
+    const api = createSheetsApi()
+    const deck = createDefaultDeck()
+    const saved = await putGoogleSheetsDeck(client, "malformed-preview", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+
+    const preview = previewSheets(api)[0]
+    if (!preview) throw new Error("expected preview sheet")
+    api.setValues(preview.sheetId, [
+      ["broken_header", ...deck.fields],
+      ...(preview.values.slice(1)),
+    ])
+
+    await expect(listGoogleSheetsIndex(client, api.fetchImpl)).rejects.toThrow("modified header")
+  })
+
+  it("reads editable preview fields beyond column Z", async () => {
+    const api = createSheetsApi()
+    const source = createDefaultDeck()
+    const extraFields = Array.from({ length: 24 }, (_, index) => `Extra${index + 1}`)
+    const fields = [...source.fields, ...extraFields]
+    const extraValues = Object.fromEntries(extraFields.map((field) => [field, ""]))
+    const deck = {
+      ...source,
+      fields,
+      fieldNotes: { ...source.fieldNotes, ...extraValues },
+      cards: source.cards.map((card) => ({
+        ...card,
+        values: { ...card.values, ...extraValues },
+      })),
+    }
+    const saved = await putGoogleSheetsDeck(client, "wide-preview", {
+      expectedRev: 0,
+      deck,
+    }, api.fetchImpl)
+    expect(saved.ok).toBe(true)
+
+    const preview = previewSheets(api)[0]
+    if (!preview) throw new Error("expected preview sheet")
+    const values = structuredClone(preview.values)
+    const lastField = fields.at(-1)!
+    values[1]![fields.length] = "edited beyond Z"
+    api.setValues(preview.sheetId, values)
+
+    const index = await listGoogleSheetsIndex(client, api.fetchImpl)
+    const revision = index[0]?.rev ?? 0
+    expect(saved.ok && revision > saved.rev).toBe(true)
+    await expect(getGoogleSheetsDeck(client, "wide-preview", api.fetchImpl)).resolves.toMatchObject({
+      rev: revision,
+      deck: {
+        cards: [{
+          reviewStatus: "pending",
+          values: { [lastField]: "edited beyond Z" },
+        }],
+      },
     })
   })
 
@@ -816,6 +877,6 @@ describe("Sheets quota errors", () => {
     })).toBe(true)
     expect(isSheetsQuotaError(429, { error: { message: "rate limit exceeded" } })).toBe(true)
     expect(isSheetsQuotaError(403, { error: { message: "The caller does not have permission" } })).toBe(false)
-    expect(SHEETS_QUOTA_USER_MESSAGE).toContain("过于频繁")
+    expect(SHEETS_QUOTA_USER_MESSAGE).toContain("too frequently")
   })
 })

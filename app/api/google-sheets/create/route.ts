@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   const authorization = await getGoogleSheetsAuthorization(request)
   if (!authorization.ok) return authorization.response
 
-  let title = "Anki Studio · 闪卡同步"
+  let title = "Anki Studio · Flashcard Sync"
   try {
     const body = await request.json().catch(() => ({})) as { title?: unknown }
     if (typeof body.title === "string" && body.title.trim()) {
@@ -27,6 +27,6 @@ export async function POST(request: Request) {
       sheet: { id: sheet.id, name: sheet.title, url: sheet.url },
     })
   } catch (error) {
-    return googleSheetsErrorResponse(error, "无法在 Google Drive 中创建表格")
+    return googleSheetsErrorResponse(error, "Unable to create a spreadsheet in Google Drive")
   }
 }

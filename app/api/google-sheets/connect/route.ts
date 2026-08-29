@@ -16,13 +16,13 @@ export async function POST(request: Request) {
   try {
     body = await request.json()
   } catch {
-    return jsonError("请求无法解析", 400)
+    return jsonError("Invalid JSON request", 400)
   }
   const spreadsheetId = body && typeof body === "object"
     ? (body as Record<string, unknown>).spreadsheetId
     : undefined
   if (typeof spreadsheetId !== "string" || !isGoogleSpreadsheetId(spreadsheetId)) {
-    return jsonError("Google Sheet 链接无效", 400)
+    return jsonError("Invalid Google Sheet link", 400)
   }
 
   try {
@@ -34,6 +34,6 @@ export async function POST(request: Request) {
       sheet: { id: sheet.id, name: sheet.title, url: sheet.url },
     })
   } catch (error) {
-    return googleSheetsErrorResponse(error, "无法连接这个 Google Sheet")
+    return googleSheetsErrorResponse(error, "Unable to connect to this Google Sheet")
   }
 }

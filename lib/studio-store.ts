@@ -1,4 +1,4 @@
-import type { Deck } from "./deck"
+import { serializeDeck, type Deck } from "./deck"
 
 export type DeckRecord = {
   id: string
@@ -27,8 +27,17 @@ export type StudioStore = {
   setMeta(meta: LibraryMeta): Promise<void>
   getRecord(id: string): Promise<DeckRecord | null>
   setRecord(record: DeckRecord): Promise<void>
+  updateRecord(
+    id: string,
+    update: (current: DeckRecord | null) => DeckRecord | null
+  ): Promise<DeckRecord | null>
   deleteRecord(id: string): Promise<void>
   listRecords(): Promise<DeckRecord[]>
+  replaceRecordsIfUnchanged(
+    expected: DeckRecord[],
+    records: DeckRecord[],
+    meta: LibraryMeta
+  ): Promise<boolean>
   getSyncMeta(): Promise<SyncMeta | null>
   setSyncMeta(meta: SyncMeta): Promise<void>
 }
@@ -63,15 +72,33 @@ export function cloneRecord(record: DeckRecord): DeckRecord {
   }
 }
 
+export function sameDeckRecord(
+  left: DeckRecord | null | undefined,
+  right: DeckRecord | null | undefined
+): boolean {
+  if (!left || !right) return left == null && right == null
+  return left.id === right.id
+    && left.rev === right.rev
+    && left.dirty === right.dirty
+    && left.updatedAt === right.updatedAt
+    && left.deletedAt === right.deletedAt
+    && serializeDeck(left.deck) === serializeDeck(right.deck)
+}
+
+export function sameDeckRecordSets(left: DeckRecord[], right: DeckRecord[]): boolean {
+  if (left.length !== right.length) return false
+  const leftSorted = [...left].sort((a, b) => a.id.localeCompare(b.id))
+  const rightSorted = [...right].sort((a, b) => a.id.localeCompare(b.id))
+  return leftSorted.every((record, index) => sameDeckRecord(record, rightSorted[index]))
+}
+
 export function createMemoryStore(seed?: {
   meta?: LibraryMeta | null
   records?: DeckRecord[]
   syncMeta?: SyncMeta | null
 }): StudioStore {
   const records = new Map<string, DeckRecord>()
-  for (const record of seed?.records ?? []) {
-    records.set(record.id, cloneRecord(record))
-  }
+  for (const record of seed?.records ?? []) records.set(record.id, cloneRecord(record))
   let meta = seed?.meta ? { ...seed.meta, order: [...seed.meta.order] } : null
   let syncMeta = seed?.syncMeta ? { ...seed.syncMeta } : null
 
@@ -89,11 +116,25 @@ export function createMemoryStore(seed?: {
     async setRecord(record) {
       records.set(record.id, cloneRecord(record))
     },
+    async updateRecord(id, update) {
+      const current = records.get(id)
+      const next = update(current ? cloneRecord(current) : null)
+      if (next) records.set(id, cloneRecord(next))
+      else records.delete(id)
+      return next ? cloneRecord(next) : null
+    },
     async deleteRecord(id) {
       records.delete(id)
     },
     async listRecords() {
       return [...records.values()].map(cloneRecord)
+    },
+    async replaceRecordsIfUnchanged(expected, nextRecords, nextMeta) {
+      if (!sameDeckRecordSets([...records.values()], expected)) return false
+      records.clear()
+      for (const record of nextRecords) records.set(record.id, cloneRecord(record))
+      meta = { ...nextMeta, order: [...nextMeta.order] }
+      return true
     },
     async getSyncMeta() {
       return syncMeta ? { ...syncMeta } : null

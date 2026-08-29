@@ -14,6 +14,6 @@ export async function GET(request: Request) {
       sheet: { id: sheet.id, title: sheet.title, url: sheet.url },
     })
   } catch (error) {
-    return googleSheetsErrorResponse(error, "无法连接 Google Sheets")
+    return googleSheetsErrorResponse(error, "Unable to connect to Google Sheets")
   }
 }

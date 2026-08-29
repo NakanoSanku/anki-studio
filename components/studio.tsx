@@ -170,6 +170,17 @@ export function Studio() {
   const conflictWaiter = useRef<((choice: ConflictChoice) => void) | null>(null)
   const syncingRef = useRef(false)
 
+  const updateDeckState = (next: Deck | ((current: Deck) => Deck)) => {
+    const resolved = typeof next === "function" ? next(deckRef.current) : next
+    deckRef.current = resolved
+    setDeck(resolved)
+  }
+
+  const updateLibraryState = (next: Library) => {
+    libraryRef.current = next
+    setLibrary(next)
+  }
+
   useEffect(() => {
     libraryRef.current = library
     deckRef.current = deck
@@ -182,7 +193,7 @@ export function Studio() {
     if (!prev?.created) return
     const card = deckRef.current.cards.find((item) => item.id === prev.id)
     if (!shouldDiscardNoteOnLeave(card, deckRef.current.fields, true)) return
-    setDeck((current) => ({
+    updateDeckState((current) => ({
       ...current,
       cards: withoutDiscardedNote(current.cards, prev.id),
     }))
@@ -207,29 +218,38 @@ export function Studio() {
   }
 
   const applySession = (next: { library: Library; deck: Deck }, message: string) => {
-    setLibrary(next.library)
-    setDeck(next.deck)
+    updateLibraryState(next.library)
+    updateDeckState(next.deck)
     setSelectedId(readEditorState(next.library.activeId, next.deck).selectedId)
     setPreviewSide("front")
     showStatus(message)
   }
 
-  const reloadFromStore = async () => {
+  const reloadFromStore = async (guard: () => boolean = () => true): Promise<boolean> => {
     const nextLibrary = await readLibrary()
+    if (!guard()) return false
     const record = await getStudioStore().getRecord(nextLibrary.activeId)
-    setLibrary(nextLibrary)
-    setDirty(await readDirtyCount())
-    if (!record || record.deletedAt) return
-    setDeck(record.deck)
+    const nextDirty = await readDirtyCount()
+    if (!guard()) return false
+    updateLibraryState(nextLibrary)
+    setDirty(nextDirty)
+    if (!record || record.deletedAt) return true
+    updateDeckState(record.deck)
     setSelectedId(readEditorState(nextLibrary.activeId, record.deck).selectedId)
+    return true
   }
 
   const runSync = async (reason: "auto" | "manual") => {
     if (syncingRef.current || conflictWaiter.current) return
     syncingRef.current = true
     setSyncing(true)
+    let preserveLocalAfterSync = false
     try {
-      await persistActiveDeck(libraryRef.current, deckRef.current)
+      const persistedLibrary = await persistActiveDeck(libraryRef.current, deckRef.current)
+      updateLibraryState(persistedLibrary)
+      const syncDeckId = persistedLibrary.activeId
+      const syncDeckSnapshot = serializeDeck(deckRef.current)
+      const isLocalStateCurrent = () => libraryRef.current.activeId === syncDeckId && serializeDeck(deckRef.current) === syncDeckSnapshot
       const store = getStudioStore()
       const [{ runSyncCycle }, { createHttpTransport }] = await Promise.all([
         import("@/lib/sync-client"),
@@ -238,13 +258,30 @@ export function Studio() {
       const summary = await runSyncCycle({
         store,
         transport: createHttpTransport(),
-        resolveConflict: (item) =>
-          new Promise((resolve) => {
-            setConflict(item)
-            conflictWaiter.current = resolve
-          }),
+        isLocalStateCurrent,
+        resolveConflict: (item) => new Promise((resolve) => {
+setConflict(item)
+conflictWaiter.current = resolve
+        }),
       })
-      await reloadFromStore()
+      preserveLocalAfterSync = !isLocalStateCurrent()
+      if (preserveLocalAfterSync) {
+        const recoveredLibrary = await persistActiveDeck(libraryRef.current, deckRef.current, { recreateMissing: true })
+        updateLibraryState(recoveredLibrary)
+        setDirty(await readDirtyCount())
+      } else {
+        const reloaded = await reloadFromStore(isLocalStateCurrent)
+        if (!reloaded) {
+          preserveLocalAfterSync = true
+          const recoveredLibrary = await persistActiveDeck(
+            libraryRef.current,
+            deckRef.current,
+            { recreateMissing: true }
+          )
+          updateLibraryState(recoveredLibrary)
+          setDirty(await readDirtyCount())
+        }
+      }
       const meta = await store.getSyncMeta()
       setLastSyncAt(meta?.lastSyncAt)
       if (summary.unavailable) {
@@ -257,25 +294,31 @@ export function Studio() {
         showStatus(summary.error)
       } else if (summary.deferred) {
         setSyncUnavailable(undefined)
-        setSyncMessage("有冲突未处理")
+        setSyncMessage("Local changes arrived during sync")
+        if (reason === "manual") showStatus("Saved newer local changes. Sync again to finish.")
       } else {
         setSyncUnavailable(undefined)
-        setSyncMessage("已同步")
+        setSyncMessage("Synced")
         if (reason === "manual") {
-          showStatus(
-            summary.pulled + summary.pushed === 0
-              ? "已是最新"
-              : `已同步，上传 ${summary.pushed}，下载 ${summary.pulled}`
-          )
+showStatus(summary.pulled + summary.pushed === 0 ? "Up to date" : `Synced · ${summary.pushed} uploaded · ${summary.pulled} downloaded`)
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "同步失败"
+      const message = error instanceof Error ? error.message : "Sync failed"
       setSyncMessage(message)
       showStatus(message)
     } finally {
       syncingRef.current = false
       setSyncing(false)
+    }
+    if (preserveLocalAfterSync) {
+      void persistActiveDeck(libraryRef.current, deckRef.current, { recreateMissing: true })
+        .then((nextLibrary) => {
+updateLibraryState(nextLibrary)
+return readDirtyCount()
+        })
+        .then(setDirty)
+        .catch((error: unknown) => showStatus(error instanceof Error ? error.message : "Couldn’t save on this device"))
     }
   }
 
@@ -288,8 +331,8 @@ export function Studio() {
       if (cancelled) return
       libraryRef.current = session.library
       deckRef.current = session.deck
-      setLibrary(session.library)
-      setDeck(session.deck)
+      updateLibraryState(session.library)
+      updateDeckState(session.deck)
       setDirty(session.library.decks.filter((entry) => entry.dirty).length)
       setSelectedId(readEditorState(session.library.activeId, session.deck).selectedId)
       setReady(true)
@@ -304,7 +347,7 @@ export function Studio() {
   }, [])
 
   useEffect(() => {
-    if (!ready) return
+    if (!ready || syncingRef.current) return
     let cancelIdle: () => void = () => {}
     const timer = window.setTimeout(() => {
       cancelIdle = scheduleIdle(() => {
@@ -357,7 +400,7 @@ export function Studio() {
   }, [dirty])
 
   const replaceDeck = (next: Deck, keepSelection = true) => {
-    setDeck(next)
+    updateDeckState(next)
     setSelectedId((id) =>
       keepSelection && next.cards.some((card) => card.id === id) ? id : next.cards[0]?.id ?? ""
     )
@@ -411,8 +454,7 @@ export function Studio() {
   }
 
   const onExportJson = () => {
-    const exportDeck = approvedDeck(deck)
-    const blob = new Blob([serializeDeck(exportDeck)], { type: "application/json" })
+    const blob = new Blob([serializeDeck(deck)], { type: "application/json" })
     downloadBlob(blob, safeFilename(deck.name, "json"))
     showStatus("已导出 JSON")
   }
@@ -429,7 +471,7 @@ export function Studio() {
   }
 
   const persistIdentity = (identified: Deck) => {
-    setDeck((current) => {
+    updateDeckState((current) => {
       if (current.anki?.modelId && current.anki.deckId) return current
       return { ...current, anki: identified.anki }
     })
@@ -509,7 +551,7 @@ export function Studio() {
 
   const addNote = () => {
     const card = createPendingCard(deck.fields)
-    setDeck((current) => ({ ...current, cards: [...current.cards, card] }))
+    updateDeckState((current) => ({ ...current, cards: [...current.cards, card] }))
     setSelectedId(card.id)
     setActiveNoteOverride(card.id)
     router.push(`${notePath(card.id)}?new=1`)
@@ -550,8 +592,8 @@ export function Studio() {
   const renameDeck = (id: string, name: string) => {
     void renameLibraryDeck(library, deck, id, name)
       .then((session) => {
-        setLibrary(session.library)
-        setDeck(session.deck)
+        updateLibraryState(session.library)
+        updateDeckState(session.deck)
       })
       .catch((error: unknown) => {
         showStatus(error instanceof Error ? error.message : "改名失败")
@@ -647,7 +689,7 @@ export function Studio() {
           <StudySession
             key={library.activeId}
             deck={deck}
-            onChange={setDeck}
+            onChange={updateDeckState}
             onExit={leaveStudy}
           />
         ) : null}
@@ -660,7 +702,7 @@ export function Studio() {
               selectedId={editorNoteId ?? selectedId}
               previewSide={previewSide}
               layout={editorNoteId ? "detail" : "list"}
-              onChange={setDeck}
+              onChange={updateDeckState}
               onSelect={setSelectedId}
               onOpenNote={openNote}
               onAddNote={addNote}
@@ -676,7 +718,7 @@ export function Studio() {
               deck={deck}
               previewCard={previewCard}
               previewSide={previewSide}
-              onChange={setDeck}
+              onChange={updateDeckState}
               onPreviewSideChange={setPreviewSide}
             />
           </div>
@@ -692,7 +734,7 @@ export function Studio() {
               section={settingsSection}
               deckTools={deckTools}
               deck={deck}
-              onDeckChange={setDeck}
+              onDeckChange={updateDeckState}
               sync={{
                 syncing,
                 message: syncMessage,

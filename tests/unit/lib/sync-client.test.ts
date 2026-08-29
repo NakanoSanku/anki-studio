@@ -4,7 +4,7 @@ import { createDefaultDeck } from "@/lib/deck"
 import { loadLibrarySession } from "@/lib/library"
 import { applyConflictChoice, runSyncCycle } from "@/lib/sync-client"
 import { isPristineStarterDeck } from "@/lib/sync-plan"
-import { createMemoryStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"
+import { createMemoryStore, getStudioStore, setStudioStore, type DeckRecord, type StudioStore } from "@/lib/studio-store"
 import type { SyncTransport } from "@/lib/sync-transport"
 import type { PutDeckBody, RemoteDeckPayload, RemoteIndexEntry } from "@/lib/sync-types"
 
@@ -118,6 +118,55 @@ describe("runSyncCycle", () => {
     })
     expect(summary.pushed).toBe(1)
     expect(transport.decks[session.library.activeId]?.deck?.name).toBe(session.deck.name)
+  })
+
+  it("preserves a newer local write that lands while a push is in flight", async () => {
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const id = session.library.activeId
+    const sentDeck = { ...session.deck, name: "sent version" }
+    await store.setRecord({ id, deck: sentDeck, rev: 0, dirty: true, updatedAt: 1 })
+    await store.setSyncMeta({ hasSynced: true, hasLocalEdits: true })
+    const transport = memoryTransport({ decks: {} })
+    const originalPut = transport.putDeck.bind(transport)
+    let release!: () => void
+    let started!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const began = new Promise<void>((resolve) => { started = resolve })
+    transport.putDeck = async (deckId, body) => { started(); await blocked; return originalPut(deckId, body) }
+    const sync = runSyncCycle({ store, transport, resolveConflict: async () => "defer" })
+    await began
+    await store.setRecord({ id, deck: { ...sentDeck, name: "newer local edit" }, rev: 0, dirty: true, updatedAt: 2 })
+    release()
+    const summary = await sync
+    expect(summary.deferred).toBe(true)
+    const current = await store.getRecord(id)
+    expect(current?.deck.name).toBe("newer local edit")
+    expect(current?.rev).toBe(1)
+    expect(current?.dirty).toBe(true)
+  })
+
+  it("does not overwrite a local edit that lands while a pull is in flight", async () => {
+    const store = getStudioStore()
+    const session = await loadLibrarySession()
+    const id = session.library.activeId
+    const localDeck = { ...session.deck, name: "clean local" }
+    await store.setRecord({ id, deck: localDeck, rev: 1, dirty: false, updatedAt: 1 })
+    await store.setSyncMeta({ hasSynced: true, hasLocalEdits: false })
+    const transport = memoryTransport({ decks: { [id]: { rev: 2, updatedAt: 3, deck: { ...createDefaultDeck(), name: "cloud update" } } } })
+    const originalGet = transport.getDeck.bind(transport)
+    let release!: () => void
+    let started!: () => void
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const began = new Promise<void>((resolve) => { started = resolve })
+    transport.getDeck = async (deckId) => { started(); await blocked; return originalGet(deckId) }
+    const sync = runSyncCycle({ store, transport, resolveConflict: async () => "defer" })
+    await began
+    await store.setRecord({ id, deck: { ...localDeck, name: "local edit during pull" }, rev: 1, dirty: true, updatedAt: 4 })
+    release()
+    const summary = await sync
+    expect(summary.deferred).toBe(true)
+    expect((await store.getRecord(id))?.deck.name).toBe("local edit during pull")
   })
 
   it("keeps local data when a conflict is deferred", async () => {

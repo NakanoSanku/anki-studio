@@ -19,6 +19,11 @@ import {
 } from "./encoding"
 
 export type ImportKind = "csv" | "json"
+export const MAX_TEXT_PREVIEW_BYTES = 20 * 1024 * 1024
+
+export function textImportSizeError(size: number): string | null {
+  return size > MAX_TEXT_PREVIEW_BYTES ? "Import file is too large (20 MB limit)" : null
+}
 export type ImportMode = "merge" | "replace" | "new"
 
 export type ImportIssue = {
@@ -331,6 +336,8 @@ export async function inspectImportFile(file: File, current: Deck): Promise<Impo
   if (!lower.endsWith(".json") && !lower.endsWith(".csv")) {
     throw new Error("只支持校验 .json 或 .csv")
   }
+  const sizeError = textImportSizeError(file.size)
+  if (sizeError) return emptyPreview(kind, file.name, sizeError)
 
   const bytes = new Uint8Array(await file.arrayBuffer())
   if (bytes.length === 0) {

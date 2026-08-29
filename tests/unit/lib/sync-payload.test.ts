@@ -28,7 +28,7 @@ describe("parseRemoteDeckPayload", () => {
 
 describe("parsePutBody", () => {
   it("requires a deck unless deleting", () => {
-    expect(() => parsePutBody({ expectedRev: 0 })).toThrow("缺少卡包内容")
+    expect(() => parsePutBody({ expectedRev: 0 })).toThrow("Deck content is missing")
     const body = parsePutBody({ expectedRev: 1, deletedAt: 9 })
     expect(body.deletedAt).toBe(9)
     expect(body.deck).toBeNull()
@@ -60,6 +60,6 @@ describe("parseRemoteIndex", () => {
   })
 
   it("rejects malformed ids", () => {
-    expect(() => parseRemoteIndex([{ id: "!", rev: 1 }])).toThrow("无效卡包")
+    expect(() => parseRemoteIndex([{ id: "!", rev: 1 }])).toThrow("Cloud sync index contains an invalid deck")
   })
 })

@@ -1,5 +1,5 @@
 import { parseAiSettings, validateAiSettings } from "./ai-settings"
-import { describeUpstreamError, providerFetch } from "./ai-upstream"
+import { describeUpstreamError, providerFetch, withProviderTimeout } from "./ai-upstream"
 
 export async function completeChat(input: {
   settings: unknown
@@ -24,37 +24,39 @@ export async function completeChat(input: {
   if (input.system?.trim()) messages.push({ role: "system", content: input.system })
   messages.push({ role: "user", content: input.prompt })
 
-  const response = await providerFetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model: settings.model.trim(),
-      temperature: 0.7,
-      messages,
-    }),
-    signal: input.signal,
-  })
-  const body = await response.text()
-  if (!response.ok) {
-    throw new Error(
-      describeUpstreamError({
-        status: response.status,
-        body,
-        cfRay: response.headers.get("cf-ray"),
-      })
-    )
-  }
+  return withProviderTimeout(async (signal) => {
+    const response = await providerFetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: settings.model.trim(),
+        temperature: 0.7,
+        messages,
+      }),
+      signal,
+    })
+    const body = await response.text()
+    if (!response.ok) {
+      throw new Error(
+        describeUpstreamError({
+          status: response.status,
+          body,
+          cfRay: response.headers.get("cf-ray"),
+        })
+      )
+    }
 
-  let payload: unknown = null
-  try {
-    payload = body ? JSON.parse(body) : null
-  } catch {
-    throw new Error("接口没有返回 JSON")
-  }
+    let payload: unknown = null
+    try {
+      payload = body ? JSON.parse(body) : null
+    } catch {
+      throw new Error("The provider did not return JSON")
+    }
 
-  const text = readChatText(payload)
-  if (!text) throw new Error("模型没有返回内容")
-  return text
+    const text = readChatText(payload)
+    if (!text) throw new Error("The model returned no content")
+    return text
+  }, input.signal)
 }
 
 export async function completeJson(input: {

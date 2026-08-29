@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { createDefaultDeck, serializeDeck, STORAGE_KEY } from "@/lib/deck"
+import { createDefaultDeck, isCardApproved, serializeDeck, STORAGE_KEY } from "@/lib/deck"
 import { editorStateKey, writeEditorState } from "@/lib/editor-state"
 import {
   addLibraryDeck,
+  cloneDeckAsCopy,
   createLibraryDeck,
   deleteLibraryDeck,
   duplicateLibraryDeck,
@@ -55,6 +56,42 @@ describe("loadLibrarySession", () => {
     expect(session.library.decks).toHaveLength(1)
     expect(storage.getItem(STORAGE_KEY)).toBeNull()
     expect(session.library.decks[0]?.dirty).toBe(true)
+  })
+
+  it("keeps legacy data until a failed migration can be retried", async () => {
+    const legacy = createDefaultDeck()
+    legacy.name = "Recover me"
+    const id = "legacy-retry-deck"
+    memory.set(LIBRARY_KEY, JSON.stringify({
+      version: 1,
+      activeId: id,
+      decks: [{ id, name: legacy.name, cardCount: 1, updatedAt: 10 }],
+    }))
+    memory.set(`anki-studio.deck.${id}`, serializeDeck(legacy))
+
+    const base = createMemoryStore()
+    let failMeta = true
+    setStudioStore({
+      ...base,
+      async setMeta(meta) {
+        if (failMeta) {
+          failMeta = false
+          throw new Error("simulated durable-write failure")
+        }
+        await base.setMeta(meta)
+      },
+    })
+
+    const firstAttempt = await loadLibrarySession()
+    expect(firstAttempt.deck.name).toBe("Recover me")
+    expect(memory.get(LIBRARY_KEY)).toBeTruthy()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeTruthy()
+
+    setStudioStore(base)
+    const retried = await loadLibrarySession()
+    expect(retried.deck.name).toBe("Recover me")
+    expect(memory.get(LIBRARY_KEY)).toBeUndefined()
+    expect(memory.get(`anki-studio.deck.${id}`)).toBeUndefined()
   })
 
   it("creates a default deck when nothing is stored", async () => {
@@ -180,6 +217,14 @@ describe("library operations", () => {
     const tombstone = await getStudioStore().getRecord(copied.library.activeId)
     expect(tombstone?.deletedAt).toBeGreaterThan(0)
     expect(tombstone?.dirty).toBe(true)
+  })
+
+  it("preserves pending review status when duplicating a deck", () => {
+    const source = createDefaultDeck()
+    source.cards = source.cards.map((card) => ({ ...card, reviewStatus: "pending" as const }))
+    const copy = cloneDeckAsCopy(source, "Copy")
+    expect(copy.cards.every((card) => !isCardApproved(card))).toBe(true)
+    expect(copy.cards[0]?.id).not.toBe(source.cards[0]?.id)
   })
 
   it("imports a deck as a new library item", async () => {

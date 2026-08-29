@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { sha1Hex, ttsClipId } from "@/lib/tts"
+import { playTtsAudio, sha1Hex, stopTtsAudio, ttsClipId } from "@/lib/tts"
 
 const encoder = new TextEncoder()
 
@@ -33,5 +33,32 @@ describe("TTS clip hashing", () => {
       },
     })
     await expect(ttsClipId("en", false, "hello")).resolves.toBe("59430a156c93370600988700883822eec3f5aff5")
+  })
+})
+
+
+describe("TTS playback cleanup", () => {
+  it("settles interrupted playback and revokes both object URLs", async () => {
+    class FakeAudio {
+      onended: (() => void) | null = null
+      onerror: (() => void) | null = null
+      constructor(public src: string) {}
+      play() { return Promise.resolve() }
+      pause() {}
+      removeAttribute(name: string) { if (name === "src") this.src = "" }
+    }
+    const createObjectURL = vi.fn()
+      .mockReturnValueOnce("blob:first")
+      .mockReturnValueOnce("blob:second")
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal("Audio", FakeAudio)
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL })
+
+    const first = playTtsAudio(new Blob(["a"]))
+    const second = playTtsAudio(new Blob(["b"]))
+    await expect(first).resolves.toBeUndefined()
+    stopTtsAudio()
+    await expect(second).resolves.toBeUndefined()
+    expect(revokeObjectURL.mock.calls.map(([url]) => url)).toEqual(["blob:first", "blob:second"])
   })
 })
