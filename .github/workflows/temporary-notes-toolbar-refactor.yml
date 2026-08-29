@@ -1,0 +1,72 @@
+name: Temporary notes toolbar refactor
+
+on:
+  push:
+    branches:
+      - refactor/home-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refactor notes toolbar
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          path = Path("components/card-editor.tsx")
+          source = path.read_text()
+
+          source = replace_once(
+              source,
+              'const LIST_ROW = 60\n',
+              'const LIST_ROW = 60\n\nfunction formatCompactCount(value: number): string {\n  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)\n}\n',
+              "compact count helper",
+          )
+
+          source = replace_once(
+              source,
+              '  const reviewedCount = deck.cards.filter(isCardApproved).length\n  const isSelectedReviewed = Boolean(selected && isCardApproved(selected))',
+              '  const reviewedCount = deck.cards.filter(isCardApproved).length\n  const needsReviewCount = deck.cards.length - reviewedCount\n  const isSelectedReviewed = Boolean(selected && isCardApproved(selected))',
+              "needs review count",
+          )
+
+          old_toolbar = '''  const listToolbar = (\n    <div className="space-y-3 rounded-[20px] border border-black/[0.065] bg-card p-3.5 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">\n      <div className="flex items-end justify-between gap-3">\n        <div className="min-w-0">\n          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground"><span className="size-1.5 rounded-full bg-energy" />Note library</p>\n          <div className="mt-1 flex items-baseline gap-2">\n            <p className="text-lg font-semibold tracking-[-0.035em] text-foreground">{deck.cards.length} notes</p>\n            <span className="text-[11px] font-medium text-muted-foreground">{reviewedCount} reviewed</span>\n          </div>\n        </div>\n        <div className="flex shrink-0 items-center gap-1.5">\n          <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>Generate</Button>\n          <Button type="button" size="sm" className="h-9 px-3 text-xs" aria-label="Create note" title="Create after the current note" onClick={addCard}><Plus className="mr-1 size-3.5" />New</Button>\n        </div>\n      </div>\n\n      <div className="relative min-w-0">\n        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/30" />\n        <Input value={query} aria-label="Search notes" placeholder="Search words, meanings, or examples…" className="h-10 bg-background pr-10 pl-9.5 text-sm" onChange={(event) => setQuery(event.target.value)} />\n        {query.trim() ? <button type="button" aria-label="Clear search" className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3" /></button> : null}\n      </div>\n\n      <div className="flex items-center justify-between gap-2">\n        <div className="flex min-w-0 items-center gap-2">\n          <div className="flex items-center rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">\n            {FILTERS.map((item) => <button key={item.id} type="button" data-testid={`mobile-review-filter-${item.id}`} className={cn("h-7 rounded-[9px] px-3 text-[11px] font-medium transition-colors", filter === item.id ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]" : "text-foreground/45 hover:text-foreground")} onClick={() => setFilter(item.id)}>{item.label}</button>)}\n          </div>\n        </div>\n        <p className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground sm:text-xs">{query.trim() || filter !== "all" ? `${visibleCards.length} / ${deck.cards.length}` : `${deck.cards.length}`}</p>\n      </div>\n    </div>\n  )'''
+
+          new_toolbar = '''  const listToolbar = (\n    <div className="space-y-3 rounded-[20px] border border-black/[0.065] bg-card p-3.5 shadow-[0_18px_46px_-42px_rgba(0,0,0,0.45)] dark:border-white/[0.09]">\n      <div className="flex items-center justify-between gap-2">\n        <p className="flex min-w-0 items-center gap-2 truncate text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">\n          <span className="size-1.5 shrink-0 rounded-full bg-energy" />\n          Note library\n        </p>\n        <div className="flex shrink-0 items-center gap-1.5">\n          <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" disabled={isBusy("batch")} onClick={() => setBatchOpen(true)}>Generate</Button>\n          <Button type="button" size="sm" className="h-9 px-3 text-xs" aria-label="Create note" title="Create after the current note" onClick={addCard}><Plus className="mr-1 size-3.5" />New</Button>\n        </div>\n      </div>\n\n      <div className="relative min-w-0">\n        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground/30" />\n        <Input value={query} aria-label="Search notes" placeholder="Search words, meanings, or examples…" className="h-10 bg-background pr-10 pl-9.5 text-sm" onChange={(event) => setQuery(event.target.value)} />\n        {query.trim() ? <button type="button" aria-label="Clear search" className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={() => setQuery("")}><X className="size-3" /></button> : null}\n      </div>\n\n      <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-black/[0.06] bg-muted/55 p-1 dark:border-white/[0.08]">\n        {FILTERS.map((item) => {\n          const count = item.id === "all" ? deck.cards.length : needsReviewCount\n          return (\n            <button\n              key={item.id}\n              type="button"\n              data-testid={`mobile-review-filter-${item.id}`}\n              className={cn(\n                "flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 text-[11px] font-medium transition-colors",\n                filter === item.id\n                  ? "bg-card text-foreground shadow-[0_6px_16px_-14px_rgba(0,0,0,0.6)]"\n                  : "text-foreground/45 hover:text-foreground"\n              )}\n              onClick={() => setFilter(item.id)}\n            >\n              <span className="truncate">{item.label}</span>\n              <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-65">{formatCompactCount(count)}</span>\n            </button>\n          )\n        })}\n      </div>\n    </div>\n  )'''
+
+          source = replace_once(source, old_toolbar, new_toolbar, "list toolbar")
+          path.write_text(source)
+
+          test_path = Path("tests/contracts/ui/notes-list.test.ts")
+          tests = test_path.read_text()
+          anchor = '''  it("uses compact source-material generation with auto and manual amounts", () => {'''
+          addition = '''  it("keeps note-library counts inside fixed filter tabs instead of the action row", () => {\n    expect(editor).toContain("formatCompactCount")\n    expect(editor).toContain("needsReviewCount")\n    expect(editor).toContain("grid grid-cols-2 gap-1")\n    expect(editor).toContain("item.id === \\\"all\\\" ? deck.cards.length : needsReviewCount")\n    expect(editor).not.toContain("{deck.cards.length} notes</p>")\n    expect(editor).not.toContain("{reviewedCount} reviewed</span>")\n  })\n\n'''
+          if addition not in tests:
+              tests = replace_once(tests, anchor, addition + anchor, "notes toolbar test")
+          test_path.write_text(tests)
+          PY
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/card-editor.tsx tests/contracts/ui/notes-list.test.ts
+          git diff --cached --check
+          git commit -m "refactor: stabilize note library toolbar"
+          git push origin HEAD:${GITHUB_REF_NAME}
