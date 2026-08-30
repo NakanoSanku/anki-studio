@@ -17,6 +17,15 @@ describe("notes desktop workspace", () => {
     expect(layout).not.toContain("scrollbar-gutter: stable")
   })
 
+  it("contains selected note rows inside the desktop library pane", () => {
+    expect(layout).toContain('section:has(> [data-testid="notes-card-list"]) {')
+    expect(layout).toContain("min-width: 0")
+    expect(layout).toContain("max-width: 100%")
+    expect(layout).toContain('[data-testid="notes-card-list"] > div > button')
+    expect(layout).toContain("overflow-x: hidden")
+    expect(layout).toContain("box-sizing: border-box")
+  })
+
   it("keeps editor and preview side by side after opening a note on desktop", () => {
     expect(layout).toContain('[data-app-view="note-detail"] #app-main div:has(> section > [data-testid="notes-card-list"])')
     expect(layout).toContain("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)")
