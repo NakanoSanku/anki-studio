@@ -56,6 +56,12 @@ type AppShellProps = {
   children: ReactNode
 }
 
+type HeaderMeta = {
+  backHref?: string
+  title: string
+  primary: boolean
+}
+
 const SYNC_ICON_DURATION_S = 0.15
 const EDITABLE_SELECTOR = "input, textarea, select, [contenteditable=true], .cm-content"
 const AppHeaderActionContext = createContext<Dispatch<SetStateAction<ReactNode>> | null>(null)
@@ -68,6 +74,37 @@ export function useAppHeaderAction(action: ReactNode) {
     setHeaderAction(action)
     return () => setHeaderAction(null)
   }, [action, setHeaderAction])
+}
+
+function StudioMark() {
+  return (
+    <span
+      data-testid="studio-mark"
+      aria-hidden="true"
+      className="relative flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-foreground text-background shadow-[0_12px_28px_-20px_rgba(0,0,0,0.85)]"
+    >
+      <svg viewBox="0 0 32 32" className="size-6" fill="none">
+        <rect
+          x="5.5"
+          y="7.5"
+          width="13"
+          height="17"
+          rx="3.5"
+          transform="rotate(-8 12 16)"
+          className="stroke-background/55"
+          strokeWidth="2"
+        />
+        <rect x="12.5" y="7.5" width="13" height="17" rx="3.5" className="fill-background" />
+        <path
+          d="M16.5 12.5h5M16.5 16h5M16.5 19.5h3"
+          className="stroke-foreground"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="absolute -right-0.5 -top-0.5 size-3 rounded-full border-[3px] border-background bg-energy" />
+    </span>
+  )
 }
 
 function SyncIcon({ syncing, syncUnavailable }: { syncing: boolean; syncUnavailable?: string }) {
@@ -94,15 +131,16 @@ function SyncIcon({ syncing, syncUnavailable }: { syncing: boolean; syncUnavaila
   )
 }
 
-function headerMeta(pathname: string): { backHref?: string; title: string; showDeck: boolean } {
-  if (pathname === PATHS.home || pathname === PATHS.notes) return { title: "", showDeck: true }
-  if (noteIdFromPath(pathname)) return { backHref: PATHS.notes, title: "Edit note", showDeck: false }
-  if (pathname === PATHS.settings) return { title: "Settings", showDeck: false }
-  if (pathname === PATHS.settingsTemplates) return { backHref: PATHS.settingsDeck, title: "Templates", showDeck: false }
-  if (pathname === PATHS.settingsDeck) return { backHref: PATHS.settings, title: "Deck", showDeck: false }
+function headerMeta(pathname: string): HeaderMeta {
+  if (pathname === PATHS.home) return { title: "Study", primary: true }
+  if (pathname === PATHS.notes) return { title: "Notes", primary: true }
+  if (pathname === PATHS.settings) return { title: "Settings", primary: true }
+  if (noteIdFromPath(pathname)) return { backHref: PATHS.notes, title: "Edit note", primary: false }
+  if (pathname === PATHS.settingsTemplates) return { backHref: PATHS.settingsDeck, title: "Templates", primary: false }
+  if (pathname === PATHS.settingsDeck) return { backHref: PATHS.settings, title: "Deck", primary: false }
   const row = SETTINGS_ROWS.find((item) => item.href === pathname)
-  if (row) return { backHref: PATHS.settings, title: row.label, showDeck: false }
-  return { title: "", showDeck: false }
+  if (row) return { backHref: PATHS.settings, title: row.label, primary: false }
+  return { title: "", primary: false }
 }
 
 function viewName(pathname: string) {
@@ -139,7 +177,6 @@ export function AppShell({
   const showTabBar = tabBarVisible(pathname)
   const session = pathname === PATHS.studySession
   const noteDetail = Boolean(noteIdFromPath(pathname))
-  const home = pathname === PATHS.home
   const lock = lockViewport || pathname === PATHS.notes || noteDetail
   const header = headerMeta(pathname)
   const name = deckName.trim() || "Untitled deck"
@@ -258,76 +295,80 @@ export function AppShell({
 
         {!session ? (
           <header
+            data-header-mode={header.primary ? "primary" : "detail"}
             className={cn(
               "z-30 border-b border-black/[0.045] bg-background/92 pt-[env(safe-area-inset-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/82 dark:border-white/[0.07]",
               lock ? "shrink-0" : "sticky top-0"
             )}
             aria-label="App header"
           >
-            <div
-              className={cn(
-                "mx-auto flex w-full max-w-7xl items-center gap-2.5 px-3 min-[390px]:px-4 sm:px-6",
-                home ? "h-[80px] min-[390px]:h-[84px] sm:h-[88px]" : "h-[68px] min-[390px]:h-[72px] sm:h-20"
-              )}
-            >
-              {header.backHref ? (
-                <button
-                  type="button"
-                  className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 min-[390px]:size-11 dark:border-white/[0.09]"
-                  aria-label="Back"
-                  onClick={goBack}
-                >
-                  <ChevronLeft className="size-5" />
-                </button>
-              ) : null}
-
-              {header.title ? (
-                <h1 className="min-w-0 flex-1 truncate text-[19px] font-semibold tracking-[-0.03em] min-[390px]:text-[20px]">{header.title}</h1>
-              ) : null}
-
-              {header.showDeck ? (
-                <button
-                  type="button"
-                  className="group flex min-w-0 flex-1 touch-manipulation items-center rounded-[12px] text-left [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45"
-                  onClick={onDeckClick}
-                >
-                  <div className="min-w-0">
-                    <span
-                      className={cn(
-                        "anki-wordmark block tracking-[-0.045em]",
-                        home
-                          ? "text-[25px] min-[390px]:text-[27px] sm:text-[29px]"
-                          : "text-[21px] min-[390px]:text-[22px] sm:text-[23px]"
-                      )}
-                    >
-                      anki studio
-                    </span>
-                    <span className="mt-1.5 flex max-w-[64vw] items-center gap-1 text-[10px] font-medium text-muted-foreground min-[390px]:max-w-[70vw] min-[390px]:text-[11px]">
-                      <span className="truncate">{name}</span>
-                      <ChevronDown className="size-3.5 shrink-0 transition-transform duration-150 group-active:translate-y-0.5" />
-                    </span>
+            <div className="mx-auto flex h-[68px] w-full max-w-7xl items-center gap-2 px-3 min-[390px]:h-[72px] min-[390px]:gap-2.5 min-[390px]:px-4 sm:h-[76px] sm:px-6">
+              {header.primary ? (
+                <>
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <StudioMark />
+                    <div className="min-w-0">
+                      <p className="truncate text-[9px] font-semibold uppercase tracking-[0.15em] text-muted-foreground min-[390px]:text-[10px]">
+                        Anki Studio
+                      </p>
+                      <h1
+                        data-testid="header-section-title"
+                        className="mt-0.5 truncate text-[16px] font-semibold tracking-[-0.025em] min-[390px]:text-[17px]"
+                      >
+                        {header.title}
+                      </h1>
+                    </div>
                   </div>
-                </button>
-              ) : null}
 
-              {headerAction}
+                  <button
+                    type="button"
+                    data-testid="header-deck-switcher"
+                    className="group flex h-9 min-w-0 max-w-[34vw] shrink items-center gap-1.5 rounded-[12px] border border-black/[0.065] bg-card px-2.5 text-left text-[11px] font-semibold text-foreground shadow-[0_10px_24px_-24px_rgba(0,0,0,0.5)] transition-[background-color,transform] hover:bg-muted/65 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 min-[390px]:max-w-[40vw] min-[390px]:px-3 min-[390px]:text-xs sm:max-w-xs dark:border-white/[0.09]"
+                    onClick={onDeckClick}
+                    aria-label={`Switch deck. Current deck: ${name}`}
+                  >
+                    <span className="truncate">{name}</span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-y-0.5" />
+                  </button>
 
-              {pathname === PATHS.notes || pathname === PATHS.home ? (
-                <button
-                  type="button"
-                  className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 disabled:opacity-50 min-[390px]:size-11 dark:border-white/[0.09]"
-                  disabled={syncing}
-                  aria-label={
-                    syncing ? "Syncing" : dirtyCount > 0 ? `${dirtyCount} changes waiting to sync` : shownSyncUnavailable || "Sync now"
-                  }
-                  onClick={onSync}
-                >
-                  <SyncIcon syncing={syncing} syncUnavailable={shownSyncUnavailable} />
-                  {dirtyCount > 0 ? (
-                    <span className="absolute right-1 top-1 size-2.5 rounded-full border-2 border-card bg-energy min-[390px]:right-1.5 min-[390px]:top-1.5" />
+                  <button
+                    type="button"
+                    data-testid="header-sync"
+                    className="relative flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 disabled:opacity-50 dark:border-white/[0.09]"
+                    disabled={syncing}
+                    aria-label={
+                      syncing ? "Syncing" : dirtyCount > 0 ? `${dirtyCount} changes waiting to sync` : shownSyncUnavailable || "Sync now"
+                    }
+                    onClick={onSync}
+                  >
+                    <SyncIcon syncing={syncing} syncUnavailable={shownSyncUnavailable} />
+                    {dirtyCount > 0 ? (
+                      <span className="absolute right-1 top-1 size-2.5 rounded-full border-2 border-card bg-energy min-[390px]:right-1.5 min-[390px]:top-1.5" />
+                    ) : null}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {header.backHref ? (
+                    <button
+                      type="button"
+                      className="flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-black/[0.065] bg-card text-foreground transition-[background-color,transform] [-webkit-tap-highlight-color:transparent] hover:bg-muted/70 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 dark:border-white/[0.09]"
+                      aria-label="Back"
+                      onClick={goBack}
+                    >
+                      <ChevronLeft className="size-5" />
+                    </button>
                   ) : null}
-                </button>
-              ) : null}
+
+                  {header.title ? (
+                    <h1 className="min-w-0 flex-1 truncate text-[19px] font-semibold tracking-[-0.03em] min-[390px]:text-[20px]">
+                      {header.title}
+                    </h1>
+                  ) : <div className="flex-1" />}
+
+                  {headerAction}
+                </>
+              )}
             </div>
           </header>
         ) : null}
