@@ -29,9 +29,16 @@ describe("mobile hierarchy and language", () => {
     expect(settingsForm).not.toContain("<SectionIntro")
   })
 
-  it("gives the home wordmark stronger hierarchy", () => {
-    expect(appShell).toContain('home ? "h-[80px]')
-    expect(appShell).toContain('text-[25px] min-[390px]:text-[27px] sm:text-[29px]')
+  it("uses one shared primary header for Study, Notes, and Settings", () => {
+    expect(appShell).toContain('if (pathname === PATHS.home) return { title: "Study", primary: true }')
+    expect(appShell).toContain('if (pathname === PATHS.notes) return { title: "Notes", primary: true }')
+    expect(appShell).toContain('if (pathname === PATHS.settings) return { title: "Settings", primary: true }')
+    expect(appShell).toContain('data-testid="studio-mark"')
+    expect(appShell).toContain('data-testid="header-deck-switcher"')
+    expect(appShell).toContain('data-testid="header-sync"')
+    expect(appShell).toContain("Anki Studio")
+    expect(appShell).not.toContain("anki-wordmark")
+    expect(appShell).not.toContain('home ? "h-[80px]')
   })
 
   it("uses concise English copy for the primary study experience", () => {
