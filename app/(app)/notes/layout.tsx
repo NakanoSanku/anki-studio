@@ -46,10 +46,12 @@ const notesDesktopStyles = `
     box-sizing: border-box;
     min-width: 0;
     max-width: 100%;
+    padding: 0.5rem !important;
   }
 
   :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main [data-testid="notes-card-list"] > div > button {
     box-sizing: border-box;
+    width: 100%;
     min-width: 0;
     max-width: 100%;
   }
