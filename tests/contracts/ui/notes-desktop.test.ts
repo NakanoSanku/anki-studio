@@ -26,6 +26,12 @@ describe("notes desktop workspace", () => {
     expect(layout).toContain("box-sizing: border-box")
   })
 
+  it("keeps selected rows visually inset from the rounded list container", () => {
+    expect(layout).toContain('[data-testid="notes-card-list"] > div {')
+    expect(layout).toContain("padding: 0.5rem !important")
+    expect(layout).toContain("width: 100%")
+  })
+
   it("keeps editor and preview side by side after opening a note on desktop", () => {
     expect(layout).toContain('[data-app-view="note-detail"] #app-main div:has(> section > [data-testid="notes-card-list"])')
     expect(layout).toContain("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)")
