@@ -11,8 +11,16 @@ const notesDesktopStyles = `
     overflow: hidden;
   }
 
+  :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main section:has(> [data-testid="notes-card-list"]) {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
   :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main section:has(> [data-testid="notes-card-list"]) > div:first-child {
     display: block !important;
+    min-width: 0;
+    max-width: 100%;
   }
 
   :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main section:has(> [data-testid="notes-card-list"]) > div:first-child > div:first-child > p {
@@ -23,10 +31,27 @@ const notesDesktopStyles = `
   }
 
   :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main [data-testid="notes-card-list"] {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     height: auto !important;
     min-height: 0 !important;
     flex: 1 1 0% !important;
+    overflow-x: hidden;
+    overflow-y: auto;
     scrollbar-gutter: auto;
+  }
+
+  :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main [data-testid="notes-card-list"] > div {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main [data-testid="notes-card-list"] > div > button {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
   }
 
   :is([data-app-view="notes"], [data-app-view="note-detail"]) #app-main [data-testid="card-editor-fields"] {
