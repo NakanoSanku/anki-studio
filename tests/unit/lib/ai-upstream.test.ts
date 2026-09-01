@@ -4,6 +4,8 @@ import {
   describeUpstreamError,
   isBrowserNetworkError,
   isCloudflareBlocked,
+  isGeminiNativeEndpoint,
+  listProviderModels,
   withBrowserCorsHint,
   withProviderTimeout,
 } from "@/lib/ai-upstream"
@@ -45,6 +47,51 @@ describe("isCloudflareBlocked", () => {
   })
 })
 
+describe("isGeminiNativeEndpoint", () => {
+  it("distinguishes native Gemini from its OpenAI compatibility endpoint", () => {
+    expect(isGeminiNativeEndpoint("https://generativelanguage.googleapis.com/v1beta")).toBe(true)
+    expect(isGeminiNativeEndpoint("https://generativelanguage.googleapis.com/v1beta/openai/")).toBe(false)
+    expect(isGeminiNativeEndpoint("https://api.openai.com/v1")).toBe(false)
+  })
+})
+
+describe("listProviderModels", () => {
+  it("uses Gemini auth and returns only content-generation models for the native API", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")
+      const headers = new Headers(init?.headers)
+      expect(headers.get("x-goog-api-key")).toBe("gemini-key")
+      expect(headers.get("x-goog-api-client")).toBe("anki-studio/0.1.0")
+      expect(headers.get("authorization")).toBeNull()
+      return new Response(
+        JSON.stringify({
+          models: [
+            {
+              name: "models/gemini-3.7-flash",
+              baseModelId: "gemini-3.7-flash",
+              supportedGenerationMethods: ["generateContent"],
+            },
+            {
+              name: "models/gemini-embedding-001",
+              baseModelId: "gemini-embedding-001",
+              supportedGenerationMethods: ["embedContent"],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(
+      listProviderModels({
+        baseURL: "https://generativelanguage.googleapis.com/v1beta",
+        apiKey: "gemini-key",
+      })
+    ).resolves.toEqual(["gemini-3.7-flash"])
+  })
+})
+
 describe("withBrowserCorsHint", () => {
   it("rewrites browser CORS failures", async () => {
     await expect(withBrowserCorsHint(() => Promise.reject(new Error("Failed to fetch")))).rejects.toThrow(
@@ -60,9 +107,9 @@ describe("withBrowserCorsHint", () => {
   })
 })
 
-
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe("withProviderTimeout", () => {
