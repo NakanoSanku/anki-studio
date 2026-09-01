@@ -2,9 +2,26 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, value, onChange, onBlur, onKeyDown, id, ...props }: React.ComponentProps<"input">) {
+  const deferCardFieldCommit = typeof id === "string" && id.startsWith("field-") && value !== undefined
+  const [draft, setDraft] = React.useState(value)
+  const focusedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!deferCardFieldCommit || focusedRef.current) return
+    setDraft(value)
+  }, [deferCardFieldCommit, value])
+
+  const commitDraft = (element: HTMLInputElement) => {
+    if (!deferCardFieldCommit || !onChange || draft === value) return
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+    descriptor?.set?.call(element, draft ?? "")
+    element.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+
   return (
     <input
+      id={id}
       type={type}
       data-slot="input"
       className={cn(
@@ -12,6 +29,31 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         className
       )}
       {...props}
+      value={deferCardFieldCommit ? draft : value}
+      onFocus={(event) => {
+        focusedRef.current = true
+        props.onFocus?.(event)
+      }}
+      onChange={(event) => {
+        if (deferCardFieldCommit) {
+          setDraft(event.target.value)
+          return
+        }
+        onChange?.(event)
+      }}
+      onBlur={(event) => {
+        focusedRef.current = false
+        if (deferCardFieldCommit) {
+          commitDraft(event.currentTarget)
+        }
+        onBlur?.(event)
+      }}
+      onKeyDown={(event) => {
+        if (deferCardFieldCommit && event.key === "Enter" && !event.nativeEvent.isComposing) {
+          event.currentTarget.blur()
+        }
+        onKeyDown?.(event)
+      }}
     />
   )
 }
