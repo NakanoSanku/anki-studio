@@ -3,6 +3,42 @@ import { extractModelIds, validateProviderEndpoint } from "./ai-settings"
 export const AI_FETCH_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 export const AI_REQUEST_TIMEOUT_MS = 90_000
+export const GEMINI_API_HOST = "generativelanguage.googleapis.com"
+export const GEMINI_API_CLIENT = "anki-studio/0.1.0"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+export function isGeminiNativeEndpoint(baseURL: string): boolean {
+  try {
+    const url = new URL(baseURL.trim())
+    const parts = url.pathname.split("/").filter(Boolean)
+    return url.hostname.toLowerCase() === GEMINI_API_HOST && !parts.includes("openai")
+  } catch {
+    return false
+  }
+}
+
+function extractGeminiModelIds(payload: unknown): string[] {
+  if (!isRecord(payload) || !Array.isArray(payload.models)) return []
+  const ids = new Set<string>()
+
+  for (const value of payload.models) {
+    if (!isRecord(value)) continue
+    const methods = Array.isArray(value.supportedGenerationMethods)
+      ? value.supportedGenerationMethods.filter((method): method is string => typeof method === "string")
+      : []
+    if (methods.length > 0 && !methods.includes("generateContent")) continue
+
+    const baseModelId = typeof value.baseModelId === "string" ? value.baseModelId.trim() : ""
+    const name = typeof value.name === "string" ? value.name.trim().replace(/^models\//, "") : ""
+    const id = baseModelId || name
+    if (id) ids.add(id)
+  }
+
+  return [...ids].sort((a, b) => a.localeCompare(b))
+}
 
 export function providerFetch(input: RequestInfo | URL, init?: RequestInit) {
   const headers = new Headers(init?.headers)
@@ -78,9 +114,18 @@ export async function listProviderModels(settings: { baseURL: string; apiKey: st
   const invalid = validateProviderEndpoint(settings.baseURL)
   if (invalid) throw new Error(invalid)
 
-  const endpoint = `${settings.baseURL.trim().replace(/\/$/, "")}/models`
+  const baseURL = settings.baseURL.trim().replace(/\/$/, "")
+  const isGemini = isGeminiNativeEndpoint(baseURL)
+  const endpoint = isGemini ? `${baseURL}/models?pageSize=1000` : `${baseURL}/models`
   const headers: HeadersInit = { Accept: "application/json" }
-  if (settings.apiKey.trim()) headers.Authorization = `Bearer ${settings.apiKey.trim()}`
+  if (settings.apiKey.trim()) {
+    if (isGemini) {
+      headers["x-goog-api-key"] = settings.apiKey.trim()
+      headers["x-goog-api-client"] = GEMINI_API_CLIENT
+    } else {
+      headers.Authorization = `Bearer ${settings.apiKey.trim()}`
+    }
+  }
 
   return withProviderTimeout(async (signal) => {
     const response = await providerFetch(endpoint, { headers, signal })
@@ -102,7 +147,7 @@ export async function listProviderModels(settings: { baseURL: string; apiKey: st
       throw new Error("The provider did not return JSON")
     }
 
-    const models = extractModelIds(payload)
+    const models = isGemini ? extractGeminiModelIds(payload) : extractModelIds(payload)
     if (models.length === 0) throw new Error("The provider did not return any available models")
     return models
   })

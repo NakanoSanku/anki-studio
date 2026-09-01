@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Check, Eye, EyeOff, LoaderCircle, Mic2, Save, Zap } from "lucide-react"
 
+import { AI_SETTINGS_CHANGED_EVENT } from "@/lib/ai-settings"
 import {
   GEMINI_LIVE_MODEL,
   readGeminiLiveSettings,
@@ -42,6 +43,12 @@ export function GeminiLiveSetup({
   const [showKey, setShowKey] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<SetupStatus>({ type: "idle", message: "" })
+
+  useEffect(() => {
+    const syncSharedKey = () => setSettings(readGeminiLiveSettings())
+    window.addEventListener(AI_SETTINGS_CHANGED_EVENT, syncSharedKey)
+    return () => window.removeEventListener(AI_SETTINGS_CHANGED_EVENT, syncSharedKey)
+  }, [])
 
   const normalized = (): GeminiLiveSettings => ({ apiKey: settings.apiKey.trim() })
 
@@ -104,9 +111,14 @@ export function GeminiLiveSetup({
   if (!onboarding) {
     return (
       <section data-testid="gemini-live-compact" className="mx-auto w-full max-w-xl rounded-[20px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09]">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold tracking-[-0.025em]">Gemini Live</h3>
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Get key</a>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-[-0.025em]">Gemini Live</h3>
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              Uses the same API key as the provider above when it points to Google Gemini. OpenAI-compatible providers keep a separate Live key.
+            </p>
+          </div>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="shrink-0 text-[10px] font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Get key</a>
         </div>
         <div className="relative mt-3">
           <Input
@@ -124,6 +136,10 @@ export function GeminiLiveSetup({
           <button type="button" aria-label={showKey ? "Hide Gemini API key" : "Show Gemini API key"} onClick={() => setShowKey((visible) => !visible)} className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground hover:bg-muted hover:text-foreground">
             {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
           </button>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-muted-foreground">
+          <span className="truncate font-mono">{GEMINI_LIVE_MODEL}</span>
+          <span className="shrink-0">Shared when possible</span>
         </div>
         {status.message ? <p role="status" className={cn("mt-3 rounded-[11px] px-3 py-2 text-xs font-medium", status.type === "error" ? "bg-destructive/8 text-destructive" : status.type === "success" ? "bg-energy/14 text-foreground" : "bg-muted/60 text-muted-foreground")}>{status.message}</p> : null}
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -152,8 +168,8 @@ export function GeminiLiveSetup({
           </h3>
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
             {onboarding
-              ? "Add a Gemini API key once, then the tutor can teach directly from your current deck."
-              : "A separate Gemini Live connection used only for real-time voice lessons."}
+              ? "One Gemini API key can power both AI generation and the real-time Voice Tutor."
+              : "Real-time voice uses Gemini 3.1 Flash Live while normal AI generation keeps its own selected model."}
           </p>
         </div>
       </div>
@@ -236,7 +252,7 @@ export function GeminiLiveSetup({
       )}
 
       <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
-        Your permanent key is sent only to this app&apos;s token endpoint to mint a short-lived Gemini Live token for each lesson.
+        The permanent Gemini key stays on this device. Voice Tutor sends it only to this app&apos;s token endpoint to mint a short-lived Live token for each lesson.
       </p>
     </section>
   )
