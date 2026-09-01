@@ -9,7 +9,11 @@ export type AiSettings = {
 }
 
 export const AI_SETTINGS_KEY = "anki-studio.ai-settings.v2"
+export const AI_SETTINGS_CHANGED_EVENT = "anki-studio:ai-settings-changed"
 const LEGACY_SETTINGS_KEY = "anki-studio.ai-settings.v1"
+
+export const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 const LEGACY_DEFAULT_SYSTEM_PROMPT =
   "你在帮用户制作 Anki 单词卡片。只输出要求的内容，不要解释，不要加引号或 markdown。"
@@ -124,9 +128,9 @@ Requirements:
 - Return complete front, back, and css values without Markdown.`
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
-  model: "gpt-4o-mini",
+  model: DEFAULT_GEMINI_MODEL,
   apiKey: "",
-  baseURL: "https://api.openai.com/v1",
+  baseURL: DEFAULT_GEMINI_BASE_URL,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   cardCompletePrompt: DEFAULT_CARD_COMPLETE_PROMPT,
   batchPrompt: DEFAULT_BATCH_PROMPT,
@@ -176,6 +180,7 @@ export function readAiSettings(): AiSettings {
 
 export function writeAiSettings(settings: AiSettings) {
   localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings))
+  window.dispatchEvent(new Event(AI_SETTINGS_CHANGED_EVENT))
 }
 
 export function validateProviderEndpoint(baseURL: string): string | null {
