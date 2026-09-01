@@ -6,6 +6,7 @@ function Input({ className, type, value, onChange, onBlur, onKeyDown, id, ...pro
   const deferCardFieldCommit = typeof id === "string" && id.startsWith("field-") && value !== undefined
   const [draft, setDraft] = React.useState(value)
   const focusedRef = React.useRef(false)
+  const committingRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!deferCardFieldCommit || focusedRef.current) return
@@ -15,8 +16,13 @@ function Input({ className, type, value, onChange, onBlur, onKeyDown, id, ...pro
   const commitDraft = (element: HTMLInputElement) => {
     if (!deferCardFieldCommit || !onChange || draft === value) return
     const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
-    descriptor?.set?.call(element, draft ?? "")
-    element.dispatchEvent(new Event("input", { bubbles: true }))
+    committingRef.current = true
+    try {
+      descriptor?.set?.call(element, draft ?? "")
+      element.dispatchEvent(new Event("input", { bubbles: true }))
+    } finally {
+      committingRef.current = false
+    }
     setDraft(value)
   }
 
@@ -36,7 +42,7 @@ function Input({ className, type, value, onChange, onBlur, onKeyDown, id, ...pro
         props.onFocus?.(event)
       }}
       onChange={(event) => {
-        if (deferCardFieldCommit) {
+        if (deferCardFieldCommit && !committingRef.current) {
           setDraft(event.target.value)
           return
         }
