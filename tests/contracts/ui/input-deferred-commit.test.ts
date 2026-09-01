@@ -4,11 +4,11 @@ import { readSource } from "../helpers/source"
 
 const input = readSource("components", "ui", "input.tsx")
 
-describe("deferred input commit contracts", () => {
-  it("lets the synthetic commit event reach the controlled onChange handler", () => {
-    expect(input).toContain("const committingRef = React.useRef(false)")
-    expect(input).toContain("committingRef.current = true")
-    expect(input).toContain("if (deferCardFieldCommit && !committingRef.current)")
-    expect(input).toContain('element.dispatchEvent(new Event("input", { bubbles: true }))')
+describe("shared input contracts", () => {
+  it("keeps the shared input as a plain controlled input", () => {
+    expect(input).not.toContain('startsWith("field-")')
+    expect(input).not.toContain("dispatchEvent(new Event")
+    expect(input).not.toContain("useState(value)")
+    expect(input).toContain("{...props}")
   })
 })
