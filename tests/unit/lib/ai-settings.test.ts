@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   applyPromptWithReferences,
+  DEFAULT_AI_SETTINGS,
   DEFAULT_BATCH_PROMPT,
   DEFAULT_CARD_COMPLETE_PROMPT,
+  DEFAULT_GEMINI_BASE_URL,
+  DEFAULT_GEMINI_MODEL,
   DEFAULT_SYSTEM_PROMPT,
   parseAiSettings,
 } from "@/lib/ai-settings"
@@ -23,6 +26,13 @@ describe("parseAiSettings", () => {
     expect(settings).not.toHaveProperty("fieldCompletePrompt")
     expect(settings).not.toHaveProperty("fieldRewritePrompt")
     expect(settings).not.toHaveProperty("cardRewritePrompt")
+  })
+
+  it("uses Gemini 3.1 Flash-Lite as the default provider", () => {
+    expect(DEFAULT_GEMINI_BASE_URL).toBe("https://generativelanguage.googleapis.com/v1beta")
+    expect(DEFAULT_GEMINI_MODEL).toBe("gemini-3.1-flash-lite")
+    expect(DEFAULT_AI_SETTINGS.baseURL).toBe(DEFAULT_GEMINI_BASE_URL)
+    expect(DEFAULT_AI_SETTINGS.model).toBe(DEFAULT_GEMINI_MODEL)
   })
 
   it("ships English default prompts", () => {
