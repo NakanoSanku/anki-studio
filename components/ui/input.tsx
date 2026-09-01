@@ -17,6 +17,7 @@ function Input({ className, type, value, onChange, onBlur, onKeyDown, id, ...pro
     const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
     descriptor?.set?.call(element, draft ?? "")
     element.dispatchEvent(new Event("input", { bubbles: true }))
+    setDraft(value)
   }
 
   return (
