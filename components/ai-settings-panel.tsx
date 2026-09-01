@@ -169,15 +169,20 @@ export function AiSettingsPanel() {
   return (
     <div className="mx-auto w-full max-w-xl space-y-4 pb-10">
       <section className="rounded-[20px] border border-black/[0.065] bg-card p-4 dark:border-white/[0.09]">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-[-0.03em]">Provider</h2>
-          <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground" onClick={resetAllDefaults}>Reset</Button>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold tracking-[-0.03em]">Provider</h2>
+            <p className="mt-1 max-w-md text-[11px] leading-4 text-muted-foreground">
+              Supports the native Gemini API and OpenAI-compatible endpoints. When you use Google Gemini, the API key is shared with Gemini Live below.
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0 px-2 text-xs text-muted-foreground" onClick={resetAllDefaults}>Reset</Button>
         </div>
 
         <div className="space-y-3">
           <div>
             <Label htmlFor="baseURL-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Base URL</Label>
-            <Input id="baseURL-input" value={settings.baseURL} placeholder="https://api.openai.com/v1" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ baseURL: event.target.value })} />
+            <Input id="baseURL-input" value={settings.baseURL} placeholder="https://generativelanguage.googleapis.com/v1beta" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ baseURL: event.target.value })} />
           </div>
 
           <div>
@@ -194,7 +199,7 @@ export function AiSettingsPanel() {
                 </SelectContent>
               </Select>
             ) : (
-              <Input id="model-input" value={settings.model} placeholder="gpt-4o-mini" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
+              <Input id="model-input" value={settings.model} placeholder="gemini-3.1-flash-lite" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
             )}
           </div>
 
@@ -204,7 +209,7 @@ export function AiSettingsPanel() {
               <button type="button" onClick={() => void pasteApiKey()} className="text-[10px] font-medium text-muted-foreground hover:text-foreground">Paste</button>
             </div>
             <div className="relative mt-1.5">
-              <Input id="apiKey-input" type={showApiKey ? "text" : "password"} value={settings.apiKey} placeholder="Optional for keyless endpoints" className="h-10 bg-background pr-10 font-mono text-xs" onChange={(event) => patch({ apiKey: event.target.value })} />
+              <Input id="apiKey-input" type={showApiKey ? "text" : "password"} value={settings.apiKey} placeholder="Gemini API key or provider key" className="h-10 bg-background pr-10 font-mono text-xs" onChange={(event) => patch({ apiKey: event.target.value })} />
               <button type="button" aria-label={showApiKey ? "Hide API key" : "Show API key"} onClick={() => setShowApiKey((visible) => !visible)} className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-[9px] text-muted-foreground hover:bg-muted hover:text-foreground">
                 {showApiKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
               </button>
