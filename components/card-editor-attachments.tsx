@@ -19,7 +19,6 @@ import {
   encodeAttachmentValue,
   mirrorAttachmentToDrive,
   parseAttachmentValue,
-  removeAttachment,
   resolveAttachmentBlob,
   storeAttachmentBlob,
 } from "@/lib/attachments"
@@ -44,11 +43,6 @@ export function CardEditor(props: CardEditorProps) {
   const activeField = fields.includes(field) ? field : fields[0] ?? ""
   const currentValue = selected?.values[activeField] ?? ""
   const currentAttachment = parseAttachmentValue(currentValue)
-
-  useEffect(() => {
-    if (fields.includes(field)) return
-    setField(fields.find((name) => !selected?.values[name]?.trim()) ?? fields[0] ?? "")
-  }, [field, fields, selected?.values])
 
   useEffect(() => {
     const touched: Array<{ element: HTMLInputElement | HTMLTextAreaElement; readOnly: boolean; title: string }> = []
@@ -97,14 +91,12 @@ export function CardEditor(props: CardEditorProps) {
     setMessage("")
     void (async () => {
       try {
-        const oldRef = parseAttachmentValue(selected.values[activeField] ?? "")
         const ref = createAttachmentRef(file)
         await storeAttachmentBlob(ref, file)
         updateSelectedValue(encodeAttachmentValue(ref))
         setMessage("Saved on this device. Syncing to Google Drive…")
         const mirrored = await mirrorAttachmentToDrive(ref, file)
         setMessage(mirrored.message)
-        if (oldRef && oldRef.id !== ref.id) void removeAttachment(oldRef)
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Couldn’t attach this file")
       } finally {
@@ -132,10 +124,8 @@ export function CardEditor(props: CardEditorProps) {
 
   const removeCurrent = () => {
     if (!currentAttachment || busy) return
-    const ref = currentAttachment
-    updateSelectedValue("", ref.id)
-    setMessage("Attachment removed from this field.")
-    void removeAttachment(ref)
+    updateSelectedValue("", currentAttachment.id)
+    setMessage("Attachment removed from this field. The stored media is retained for other notes or deck copies.")
   }
 
   const openAttachmentDialog = () => {
