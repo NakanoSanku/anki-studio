@@ -19,6 +19,11 @@
       }
     ],
     "paths": {
+      "@/components/card-editor": ["./components/card-editor-attachments.tsx"],
+      "@/components/card-preview": ["./components/card-preview-attachments.tsx"],
+      "@/components/study-session": ["./components/study-session-attachments.tsx"],
+      "@/lib/apkg": ["./lib/apkg-attachments.ts"],
+      "@/lib/template": ["./lib/template-attachments.ts"],
       "@/*": ["./*"]
     }
   },
