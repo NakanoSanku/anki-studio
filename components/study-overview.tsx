@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRight, AudioLines, Plus } from "lucide-react"
+import { ArrowRight, AudioLines, ChartNoAxesCombined, Plus } from "lucide-react"
 
 import { AiTutor } from "@/components/ai-tutor"
 import { StudyStage } from "@/components/study-stage"
@@ -14,13 +14,14 @@ type StudyOverviewProps = {
   deck: Deck
   onStart: () => void
   onAddNote?: () => void
+  onStats?: () => void
 }
 
 function countLabel(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? "" : "s"}`
 }
 
-export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) {
+export function StudyOverview({ deck, onStart, onAddNote, onStats }: StudyOverviewProps) {
   const [tutorOpen, setTutorOpen] = useState(false)
   const now = new Date()
   const studyDeck = approvedDeck(deck)
@@ -126,6 +127,12 @@ export function StudyOverview({ deck, onStart, onAddNote }: StudyOverviewProps) 
               </Button>
             ) : null}
           </div>
+          {onStats ? (
+            <Button type="button" variant="ghost" className="h-11 justify-center rounded-[14px] text-sm text-muted-foreground" onClick={onStats}>
+              <ChartNoAxesCombined className="size-4" />
+              Study statistics
+            </Button>
+          ) : null}
         </section>
       </StudyStage>
 

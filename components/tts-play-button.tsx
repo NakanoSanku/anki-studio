@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { LoaderCircle, Volume2 } from "lucide-react"
 
-import { getTtsClip, playTtsAudio } from "@/lib/tts"
+import { playTtsText } from "@/lib/tts"
 import type { TtsLang } from "@/lib/deck"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -32,8 +32,7 @@ export function TtsPlayButton({
     setBusy(true)
     setError("")
     try {
-      const clip = await getTtsClip({ text, lang, slow })
-      await playTtsAudio(clip.blob)
+      await playTtsText({ text, lang, slow })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Playback failed")
     } finally {

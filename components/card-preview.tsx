@@ -2,7 +2,7 @@ import { useCallback, useMemo, type SyntheticEvent } from "react"
 
 import { previewDocument, renderCard } from "@/lib/template"
 import { getCardTemplate, previewValues, ttsOf, type Deck } from "@/lib/deck"
-import { getTtsClip, playTtsAudio } from "@/lib/tts"
+import { playTtsText } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -87,8 +87,7 @@ export function CardPreview({
           button.style.cursor = "progress"
           button.removeAttribute("title")
 
-          void getTtsClip({ text, lang: tts.lang, slow: tts.slow })
-            .then((clip) => playTtsAudio(clip.blob))
+          void playTtsText({ text, lang: tts.lang, slow: tts.slow })
             .then(() => {
               if (!button.isConnected) return
               button.dataset.state = "idle"

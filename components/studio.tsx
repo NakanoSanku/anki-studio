@@ -43,7 +43,7 @@ import { readEditorState } from "@/lib/editor-state"
 import { expireStatus, replaceTimer } from "@/lib/transient-status"
 import { getStudyQueue } from "@/lib/fsrs"
 import { createIdbStore } from "@/lib/studio-store-idb"
-import { createMemoryStore, getStudioStore, setStudioStore } from "@/lib/studio-store"
+import { createMemoryStore, getStudioStore, hasStudioStore, setStudioStore } from "@/lib/studio-store"
 import type { ConflictChoice, SyncConflict } from "@/lib/sync-types"
 import { AppShell } from "@/components/app-shell"
 import { DeckSwitcher } from "@/components/deck-switcher"
@@ -84,6 +84,10 @@ const StudySession = dynamic(
   () => import("@/components/study-session").then((mod) => mod.StudySession),
   { loading: () => <div className="h-[100dvh] bg-background" /> }
 )
+const StudyAnalytics = dynamic(
+  () => import("@/components/study-analytics").then((mod) => mod.StudyAnalytics),
+  { loading: RouteFallback }
+)
 const TemplateEditor = dynamic(
   () => import("@/components/template-editor").then((mod) => mod.TemplateEditor),
   { loading: RouteFallback }
@@ -104,8 +108,15 @@ function scheduleIdle(callback: () => void, timeout = 900): () => void {
   return () => window.clearTimeout(handle)
 }
 
+function ensureStudioStore() {
+  if (!hasStudioStore()) {
+    setStudioStore(typeof indexedDB === "undefined" ? createMemoryStore() : createIdbStore())
+  }
+  return getStudioStore()
+}
+
 async function readDirtyCount(): Promise<number> {
-  const records = await getStudioStore().listRecords()
+  const records = await ensureStudioStore().listRecords()
   let count = 0
   for (const record of records) {
     if (record.dirty) count += 1
@@ -228,7 +239,7 @@ export function Studio() {
   const reloadFromStore = async (guard: () => boolean = () => true): Promise<boolean> => {
     const nextLibrary = await readLibrary()
     if (!guard()) return false
-    const record = await getStudioStore().getRecord(nextLibrary.activeId)
+    const record = await ensureStudioStore().getRecord(nextLibrary.activeId)
     const nextDirty = await readDirtyCount()
     if (!guard()) return false
     updateLibraryState(nextLibrary)
@@ -250,7 +261,7 @@ export function Studio() {
       const syncDeckId = persistedLibrary.activeId
       const syncDeckSnapshot = serializeDeck(deckRef.current)
       const isLocalStateCurrent = () => libraryRef.current.activeId === syncDeckId && serializeDeck(deckRef.current) === syncDeckSnapshot
-      const store = getStudioStore()
+      const store = ensureStudioStore()
       const [{ runSyncCycle }, { createHttpTransport }] = await Promise.all([
         import("@/lib/sync-client"),
         import("@/lib/sync-transport"),
@@ -326,7 +337,7 @@ return readDirtyCount()
     let cancelled = false
     let cancelStartupSync: () => void = () => {}
     void (async () => {
-      setStudioStore(typeof indexedDB === "undefined" ? createMemoryStore() : createIdbStore())
+      ensureStudioStore()
       const session = await loadLibrarySession()
       if (cancelled) return
       libraryRef.current = session.library
@@ -682,6 +693,7 @@ return readDirtyCount()
               })
             }
             onAddNote={addNote}
+            onStats={() => router.push(PATHS.studyStats)}
           />
         ) : null}
 
@@ -692,6 +704,10 @@ return readDirtyCount()
             onChange={updateDeckState}
             onExit={leaveStudy}
           />
+        ) : null}
+
+        {activePath === PATHS.studyStats ? (
+            <StudyAnalytics deck={approvedDeck(deck)} />
         ) : null}
 
         {isNotesRoute ? (

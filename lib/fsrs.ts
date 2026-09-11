@@ -23,6 +23,7 @@ import {
 } from "./deck"
 
 export { Rating, State }
+export type { Grade } from "ts-fsrs"
 
 export type StudyItem = {
   id: string
@@ -48,6 +49,14 @@ export type StudyStats = {
   reviewedToday: number
   streak: number
   nextDue?: Date
+}
+
+export type StudyAnalytics = {
+  heatmap: Array<{ date: string; count: number }>
+  stability: Array<{ label: string; count: number }>
+  difficulty: Array<{ id: string; difficulty: number; stability: number }>
+  forecast: Array<{ date: string; count: number }>
+  forecastTotals: { seven: number; fourteen: number; thirty: number }
 }
 
 const RATING_LABELS: Record<Grade, string> = {
@@ -190,6 +199,83 @@ export function getStudyStats(deck: Deck, now = new Date()): StudyStats {
     reviewedToday: reviewLogsToday(state, now).length,
     streak,
     ...(nextDue ? { nextDue } : {}),
+  }
+}
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
+function dateAtLocalOffset(date: Date, offset: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + offset)
+  return startOfLocalDay(next)
+}
+
+export function getStudyAnalytics(deck: Deck, now = new Date()): StudyAnalytics {
+  const items = allItems(deck, now)
+  const state = fsrsOf(deck)
+  const heatmapStart = dateAtLocalOffset(now, -364)
+  const reviewCounts = new Map<string, number>()
+  const dueCounts = new Map<string, number>()
+  for (const item of items) {
+    for (const log of state.cards[item.id]?.logs ?? []) {
+      const key = localDateKey(new Date(log.review))
+      reviewCounts.set(key, (reviewCounts.get(key) ?? 0) + 1)
+    }
+    if (!item.isNew) {
+      const key = localDateKey(item.card.due)
+      dueCounts.set(key, (dueCounts.get(key) ?? 0) + 1)
+    }
+  }
+  const heatmap = Array.from({ length: 365 }, (_, index) => {
+    const date = dateAtLocalOffset(heatmapStart, index)
+    const key = localDateKey(date)
+    return { date: key, count: reviewCounts.get(key) ?? 0 }
+  })
+
+  const stability = [
+    { label: "New", count: 0 },
+    { label: "<1d", count: 0 },
+    { label: "1–7d", count: 0 },
+    { label: "7–30d", count: 0 },
+    { label: "30–100d", count: 0 },
+    { label: ">100d", count: 0 },
+  ]
+  const difficulty = items.filter((item) => !item.isNew).map((item) => ({
+    id: item.id,
+    difficulty: item.card.difficulty,
+    stability: item.card.stability,
+  }))
+  for (const item of items) {
+    if (item.isNew) {
+      stability[0]!.count += 1
+    } else if (item.card.stability < 1) {
+      stability[1]!.count += 1
+    } else if (item.card.stability < 7) {
+      stability[2]!.count += 1
+    } else if (item.card.stability < 30) {
+      stability[3]!.count += 1
+    } else if (item.card.stability <= 100) {
+      stability[4]!.count += 1
+    } else {
+      stability[5]!.count += 1
+    }
+  }
+
+  const forecast = Array.from({ length: 30 }, (_, index) => {
+    const date = dateAtLocalOffset(now, index)
+    const key = localDateKey(date)
+    return { date: key, count: dueCounts.get(key) ?? 0 }
+  })
+  const sum = (limit: number) => forecast.slice(0, limit).reduce((total, item) => total + item.count, 0)
+
+  return {
+    heatmap,
+    stability,
+    difficulty,
+    forecast,
+    forecastTotals: { seven: sum(7), fourteen: sum(14), thirty: sum(30) },
   }
 }
 

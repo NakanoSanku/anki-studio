@@ -1,11 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react"
-import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { AnimatePresence, motion, useIsPresent, useReducedMotion, type Variants } from "motion/react"
 import {
   CheckCircle2,
   Pencil,
   RotateCcw,
+  Undo2,
   X,
 } from "lucide-react"
 
@@ -33,10 +34,11 @@ import {
   getStudyStats,
   previewRatingOptions,
   reviewStudyItem,
+  type Grade,
   type StudyItem,
 } from "@/lib/fsrs"
 import { previewDocument, renderCard } from "@/lib/template"
-import { getTtsClip, playTtsAudio } from "@/lib/tts"
+import { playTtsText, ttsFieldsOnSide } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 
 type StudySessionProps = {
@@ -119,12 +121,21 @@ function StudyCard({
   item,
   revealed,
   onReveal,
+  onRate,
+  onKeyDown,
+  gesturesEnabled,
 }: {
   deck: Deck
   item: StudyItem
   revealed: boolean
   onReveal: () => void
+  onRate: (rating: Grade) => void
+  onKeyDown: (event: KeyboardEvent) => void
+  gesturesEnabled: boolean
 }) {
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const present = useIsPresent()
+  const [frameRevision, setFrameRevision] = useState(0)
   const configs = useMemo(() => ttsOf(deck), [deck])
   const srcDoc = useMemo(() => {
     const values = { ...item.note.values }
@@ -135,91 +146,134 @@ function StudyCard({
     return previewDocument(deck.css, revealed ? rendered.back : rendered.front)
   }, [configs, deck.css, item.note.values, item.template.back, item.template.front, revealed])
 
-  const wireFrame = useCallback(
-    (event: SyntheticEvent<HTMLIFrameElement>) => {
-      const doc = event.currentTarget.contentDocument
-      if (!doc) return
-
-      doc.body.style.cursor = revealed ? "default" : "pointer"
-      doc.body.onclick = (bodyEvent) => {
-        const target = bodyEvent.target
-        if (target instanceof Element && target.closest("[data-study-tts]")) return
-        if (!revealed) onReveal()
-      }
-
-      for (const button of doc.querySelectorAll<HTMLButtonElement>("[data-study-tts]")) {
-        const encodedName = button.dataset.studyTts
-        if (!encodedName) {
-          button.remove()
-          continue
-        }
-
-        let name = ""
-        try {
-          name = decodeURIComponent(encodedName)
-        } catch {
-          button.remove()
-          continue
-        }
-
-        const tts = configs[name]
-        const text = tts ? item.note.values[tts.source] ?? "" : ""
-        if (!tts || !text.trim()) {
-          button.remove()
-          continue
-        }
-
-        button.setAttribute("aria-label", `Play ${name}`)
-        button.onclick = (buttonEvent) => {
-          buttonEvent.preventDefault()
-          buttonEvent.stopPropagation()
-          if (button.disabled) return
-
-          button.disabled = true
-          button.dataset.state = "loading"
-          button.style.opacity = "0.58"
-          button.style.cursor = "progress"
-          button.removeAttribute("title")
-
-          void getTtsClip({ text, lang: tts.lang, slow: tts.slow })
-            .then((clip) => playTtsAudio(clip.blob))
-            .then(() => {
-              if (!button.isConnected) return
-              button.dataset.state = "idle"
-              button.style.opacity = "1"
-              button.style.cursor = "pointer"
-            })
-            .catch((caught: unknown) => {
-              if (!button.isConnected) return
-              const message = caught instanceof Error ? caught.message : "Audio playback failed"
-              button.dataset.state = "error"
-              button.title = message
-              button.style.opacity = "1"
-              button.style.cursor = "pointer"
-              button.style.background = "#fff0f0"
-              button.style.color = "#b42318"
-              window.setTimeout(() => {
-                if (!button.isConnected) return
-                button.dataset.state = "idle"
-                button.style.background = "#e8f3ff"
-                button.style.color = "#194f83"
-              }, 1800)
-            })
-            .finally(() => {
-              if (button.isConnected) button.disabled = false
-            })
+  useEffect(() => {
+    if (!present) return
+    const doc = frameRef.current?.contentDocument
+    if (!doc?.body) return
+    const interactive = (target: EventTarget | null) => {
+      const element = target as Element | null
+      return Boolean(element?.closest?.("button, a, input, textarea, select, [contenteditable], audio, video"))
+    }
+    let scrollable = false
+    const updateScroll = () => {
+      const root = doc.scrollingElement
+      scrollable = Boolean(root && root.scrollHeight > root.clientHeight + 1)
+      if (!scrollable) {
+        for (const element of doc.querySelectorAll<HTMLElement>("body *")) {
+          const overflow = doc.defaultView?.getComputedStyle(element).overflowY
+          if ((overflow === "auto" || overflow === "scroll") && element.scrollHeight > element.clientHeight + 1) {
+            scrollable = true
+            break
+          }
         }
       }
-    },
-    [configs, item.note.values, onReveal, revealed]
-  )
+      doc.body.style.touchAction = gesturesEnabled && revealed
+        ? scrollable ? "pan-y pinch-zoom" : "pinch-zoom"
+        : "auto"
+    }
+    updateScroll()
+    const observer = new ResizeObserver(updateScroll)
+    observer.observe(doc.body)
+    doc.defaultView?.addEventListener("resize", updateScroll)
+
+    let pointerStart: { id: number; x: number; y: number } | null = null
+    let didGesture = false
+    const onPointerDown = (event: PointerEvent) => {
+      pointerStart = null
+      didGesture = false
+      if (!gesturesEnabled || !revealed || !event.isPrimary || event.pointerType === "mouse") return
+      if (interactive(event.target) || doc.getSelection()?.toString()) return
+      pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY }
+    }
+    const onPointerUp = (event: PointerEvent) => {
+      if (!pointerStart || event.pointerId !== pointerStart.id) return
+      const dx = event.clientX - pointerStart.x
+      const dy = event.clientY - pointerStart.y
+      pointerStart = null
+      if (doc.getSelection()?.toString()) return
+      const ax = Math.abs(dx)
+      const ay = Math.abs(dy)
+      if (ax >= 72 && ax >= ay * 1.25) {
+        didGesture = true
+        onRate(dx < 0 ? Rating.Again : Rating.Good)
+      } else if (!scrollable && ay >= 72 && ay >= ax * 1.25) {
+        didGesture = true
+        onRate(dy < 0 ? Rating.Easy : Rating.Hard)
+      }
+    }
+    const onPointerCancel = () => { pointerStart = null }
+    const onClick = (event: MouseEvent) => {
+      if (didGesture) {
+        didGesture = false
+        event.preventDefault()
+        return
+      }
+      if (interactive(event.target) || doc.getSelection()?.toString()) return
+      if (!revealed) onReveal()
+    }
+
+    doc.body.style.cursor = revealed ? "default" : "pointer"
+    doc.addEventListener("pointerdown", onPointerDown, { passive: true })
+    doc.addEventListener("pointerup", onPointerUp, { passive: true })
+    doc.addEventListener("pointercancel", onPointerCancel, { passive: true })
+    doc.addEventListener("keydown", onKeyDown)
+    doc.body.addEventListener("click", onClick)
+    const buttons = doc.querySelectorAll<HTMLButtonElement>("[data-study-tts]")
+    for (const button of buttons) {
+      let name: string
+      try {
+        name = decodeURIComponent(button.dataset.studyTts ?? "")
+      } catch {
+        button.remove()
+        continue
+      }
+      const tts = configs[name]
+      const text = tts ? item.note.values[tts.source] ?? "" : ""
+      if (!tts || !text.trim()) {
+        button.remove()
+        continue
+      }
+      button.setAttribute("aria-label", `Play ${name}`)
+      button.onclick = (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (button.disabled) return
+        button.disabled = true
+        button.dataset.state = "loading"
+        button.style.opacity = "0.58"
+        button.removeAttribute("title")
+        void playTtsText({ text, lang: tts.lang, slow: tts.slow })
+          .then(() => { button.dataset.state = "idle" })
+          .catch((error: unknown) => {
+            button.dataset.state = "error"
+            button.title = error instanceof Error ? error.message : "Audio playback failed"
+          })
+          .finally(() => {
+            button.disabled = false
+            button.style.opacity = "1"
+          })
+      }
+    }
+
+    return () => {
+      observer.disconnect()
+      doc.defaultView?.removeEventListener("resize", updateScroll)
+      doc.removeEventListener("pointerdown", onPointerDown)
+      doc.removeEventListener("pointerup", onPointerUp)
+      doc.removeEventListener("pointercancel", onPointerCancel)
+      doc.removeEventListener("keydown", onKeyDown)
+      doc.body.removeEventListener("click", onClick)
+      for (const button of buttons) button.onclick = null
+    }
+  }, [configs, frameRevision, gesturesEnabled, item.note.values, onKeyDown, onRate, onReveal, present, revealed])
 
   return (
     <iframe
+      ref={frameRef}
       title={revealed ? "Card back" : "Card front"}
       sandbox="allow-same-origin"
       srcDoc={srcDoc}
-      onLoad={wireFrame}
+      onLoad={() => setFrameRevision((value) => value + 1)}
       className="h-full w-full border-0 bg-white"
     />
   )
@@ -240,12 +294,20 @@ function FocusHeader({
   progress,
   onExit,
   onEdit,
+  onUndo,
+  undoAvailable,
+  gesturesEnabled,
+  onToggleGestures,
 }: {
   completed: number
   total: number
   progress: number
   onExit: () => void
   onEdit: () => void
+  onUndo: () => void
+  undoAvailable: boolean
+  gesturesEnabled: boolean
+  onToggleGestures: () => void
 }) {
   return (
     <header className="relative z-30 shrink-0 border-b border-black/[0.045] bg-background/94 pt-[env(safe-area-inset-top)] backdrop-blur-2xl dark:border-white/[0.07]">
@@ -278,16 +340,51 @@ function FocusHeader({
           />
         </div>
 
-        <Button
-          type="button"
-          size="icon-lg"
-          variant="outline"
-          className="shadow-none"
-          aria-label="Edit note"
-          onClick={onEdit}
-        >
-          <Pencil className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="outline"
+                className="shadow-none"
+                aria-label={gesturesEnabled ? "Disable swipe rating" : "Enable swipe rating"}
+                aria-pressed={gesturesEnabled}
+                onClick={onToggleGestures}
+              >
+                <span className="text-sm font-semibold" aria-hidden="true">↔</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{gesturesEnabled ? "Swipe rating on" : "Swipe rating off"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="outline"
+                className="shadow-none"
+                aria-label="Undo last rating"
+                aria-keyshortcuts="Control+Z Meta+Z"
+                disabled={!undoAvailable}
+                onClick={onUndo}
+              >
+                <Undo2 className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Undo last rating</TooltipContent>
+          </Tooltip>
+          <Button
+            type="button"
+            size="icon-lg"
+            variant="outline"
+            className="shadow-none"
+            aria-label="Edit note"
+            onClick={onEdit}
+          >
+            <Pencil className="size-4" />
+          </Button>
+        </div>
       </div>
     </header>
   )
@@ -298,11 +395,15 @@ function RatingDock({
   options,
   onReveal,
   onRate,
+  audioError,
+  gesturesEnabled,
 }: {
   revealed: boolean
   options: ReturnType<typeof previewRatingOptions>
   onReveal: () => void
   onRate: (rating: (typeof options)[number]["rating"]) => void
+  audioError: string
+  gesturesEnabled: boolean
 }) {
   return (
     <div className="relative z-30 shrink-0 border-t border-black/[0.045] bg-background/96 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-2xl sm:px-5 sm:pt-3 dark:border-white/[0.07]">
@@ -345,6 +446,8 @@ function RatingDock({
             ))}
           </div>
         )}
+        {gesturesEnabled ? <p className="mt-2 text-center text-[10px] text-muted-foreground">← Again · ↓ Hard · → Good · ↑ Easy. Scrolling takes priority.</p> : null}
+        {audioError ? <p role="status" className="mt-2 text-center text-xs font-medium text-destructive">{audioError}</p> : null}
       </div>
     </div>
   )
@@ -362,11 +465,24 @@ export function StudySession({
   const [editError, setEditError] = useState("")
   const [clock, setClock] = useState(() => Date.now())
   const [completed, setCompleted] = useState(0)
+  const [audioError, setAudioError] = useState("")
+  const [undoDepth, setUndoDepth] = useState(0)
+  const [restoredId, setRestoredId] = useState<string | null>(null)
+  const ratingLocked = useRef(false)
+  const [gesturesEnabled, setGesturesEnabled] = useState(() => {
+    if (typeof window === "undefined") return false
+    try {
+      return window.localStorage.getItem("anki-studio.study.gestures.v1") === "1"
+    } catch {
+      return false
+    }
+  })
+  const undoStack = useRef<Array<{ fsrs: Deck["fsrs"]; completed: number; clock: number; itemId: string }>>([])
   const [initialCount] = useState(() => getStudyQueue(deck, new Date()).length)
   const now = useMemo(() => new Date(clock), [clock])
   const queue = useMemo(() => getStudyQueue(deck, now), [deck, now])
   const stats = useMemo(() => getStudyStats(deck, now), [deck, now])
-  const current = queue[0]
+  const current = queue.find((item) => item.id === restoredId) ?? queue[0]
   const options = useMemo(
     () => (current ? previewRatingOptions(deck, current, now) : []),
     [current, deck, now]
@@ -377,6 +493,7 @@ export function StudySession({
   const reducedMotion = useReducedMotion() ?? false
 
   const reveal = useCallback(() => {
+    ratingLocked.current = false
     setAction("reveal")
     setRevealed(true)
     touchFeedback(8)
@@ -394,7 +511,14 @@ export function StudySession({
 
   const rate = useCallback(
     (rating: (typeof options)[number]["rating"]) => {
-      if (!current || !revealed) return
+      if (!current || !revealed || ratingLocked.current) return
+      ratingLocked.current = true
+      undoStack.current = [
+        ...undoStack.current.slice(-9),
+        { fsrs: deck.fsrs, completed, clock, itemId: current.id },
+      ]
+      setUndoDepth(undoStack.current.length)
+      setRestoredId(null)
       onChange(reviewStudyItem(deck, current, rating, new Date()))
       touchFeedback([8, 24, 8])
       setCompleted((value) => value + 1)
@@ -402,13 +526,56 @@ export function StudySession({
       setRevealed(false)
       setClock(Date.now())
     },
-    [current, deck, onChange, revealed]
+    [clock, completed, current, deck, onChange, revealed]
   )
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+  const undo = useCallback(() => {
+    const previous = undoStack.current.pop()
+    if (!previous) return
+    ratingLocked.current = false
+    setUndoDepth(undoStack.current.length)
+    onChange({ ...deck, fsrs: previous.fsrs })
+    setCompleted(previous.completed)
+    setRestoredId(previous.itemId)
+    setRevealed(true)
+    setAction("advance")
+    setAudioError("")
+    setClock(previous.clock)
+  }, [deck, onChange])
+
+  const replay = useCallback(() => {
+    if (!current) return
+    const side = revealed ? "back" : "front"
+    const configs = ttsOf(deck)
+    const name = ttsFieldsOnSide(deck, side, current.template.id).find((field) => {
+      const config = configs[field]
+      return config && current.note.values[config.source]?.trim()
+    })
+    const tts = name ? configs[name] : undefined
+    const text = tts ? current.note.values[tts.source] ?? "" : ""
+    if (!tts || !text.trim()) return
+    setAudioError("")
+    void playTtsText({ text, lang: tts.lang, slow: tts.slow }).catch((error: unknown) => {
+      setAudioError(error instanceof Error ? error.message : "Audio playback failed")
+    })
+  }, [current, deck, revealed])
+
+  const toggleGestures = useCallback(() => {
+    setGesturesEnabled((value) => {
+      const next = !value
+      try {
+        window.localStorage.setItem("anki-studio.study.gestures.v1", next ? "1" : "0")
+      } catch {
+        // The switch still works for this session when device storage is unavailable.
+      }
+      return next
+    })
+  }, [])
+
+  const onKeyDown = useCallback((event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing) return
       const target = event.target as HTMLElement | null
-      if (target?.closest("input, textarea, select, [contenteditable=true], .cm-editor")) return
+      if (target?.closest?.("input, textarea, select, [contenteditable], .cm-editor")) return
       if (document.querySelector('[role="dialog"]')) return
       if (event.key === "Escape") {
         event.preventDefault()
@@ -420,13 +587,27 @@ export function StudySession({
         reveal()
         return
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        if (event.shiftKey || undoDepth === 0) return
+        event.preventDefault()
+        undo()
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault()
+        replay()
+        return
+      }
       if (!revealed) return
       const option = options[Number(event.key) - 1]
       if (option) rate(option.rating)
-    }
+    }, [current, onExit, options, rate, replay, reveal, undo, undoDepth, revealed])
+
+  useEffect(() => {
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [current, onExit, options, rate, reveal, revealed])
+  }, [onKeyDown])
 
   const total = Math.max(initialCount, completed + queue.length)
   const progress = total > 0 ? Math.min(100, (completed / total) * 100) : 100
@@ -457,9 +638,21 @@ export function StudySession({
             <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
               {completionDescription}
             </p>
+            {undoDepth > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-6 h-11 w-full max-w-xs rounded-[14px]"
+                aria-keyshortcuts="Control+Z Meta+Z"
+                onClick={undo}
+              >
+                <Undo2 className="size-4" />
+                Undo last rating
+              </Button>
+            ) : null}
             <Button
               size="lg"
-              className="mt-8 h-[52px] w-full max-w-xs rounded-[16px]"
+              className="mt-3 h-[52px] w-full max-w-xs rounded-[16px]"
               onClick={onExit}
             >
               Back to study
@@ -490,6 +683,10 @@ export function StudySession({
             setEditError("")
             setEditOpen(true)
           }}
+          onUndo={undo}
+          undoAvailable={undoDepth > 0}
+          gesturesEnabled={gesturesEnabled}
+          onToggleGestures={toggleGestures}
         />
 
         <div className="relative min-h-0 flex-1 overflow-hidden px-3 py-2 sm:px-5 sm:py-3">
@@ -508,7 +705,15 @@ export function StudySession({
                 data-card-face={side}
                 className="absolute inset-0 h-full w-full overflow-hidden rounded-[inherit]"
               >
-                <StudyCard deck={deck} item={current} revealed={revealed} onReveal={reveal} />
+                <StudyCard
+                  deck={deck}
+                  item={current}
+                  revealed={revealed}
+                  onReveal={reveal}
+                  onRate={rate}
+                  onKeyDown={onKeyDown}
+                  gesturesEnabled={gesturesEnabled}
+                />
               </motion.div>
             </AnimatePresence>
 
@@ -538,6 +743,8 @@ export function StudySession({
           options={options}
           onReveal={reveal}
           onRate={rate}
+          audioError={audioError}
+          gesturesEnabled={gesturesEnabled}
         />
 
         <Sheet open={editOpen} onOpenChange={setEditOpen}>

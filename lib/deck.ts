@@ -17,7 +17,7 @@ export type AnkiIdentity = {
   pushedTemplateHash?: string
 }
 
-export type TtsLang = "en" | "th"
+export type TtsLang = "en" | "th" | "ja" | "ko" | "fr" | "de" | "es" | "zh"
 
 export type TtsField = {
   source: string
@@ -99,8 +99,14 @@ export const DEFAULT_FSRS_STATE: Omit<FsrsDeckState, "cards"> = {
 }
 
 export const TTS_LANGS: { id: TtsLang; label: string }[] = [
-  { id: "en", label: "英语" },
-  { id: "th", label: "泰语" },
+  { id: "en", label: "English" },
+  { id: "th", label: "Thai" },
+  { id: "ja", label: "Japanese" },
+  { id: "ko", label: "Korean" },
+  { id: "fr", label: "French" },
+  { id: "de", label: "German" },
+  { id: "es", label: "Spanish" },
+  { id: "zh", label: "Chinese" },
 ]
 
 export const TTS_FIELD_META = "anki-studio.tts:"
@@ -132,11 +138,11 @@ export function notesOf(deck: Pick<Deck, "fields"> & { fieldNotes?: Record<strin
 }
 
 export function isTtsLang(value: unknown): value is TtsLang {
-  return value === "en" || value === "th"
+  return TTS_LANGS.some((item) => item.id === value)
 }
 
 export function ttsLangLabel(lang: TtsLang): string {
-  return lang === "th" ? "泰语" : "英语"
+  return TTS_LANGS.find((item) => item.id === lang)?.label ?? "English"
 }
 
 export function parseTtsField(raw: unknown): TtsField | null {

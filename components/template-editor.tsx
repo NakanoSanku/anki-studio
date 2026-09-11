@@ -617,13 +617,14 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Language</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {TTS_LANGS.map((item) => <Button key={item.id} type="button" size="sm" variant={ttsLang === item.id ? "default" : "outline"} onClick={() => {
-                  if (!ttsName.trim() || ttsName === `${ttsSource}_${ttsLang}`) setTtsName(`${ttsSource}_${item.id}`)
-                  setTtsLang(item.id)
-                }}>{item.label}</Button>)}
-              </div>
+              <Label htmlFor="tts-language">Language</Label>
+              <Select value={ttsLang} onValueChange={(next: TtsLang) => {
+                if (!ttsName.trim() || ttsName === `${ttsSource}_${ttsLang}`) setTtsName(`${ttsSource}_${next}`)
+                setTtsLang(next)
+              }}>
+                <SelectTrigger id="tts-language" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{TTS_LANGS.map((item) => <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
             <label className="flex min-h-11 touch-manipulation items-center gap-2 rounded-[12px] border border-black/[0.06] bg-card px-3 text-sm font-medium [-webkit-tap-highlight-color:transparent] dark:border-white/[0.08]">
               <input type="checkbox" checked={ttsSlow} className="size-4 accent-black dark:accent-white" onChange={(event) => setTtsSlow(event.target.checked)} />Slow playback

@@ -17,6 +17,8 @@ type PlayingAudio = {
 }
 
 let currentAudio: PlayingAudio | null = null
+let currentSpeechCancel: (() => void) | null = null
+let playbackToken = 0
 
 function settleAudio(entry: PlayingAudio, error?: Error): void {
   if (entry.settled) return
@@ -165,10 +167,10 @@ export function ttsFilename(lang: TtsLang, slow: boolean, id: string): string {
 }
 
 export function parseTtsFilename(name: string): { lang: TtsLang; slow: boolean; id: string } | null {
-  const match = /^tts_(en|th)_(s|n)_([a-f0-9]{40})\.mp3$/i.exec(name)
+  const match = /^tts_(en|th|ja|ko|fr|de|es|zh)_(s|n)_([a-f0-9]{40})\.mp3$/i.exec(name)
   if (!match) return null
   return {
-    lang: match[1] === "th" ? "th" : "en",
+    lang: match[1].toLowerCase() as TtsLang,
     slow: match[2] === "s",
     id: match[3].toLowerCase(),
   }
@@ -271,6 +273,7 @@ export async function getTtsClip(input: {
 }
 
 export async function playTtsAudio(blob: Blob) {
+  cancelSpeechTts()
   stopTtsAudio()
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
@@ -298,6 +301,115 @@ export function stopTtsAudio() {
   if (!entry) return
   entry.audio.pause()
   settleAudio(entry)
+}
+
+function cancelSpeechTts() {
+  currentSpeechCancel?.()
+  currentSpeechCancel = null
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel()
+  }
+}
+
+function speechLocale(lang: TtsLang): string {
+  switch (lang) {
+    case "th": return "th-TH"
+    case "ja": return "ja-JP"
+    case "ko": return "ko-KR"
+    case "fr": return "fr-FR"
+    case "de": return "de-DE"
+    case "es": return "es-ES"
+    case "zh": return "zh-CN"
+    default: return "en-US"
+  }
+}
+
+async function availableSpeechVoices(): Promise<SpeechSynthesisVoice[]> {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return []
+  const synthesis = window.speechSynthesis
+  const immediate = synthesis.getVoices()
+  if (immediate.length > 0) return immediate
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      synthesis.removeEventListener("voiceschanged", finish)
+      resolve(synthesis.getVoices())
+    }
+    synthesis.addEventListener("voiceschanged", finish, { once: true })
+    window.setTimeout(finish, 350)
+  })
+}
+
+export async function speakTts(text: string, lang: TtsLang, slow: boolean): Promise<void> {
+  const normalized = normalizeTtsText(text)
+  if (!normalized) throw new Error("There is no text to read")
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+    throw new Error("Browser speech is not available")
+  }
+
+  cancelSpeechTts()
+  stopTtsAudio()
+  const synthesis = window.speechSynthesis
+  const locale = speechLocale(lang).toLowerCase()
+  const languagePrefix = locale.split("-")[0]
+  const voices = await availableSpeechVoices()
+  const voice = voices.find((item) => item.localService && item.lang.toLowerCase() === locale)
+    ?? voices.find((item) => item.localService && item.lang.toLowerCase().startsWith(languagePrefix))
+    ?? voices.find((item) => item.lang.toLowerCase().startsWith(languagePrefix))
+  if (!voice) throw new Error("No browser voice is available for this language")
+  const utterance = new SpeechSynthesisUtterance(normalized)
+  utterance.lang = locale
+  utterance.rate = slow ? 0.65 : 1
+  if (voice) utterance.voice = voice
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      if (currentSpeechCancel === cancel) currentSpeechCancel = null
+      if (error) reject(error)
+      else resolve()
+    }
+    const cancel = () => finish(new DOMException("Speech playback was cancelled", "AbortError"))
+    currentSpeechCancel = cancel
+    utterance.onend = () => finish()
+    utterance.onerror = (event) => {
+      if (event.error === "canceled") finish(new DOMException("Speech playback was cancelled", "AbortError"))
+      else finish(new Error(event.error || "Browser speech playback failed"))
+    }
+    synthesis.speak(utterance)
+  })
+}
+
+export async function playTtsText(input: {
+  text: string
+  lang: TtsLang
+  slow: boolean
+  signal?: AbortSignal
+}): Promise<void> {
+  const token = ++playbackToken
+  cancelSpeechTts()
+  stopTtsAudio()
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    await speakTts(input.text, input.lang, input.slow)
+    return
+  }
+  try {
+    const clip = await getTtsClip(input)
+    if (token !== playbackToken) throw new DOMException("Audio playback was cancelled", "AbortError")
+    await playTtsAudio(clip.blob)
+  } catch (error) {
+    if (input.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error
+    try {
+      if (token !== playbackToken) throw new DOMException("Audio playback was cancelled", "AbortError")
+      await speakTts(input.text, input.lang, input.slow)
+    } catch {
+      throw error
+    }
+  }
 }
 
 export type TtsJob = {

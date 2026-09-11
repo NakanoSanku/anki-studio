@@ -27,7 +27,10 @@ function warmRoute(pathname: string): Promise<unknown> | null {
   if (pathname === PATHS.notes || pathname.startsWith(`${PATHS.notes}/`)) {
     return cachedWarmup("notes", () => import("@/components/card-editor"))
   }
-  if (pathname === PATHS.studySession || pathname.startsWith(`${PATHS.studySession}/`)) {
+  if (pathname === PATHS.studyStats) {
+    return cachedWarmup("study-stats", () => import("@/components/study-analytics"))
+  }
+  if (pathname === PATHS.studySession) {
     return cachedWarmup("study-session", () => import("@/components/study-session"))
   }
   if (pathname === PATHS.settings) {
@@ -76,7 +79,7 @@ export function RoutePreloader() {
   }, [pathname, router])
 
   useEffect(() => {
-    const primaryRoutes = [PATHS.home, PATHS.notes, PATHS.settings, PATHS.studySession]
+    const primaryRoutes = [PATHS.home, PATHS.notes, PATHS.settings, PATHS.studySession, PATHS.studyStats]
     for (const route of primaryRoutes) router.prefetch(route)
 
     // Notes and Settings stay split from the initial Studio bundle. Study was

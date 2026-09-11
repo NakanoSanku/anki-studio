@@ -1,4 +1,4 @@
-import type { TtsLang } from "@/lib/deck"
+import { isTtsLang, type TtsLang } from "@/lib/deck"
 import { RateGate } from "@/lib/rate-gate"
 import { createWindowRateLimiter, readJsonBodyWithLimit, RequestBodyTooLargeError, requestClientKey } from "@/lib/request-guard"
 
@@ -15,7 +15,7 @@ const USER_AGENT =
 const gate = new RateGate(MIN_GAP_MS)
 
 function isLang(value: unknown): value is TtsLang {
-  return value === "en" || value === "th"
+  return isTtsLang(value)
 }
 
 async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<ArrayBuffer> {
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const lang = body.lang
   if (!text) return Response.json({ error: "There is no text to read" }, { status: 400 })
   if (text.length > MAX_TEXT) return Response.json({ error: "Text segment is too long" }, { status: 400 })
-  if (!isLang(lang)) return Response.json({ error: "Only English and Thai are supported" }, { status: 400 })
+  if (!isLang(lang)) return Response.json({ error: "The selected language is not supported" }, { status: 400 })
 
   try {
     const audio = await gate.enqueue(() => fetchGoogle(text, lang, Boolean(body.slow)))

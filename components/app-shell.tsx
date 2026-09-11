@@ -137,6 +137,7 @@ function headerMeta(pathname: string): HeaderMeta {
   if (pathname === PATHS.settings) return { title: "Settings", primary: true }
   if (noteIdFromPath(pathname)) return { backHref: PATHS.notes, title: "Edit note", primary: false }
   if (pathname === PATHS.settingsTemplates) return { backHref: PATHS.settingsDeck, title: "Templates", primary: false }
+  if (pathname === PATHS.studyStats) return { backHref: PATHS.home, title: "Study statistics", primary: false }
   if (pathname === PATHS.settingsDeck) return { backHref: PATHS.settings, title: "Deck", primary: false }
   const row = SETTINGS_ROWS.find((item) => item.href === pathname)
   if (row) return { backHref: PATHS.settings, title: row.label, primary: false }
@@ -145,6 +146,7 @@ function headerMeta(pathname: string): HeaderMeta {
 
 function viewName(pathname: string) {
   if (pathname === PATHS.studySession) return "study-session"
+  if (pathname === PATHS.studyStats) return "study-stats"
   if (noteIdFromPath(pathname)) return "note-detail"
   if (pathname === PATHS.notes) return "notes"
   if (pathname === PATHS.home) return "home"

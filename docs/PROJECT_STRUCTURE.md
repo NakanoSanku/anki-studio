@@ -31,8 +31,9 @@ anki-studio/
 │   └── *-utils / navigation     # 路由、动画、虚拟列表等纯工具
 │
 ├── public/                      # Service Worker、WASM、PWA 静态资源
-├── docs/                        # 架构说明与 ADR
+├── docs/                        # 架构说明、规划与 ADR
 │   ├── adr/
+│   ├── FEATURE_IDEAS.md         # 功能规划与路线构想
 │   └── PROJECT_STRUCTURE.md
 │
 ├── package.json                 # 开发、构建与质量检查脚本

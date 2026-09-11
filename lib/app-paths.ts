@@ -1,6 +1,7 @@
 export const PATHS = {
   home: "/",
   studySession: "/study",
+  studyStats: "/study/stats",
   notes: "/notes",
   settings: "/settings",
   settingsDeck: "/settings/deck",
@@ -72,13 +73,13 @@ export function resolveLegacyPathname(pathname: string): string | null {
 }
 
 export function tabBarVisible(pathname: string): boolean {
-  if (pathname === PATHS.studySession || pathname.startsWith(`${PATHS.studySession}/`)) return false
+  if (pathname === PATHS.studySession) return false
   if (noteIdFromPath(pathname)) return false
   return true
 }
 
 export function primaryNavActive(pathname: string, href: string): boolean {
-  if (href === PATHS.home) return pathname === PATHS.home || pathname === PATHS.studySession
+  if (href === PATHS.home) return pathname === PATHS.home || pathname === PATHS.studySession || pathname === PATHS.studyStats
   if (href === PATHS.notes) return pathname === PATHS.notes || Boolean(noteIdFromPath(pathname))
   if (href === PATHS.settings) return pathname === PATHS.settings || pathname.startsWith(`${PATHS.settings}/`)
   return pathname === href
