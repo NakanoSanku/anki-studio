@@ -79,7 +79,6 @@ The key product boundary is **review before publish**: newly created notes, AI-g
 [![TypeScript][TypeScript]][TypeScript-url]
 [![Tailwind CSS][TailwindCSS]][TailwindCSS-url]
 [![Google Sheets][GoogleSheets]][GoogleSheets-url]
-[![Docker][Docker]][Docker-url]
 
 Supporting libraries and integrations include CodeMirror 6 for template/prompt editing, `ts-fsrs` for scheduling, `sql.js` + JSZip for APKG handling, NextAuth for Google OAuth, and the Google Sheets, Drive, and Picker APIs for synchronization and spreadsheet selection.
 
@@ -128,7 +127,6 @@ Run the same validation sequence used by CI:
 ```bash
 npm run lint
 npm run typecheck
-npm test
 npm run build
 ```
 
@@ -261,30 +259,13 @@ In **Settings → Sync**:
 <a id="deployment"></a>
 ## 🚢 Deployment
 
-Anki Studio is a standard Next.js application and can run on Vercel, a Node.js host, or Docker. Production deployments that use Google sync must configure the same environment variables listed above and register the production origin/callback in Google Cloud.
+Anki Studio is a standard Next.js application and can run on Vercel or a Node.js host. Production deployments that use Google sync must configure the same environment variables listed above and register the production origin/callback in Google Cloud.
 
-### Docker image
-
-`main` publishes a multi-architecture image to:
-
-```text
-ghcr.io/nakanosanku/anki-studio:latest
-```
-
-A Compose example is included:
+To build and start the production server:
 
 ```bash
-cp compose.example.yml compose.yml
-cp .env.example .env
-# Fill in .env, then:
-docker compose up -d
-```
-
-You can also build locally:
-
-```bash
-docker build -t anki-studio .
-docker run --env-file .env.local -p 3000:3000 anki-studio
+npm run build
+npm run start
 ```
 
 ### Repository guide
@@ -293,7 +274,6 @@ docker run --env-file .env.local -p 3000:3000 anki-studio
 - [`docs/adr/`](docs/adr/) — architecture decision records
 - [`CONTEXT.md`](CONTEXT.md) — domain terminology and project constraints
 - [`.env.example`](.env.example) — supported server environment variables
-- [`compose.example.yml`](compose.example.yml) — Docker Compose example
 
 <a id="contributing"></a>
 ## 🤝 Contributing
@@ -307,7 +287,6 @@ When preparing a change:
    ```bash
    npm run lint
    npm run typecheck
-   npm test
    npm run build
    ```
 
@@ -321,11 +300,7 @@ Useful development scripts:
 | `npm run build` | Create a production build |
 | `npm run start` | Start the production server on port 3000 |
 | `npm run lint` | Run ESLint |
-| `npm run typecheck` | Typecheck the app and tests |
-| `npm test` | Run the full Vitest suite |
-| `npm run test:unit` | Run unit tests |
-| `npm run test:contracts` | Run contract tests |
-| `npm run test:watch` | Run Vitest in watch mode |
+| `npm run typecheck` | Typecheck the app |
 
 ### Contributors
 
@@ -366,5 +341,3 @@ Issues: [github.com/NakanoSanku/anki-studio/issues](https://github.com/NakanoSan
 [TailwindCSS-url]: https://tailwindcss.com/
 [GoogleSheets]: https://img.shields.io/badge/Google_Sheets-Sync-34A853?style=flat-square&logo=googlesheets&logoColor=white
 [GoogleSheets-url]: https://developers.google.com/workspace/sheets/api
-[Docker]: https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white
-[Docker-url]: https://docs.docker.com/

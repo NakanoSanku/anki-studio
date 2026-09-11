@@ -79,7 +79,6 @@ Anki Studio 将内容创作和学习整合在一个浏览器优先的工作区�
 [![TypeScript][TypeScript]][TypeScript-url]
 [![Tailwind CSS][TailwindCSS]][TailwindCSS-url]
 [![Google Sheets][GoogleSheets]][GoogleSheets-url]
-[![Docker][Docker]][Docker-url]
 
 其他关键库与集成包括：用于模板/提示词编辑的 CodeMirror 6、用于调度的 `ts-fsrs`、用于 APKG 处理的 `sql.js` + JSZip、用于 Google OAuth 的 NextAuth，以及用于同步和表格选择的 Google Sheets、Drive 和 Picker APIs。
 
@@ -128,7 +127,6 @@ Anki Studio 将内容创作和学习整合在一个浏览器优先的工作区�
 ```bash
 npm run lint
 npm run typecheck
-npm test
 npm run build
 ```
 
@@ -261,30 +259,13 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 <a id="deployment"></a>
 ## 🚢 部署
 
-Anki Studio 是标准 Next.js 应用，可以部署在 Vercel、Node.js Host 或 Docker 上。生产环境如果启用 Google 同步，需要配置与上文相同的环境变量，并在 Google Cloud 中注册生产 Origin/Callback。
+Anki Studio 是标准 Next.js 应用，可以部署在 Vercel 或 Node.js Host 上。生产环境如果启用 Google 同步，需要配置与上文相同的环境变量，并在 Google Cloud 中注册生产 Origin/Callback。
 
-### Docker 镜像
-
-`main` 会发布多架构镜像到：
-
-```text
-ghcr.io/nakanosanku/anki-studio:latest
-```
-
-仓库提供 Compose 示例：
+构建并启动生产服务器：
 
 ```bash
-cp compose.example.yml compose.yml
-cp .env.example .env
-# 填写 .env 后：
-docker compose up -d
-```
-
-也可以在本地构建：
-
-```bash
-docker build -t anki-studio .
-docker run --env-file .env.local -p 3000:3000 anki-studio
+npm run build
+npm run start
 ```
 
 ### 仓库指南
@@ -293,7 +274,6 @@ docker run --env-file .env.local -p 3000:3000 anki-studio
 - [`docs/adr/`](docs/adr/) — Architecture Decision Records
 - [`CONTEXT.md`](CONTEXT.md) — 领域术语和项目约束
 - [`.env.example`](.env.example) — 支持的服务端环境变量
-- [`compose.example.yml`](compose.example.yml) — Docker Compose 示例
 
 <a id="contributing"></a>
 ## 🤝 参与贡献
@@ -307,7 +287,6 @@ docker run --env-file .env.local -p 3000:3000 anki-studio
    ```bash
    npm run lint
    npm run typecheck
-   npm test
    npm run build
    ```
 
@@ -321,11 +300,7 @@ docker run --env-file .env.local -p 3000:3000 anki-studio
 | `npm run build` | 创建生产构建 |
 | `npm run start` | 在 3000 端口启动生产服务器 |
 | `npm run lint` | 运行 ESLint |
-| `npm run typecheck` | 对应用和测试执行 TypeScript 检查 |
-| `npm test` | 运行完整 Vitest 测试 |
-| `npm run test:unit` | 运行单元测试 |
-| `npm run test:contracts` | 运行 Contract Tests |
-| `npm run test:watch` | 以 Watch 模式运行 Vitest |
+| `npm run typecheck` | 对应用执行 TypeScript 检查 |
 
 ### 贡献者
 
@@ -366,5 +341,3 @@ Issues：[github.com/NakanoSanku/anki-studio/issues](https://github.com/NakanoSa
 [TailwindCSS-url]: https://tailwindcss.com/
 [GoogleSheets]: https://img.shields.io/badge/Google_Sheets-Sync-34A853?style=flat-square&logo=googlesheets&logoColor=white
 [GoogleSheets-url]: https://developers.google.com/workspace/sheets/api
-[Docker]: https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white
-[Docker-url]: https://docs.docker.com/

@@ -1,5 +1,5 @@
 /**
- * Legacy shared-element name kept for compatibility with older callers/tests.
+ * Legacy shared-element name kept for compatibility with older callers.
  * Study navigation no longer opts into a route-level View Transition because
  * the extra morph made Start studying feel delayed on mobile.
  */
