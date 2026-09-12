@@ -14,6 +14,11 @@ export const PATHS = {
   templatesLegacy: "/templates",
 } as const
 
+export function pushClientPath(path: string): void {
+  if (typeof window === "undefined") return
+  window.history.pushState(null, "", path)
+}
+
 export const SETTINGS_STUDY_LABEL = "Study"
 export const DECK_TEMPLATES_LABEL = "Templates"
 

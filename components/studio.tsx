@@ -2,11 +2,10 @@
 
 import dynamic from "next/dynamic"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 
 import { withAnkiIdentity } from "@/lib/anki-sync"
-import { PATHS, noteIdFromPath, notePath } from "@/lib/app-paths"
-import { studyPairTransitionTypes } from "@/lib/study-transition"
+import { PATHS, noteIdFromPath, notePath, pushClientPath } from "@/lib/app-paths"
 import { deckToCsv } from "@/lib/csv"
 import {
   addLibraryDeck,
@@ -138,7 +137,6 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function Studio() {
   const pathname = usePathname() ?? PATHS.home
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [ready, setReady] = useState(false)
   const [library, setLibrary] = useState<Library>({
@@ -574,13 +572,13 @@ return readDirtyCount()
     updateDeckState((current) => ({ ...current, cards: [...current.cards, card] }))
     setSelectedId(card.id)
     setActiveNoteOverride(card.id)
-    router.push(`${notePath(card.id)}?new=1`)
+    pushClientPath(`${notePath(card.id)}?new=1`)
   }
 
   const openNote = (id: string) => {
     setSelectedId(id)
     setActiveNoteOverride(id)
-    router.push(notePath(id))
+    pushClientPath(notePath(id))
   }
 
   const switchDeck = (id: string) => {
@@ -637,9 +635,7 @@ return readDirtyCount()
   }
 
   const leaveStudy = () => {
-    router.push(PATHS.home, {
-      transitionTypes: studyPairTransitionTypes(PATHS.studySession, PATHS.home),
-    })
+    pushClientPath(PATHS.home)
   }
 
   const deckTools = settingsSection === "deck" ? (
@@ -689,7 +685,7 @@ return readDirtyCount()
           editorNoteId
             ? () => {
                 setActiveNoteOverride(null)
-                router.push(PATHS.notes)
+                pushClientPath(PATHS.notes)
               }
             : undefined
         }
@@ -698,12 +694,10 @@ return readDirtyCount()
           <StudyOverview
             deck={deck}
             onStart={() =>
-              router.push(PATHS.studySession, {
-                transitionTypes: studyPairTransitionTypes(PATHS.home, PATHS.studySession),
-              })
+              pushClientPath(PATHS.studySession)
             }
             onAddNote={addNote}
-            onStats={() => router.push(PATHS.studyStats)}
+            onStats={() => pushClientPath(PATHS.studyStats)}
           />
         ) : null}
 

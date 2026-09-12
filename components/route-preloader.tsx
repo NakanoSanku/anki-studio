@@ -5,12 +5,8 @@ import { usePathname, useRouter } from "next/navigation"
 
 import { PATHS, homeTabRedirect } from "@/lib/app-paths"
 
-type IdleWindow = Window & {
-  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
-  cancelIdleCallback?: (handle: number) => void
-}
-
 const warmups = new Map<string, Promise<unknown>>()
+const prefetchedRoutes = new Set<string>()
 
 function cachedWarmup(key: string, loader: () => Promise<unknown>): Promise<unknown> {
   const existing = warmups.get(key)
@@ -63,12 +59,6 @@ function warmWithoutWaiting(promise: Promise<unknown> | null) {
   void promise.catch(() => undefined)
 }
 
-// Study is the latency-sensitive primary action. Start downloading its split
-// chunk as soon as this persistent client module is evaluated, rather than
-// waiting for the first effect after paint.
-const eagerStudyWarmup = typeof window === "undefined" ? null : warmRoute(PATHS.studySession)
-warmWithoutWaiting(eagerStudyWarmup)
-
 export function RoutePreloader() {
   const router = useRouter()
   const pathname = usePathname() ?? PATHS.home
@@ -80,35 +70,6 @@ export function RoutePreloader() {
   }, [pathname, router])
 
   useEffect(() => {
-    const primaryRoutes = [PATHS.home, PATHS.notes, PATHS.settings, PATHS.studySession, PATHS.studyStats]
-    for (const route of primaryRoutes) router.prefetch(route)
-
-    // Notes and Settings stay split from the initial Studio bundle. Study was
-    // already warmed at module evaluation above; this cached call is harmless
-    // and documents that it remains a primary workspace.
-    warmWithoutWaiting(warmRoute(PATHS.notes))
-    warmWithoutWaiting(warmRoute(PATHS.settings))
-    warmWithoutWaiting(warmRoute(PATHS.studySession))
-
-    const idleWindow = window as IdleWindow
-    const warmSettings = () => {
-      router.prefetch(PATHS.settingsDeck)
-      router.prefetch(PATHS.settingsStudy)
-      router.prefetch(PATHS.settingsAi)
-      router.prefetch(PATHS.settingsSync)
-      router.prefetch(PATHS.settingsMedia)
-      warmWithoutWaiting(warmRoute(PATHS.settingsStudy))
-      warmWithoutWaiting(warmRoute(PATHS.settingsDeck))
-    }
-
-    let idleHandle: number | null = null
-    let timeoutHandle: number | null = null
-    if (idleWindow.requestIdleCallback) {
-      idleHandle = idleWindow.requestIdleCallback(warmSettings, { timeout: 1600 })
-    } else {
-      timeoutHandle = window.setTimeout(warmSettings, 700)
-    }
-
     const warmAnchor = (event: Event) => {
       const target = event.target
       if (!(target instanceof Element)) return
@@ -116,6 +77,8 @@ export function RoutePreloader() {
       if (!anchor) return
       const url = new URL(anchor.href, window.location.href)
       if (url.origin !== window.location.origin) return
+      if (url.pathname === pathname || prefetchedRoutes.has(url.pathname)) return
+      prefetchedRoutes.add(url.pathname)
       router.prefetch(url.pathname)
       warmWithoutWaiting(warmRoute(url.pathname))
     }
@@ -125,13 +88,11 @@ export function RoutePreloader() {
     document.addEventListener("focusin", warmAnchor)
 
     return () => {
-      if (idleHandle != null) idleWindow.cancelIdleCallback?.(idleHandle)
-      if (timeoutHandle != null) window.clearTimeout(timeoutHandle)
       document.removeEventListener("pointerover", warmAnchor)
       document.removeEventListener("pointerdown", warmAnchor)
       document.removeEventListener("focusin", warmAnchor)
     }
-  }, [router])
+  }, [pathname, router])
 
   return null
 }

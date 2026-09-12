@@ -1,14 +1,19 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { useState } from "react"
 import { ArrowRight, AudioLines, ChartNoAxesCombined, Plus } from "lucide-react"
 
-import { AiTutor } from "@/components/ai-tutor"
 import { StudyStage } from "@/components/study-stage"
 import { Button } from "@/components/ui/button"
 import { PATHS } from "@/lib/app-paths"
 import { approvedDeck, type Deck } from "@/lib/deck"
 import { formatDueDate, getStudyQueue, getStudyStats } from "@/lib/fsrs"
+
+const AiTutor = dynamic(
+  () => import("@/components/ai-tutor").then((mod) => mod.AiTutor),
+  { ssr: false }
+)
 
 type StudyOverviewProps = {
   deck: Deck

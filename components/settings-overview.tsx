@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 
-import { PATHS, SETTINGS_ROWS } from "@/lib/app-paths"
+import { PATHS, SETTINGS_ROWS, pushClientPath } from "@/lib/app-paths"
 import { fsrsOf, type Deck } from "@/lib/deck"
 import { readAiSettings } from "@/lib/ai-settings"
 import { readGoogleSheetConnection } from "@/lib/google-sheet-connection"
@@ -56,6 +56,12 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
           <Link
             key={row.href}
             href={row.href}
+            prefetch={false}
+            onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+              event.preventDefault()
+              pushClientPath(row.href)
+            }}
             className={`group flex min-h-16 items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/55 active:bg-muted/80 ${index > 0 ? "border-t border-black/[0.055] dark:border-white/[0.07]" : ""}`}
           >
             <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.02em]">{row.label}</span>

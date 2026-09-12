@@ -137,24 +137,38 @@ export function CardEditor({
   const uploadCardRef = useRef<string | null>(null)
   const [filter, setFilter] = useState<ReviewFilter>("all")
   const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
-  const selected = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
-  const editableFields = deckEditableFields(deck)
-  const aiFields = textFields(deck)
-  const hasFilledField = aiFields.some((field) => Boolean(selected?.values[field]?.trim()))
-  const hasEmptyField = aiFields.some((field) => !selected?.values[field]?.trim())
-  const canCompleteSelected = Boolean(selected && hasFilledField && hasEmptyField)
-  const filledFields = aiFields.filter((field) => Boolean(selected?.values[field]?.trim()))
-  const emptyFields = aiFields.filter((field) => !selected?.values[field]?.trim())
-  const fieldTts = ttsOf(deck)
-  const fieldMedia = mediaOf(deck)
-  const visibleCards = deck.cards.filter(
-    (card) => cardMatchesQuery(card, editableFields, query)
-      && (filter !== "unreviewed" || !isCardApproved(card))
+  const selected = useMemo(
+    () => deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0],
+    [deck.cards, selectedId]
+  )
+  const editableFields = useMemo(() => deckEditableFields(deck), [deck])
+  const aiFields = useMemo(() => textFields(deck), [deck])
+  const fieldTts = useMemo(() => ttsOf(deck), [deck])
+  const fieldMedia = useMemo(() => mediaOf(deck), [deck])
+  const { filledFields, emptyFields, hasFilledField, hasEmptyField, canCompleteSelected } = useMemo(() => {
+    const filled = aiFields.filter((field) => Boolean(selected?.values[field]?.trim()))
+    const empty = aiFields.filter((field) => !selected?.values[field]?.trim())
+    return {
+      filledFields: filled,
+      emptyFields: empty,
+      hasFilledField: filled.length > 0,
+      hasEmptyField: empty.length > 0,
+      canCompleteSelected: Boolean(selected && filled.length > 0 && empty.length > 0),
+    }
+  }, [aiFields, selected])
+  const visibleCards = useMemo(
+    () => deck.cards.filter(
+      (card) => cardMatchesQuery(card, editableFields, query)
+        && (filter !== "unreviewed" || !isCardApproved(card))
+    ),
+    [deck.cards, editableFields, filter, query]
   )
   const activeId = selected?.id ?? ""
   const selectedIndex = selected ? deck.cards.findIndex((card) => card.id === selected.id) + 1 : 0
-  const reviewedCount = deck.cards.filter(isCardApproved).length
-  const needsReviewCount = deck.cards.length - reviewedCount
+  const { needsReviewCount } = useMemo(() => {
+    const reviewed = deck.cards.filter(isCardApproved).length
+    return { needsReviewCount: deck.cards.length - reviewed }
+  }, [deck.cards])
   const isSelectedReviewed = Boolean(selected && isCardApproved(selected))
   const isBusy = (task: string) => busyKeys.includes(task)
   const listOnly = layout === "list"

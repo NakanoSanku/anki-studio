@@ -1,6 +1,9 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   serverExternalPackages: ["sql.js"],
   allowedDevOrigins: [
     "*.run.app",

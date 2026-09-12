@@ -11,7 +11,7 @@ import {
   type SetStateAction,
 } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
 import {
   BookOpen,
@@ -30,6 +30,7 @@ import {
   SETTINGS_ROWS,
   noteIdFromPath,
   primaryNavActive,
+  pushClientPath,
   tabBarVisible,
 } from "@/lib/app-paths"
 import { productStatusMessage } from "@/lib/product-copy"
@@ -176,7 +177,6 @@ export function AppShell({
 }: AppShellProps) {
   const routerPathname = usePathname() ?? PATHS.home
   const pathname = activePath ?? routerPathname
-  const router = useRouter()
   const showTabBar = tabBarVisible(pathname)
   const session = pathname === PATHS.studySession
   const noteDetail = Boolean(noteIdFromPath(pathname))
@@ -250,14 +250,14 @@ export function AppShell({
 
   const goBack = () => {
     if (noteDetail) {
-      router.replace(noteReturnPathRef.current)
+      pushClientPath(noteReturnPathRef.current)
       return
     }
     if (onBack) {
       onBack()
       return
     }
-    if (header.backHref) router.push(header.backHref)
+    if (header.backHref) pushClientPath(header.backHref)
   }
 
   return (
@@ -414,6 +414,12 @@ export function AppShell({
                   <Link
                     key={item.id}
                     href={item.href}
+                    prefetch={false}
+                    onClick={(event) => {
+                      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                      event.preventDefault()
+                      pushClientPath(item.href)
+                    }}
                     className={cn(
                       "relative flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-[16px] text-[10px] font-medium transition-[background-color,color,transform] duration-150 [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-energy/45 min-[390px]:min-h-12 min-[390px]:text-[11px]",
                       selected
