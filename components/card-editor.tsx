@@ -480,7 +480,7 @@ export function CardEditor({
       .filter((values): values is Record<string, string> => Boolean(values))
     const anchorId = selected?.id ?? ""
     void runAi("batch", async () => {
-      const generated = await requestBatchAi({ topic, count: batchAmountMode === "manual" ? Math.floor(count) : undefined, fields, existingKeys, notes, references })
+      const generated = await requestBatchAi({ topic, count: batchAmountMode === "manual" ? Math.floor(count) : undefined, fields, existingKeys, notes, references, prompts: deck.aiPrompts })
       const incoming = generated.map((values) => createPendingCard(fields, values))
       const beforeLen = deckRef.current.cards.length
       const result = commitChange((current) => mergeGeneratedCards(current, incoming, anchorId))
@@ -507,7 +507,7 @@ export function CardEditor({
       cardId
     )
     void runAi("card:complete", async () => {
-      const generated = await requestCardAi({ fields: aiFields, values, notes: notesOf(deck), references })
+      const generated = await requestCardAi({ fields: aiFields, values, notes: notesOf(deck), references, prompts: deck.aiPrompts })
       const result = commitChange((current) => mergeCardAiValues(current, cardId, generated))
       if (!result.ok) throw new Error(result.error)
       setReview((state) => markUnreviewed(state, cardId))

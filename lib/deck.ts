@@ -1,4 +1,5 @@
 import { insertItemsAfter } from "./card-nav"
+import { parseAiPrompts, promptsOf, DEFAULT_AI_SETTINGS, type AiPrompts } from "./ai-settings"
 
 export type CardReviewStatus = "approved" | "pending"
 
@@ -94,6 +95,7 @@ export type Deck = {
   cards: Card[]
   fsrs?: FsrsDeckState
   anki?: AnkiIdentity
+  aiPrompts?: AiPrompts
 }
 
 export const PRIMARY_TEMPLATE_ID = "card-1"
@@ -596,6 +598,7 @@ export function createBlankDeck(name = "新卡包"): Deck {
     css: DEFAULT_CSS,
     cards: [createCard(fields)],
     fsrs: { ...DEFAULT_FSRS_STATE, cards: {} },
+    aiPrompts: promptsOf(DEFAULT_AI_SETTINGS),
   }
 }
 
@@ -846,6 +849,7 @@ export function parseDeckJson(raw: string): Deck {
     new Set(dedupedCards.map((card) => card.id)),
     new Set(templates.map((template) => template.id))
   )
+  const aiPrompts = parseAiPrompts(data.aiPrompts)
 
   return {
     version: 2,
@@ -861,6 +865,7 @@ export function parseDeckJson(raw: string): Deck {
     cards: dedupedCards,
     fsrs,
     anki: parseAnkiIdentity(data.anki),
+    ...(aiPrompts ? { aiPrompts } : {}),
   }
 }
 

@@ -751,6 +751,7 @@ return readDirtyCount()
         {settingsSection ? (
           <div className="mx-auto w-full max-w-7xl pb-28 sm:pb-12">
             <SettingsForm
+              key={library.activeId}
               section={settingsSection}
               deckTools={deckTools}
               deck={deck}

@@ -18,6 +18,7 @@ import {
   type LibraryMeta,
   type StudioStore,
 } from "./studio-store"
+import { promptsOf, readAiSettings } from "./ai-settings"
 
 export const LIBRARY_KEY = "anki-studio.library.v1"
 const LEGACY_SINGLE_MIGRATION_ID_KEY = "anki-studio.migration.single-deck-id.v1"
@@ -40,6 +41,11 @@ export type Library = {
 export type LibrarySession = {
   library: Library
   deck: Deck
+}
+
+function ensureDeckAiPrompts(deck: Deck): Deck {
+  if (deck.aiPrompts) return deck
+  return { ...deck, aiPrompts: promptsOf(readAiSettings()) }
 }
 
 type StorageLike = {
@@ -218,7 +224,7 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
         const raw = storage.getItem(key)
         if (!raw) continue
         try {
-          const deck = parseDeckJson(raw)
+          const deck = ensureDeckAiPrompts(parseDeckJson(raw))
           records.push({
             id: entry.id,
             deck,
@@ -256,7 +262,7 @@ async function migrateLegacy(): Promise<LibrarySession | null> {
   if (!rawDeck) return null
   let deck: Deck
   try {
-    deck = parseDeckJson(rawDeck)
+      deck = ensureDeckAiPrompts(parseDeckJson(rawDeck))
   } catch {
     deck = createDefaultDeck()
   }
@@ -293,11 +299,13 @@ async function loadLibrarySessionUncached(): Promise<LibrarySession> {
   let upgraded = false
   for (const record of rawRecords) {
     try {
-      const deck = parseDeckJson(serializeDeck(record.deck))
+      const parsedDeck = parseDeckJson(serializeDeck(record.deck))
+      const deck = ensureDeckAiPrompts(parsedDeck)
       const needsUpgrade =
         record.deck.version !== 2 ||
         !Array.isArray(record.deck.templates) ||
-        !record.deck.fsrs
+        !record.deck.fsrs ||
+        !record.deck.aiPrompts
       const next = needsUpgrade
         ? { ...record, deck, dirty: true, updatedAt: Date.now() }
         : { ...record, deck }
@@ -397,6 +405,7 @@ export async function addLibraryDeck(
   const names = library.decks.map((entry) => entry.name)
   const deck: Deck = {
     ...incoming,
+    aiPrompts: incoming.aiPrompts ?? promptsOf(readAiSettings()),
     name: uniqueDeckName(names, incoming.name),
   }
   const id = createDeckId()
@@ -420,6 +429,7 @@ export async function addInactiveDeckCopy(incoming: Deck, name: string): Promise
   const library = await readLibrary()
   const deck: Deck = {
     ...incoming,
+    aiPrompts: incoming.aiPrompts ?? promptsOf(readAiSettings()),
     name: uniqueDeckName(library.decks.map((entry) => entry.name), name),
   }
   const id = createDeckId()
@@ -454,6 +464,7 @@ export function cloneDeckAsCopy(deck: Deck, name: string): Deck {
     fields: [...deck.fields],
     fieldNotes: { ...deck.fieldNotes },
     fieldTts: { ...deck.fieldTts },
+    fieldMedia: deck.fieldMedia ? { ...deck.fieldMedia } : {},
     front: templates[0]!.front,
     back: templates[0]!.back,
     templates,
@@ -465,6 +476,7 @@ export function cloneDeckAsCopy(deck: Deck, name: string): Deck {
       values: { ...card.values },
     })),
     fsrs: { ...fsrsOf(deck), cards: {} },
+    aiPrompts: deck.aiPrompts ? { ...deck.aiPrompts } : promptsOf(readAiSettings()),
   }
 }
 

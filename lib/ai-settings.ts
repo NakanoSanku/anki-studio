@@ -11,12 +11,23 @@ export type AiSettings = {
   templateEditPrompt: string
 }
 
+export type AiPrompts = Pick<AiSettings, "systemPrompt" | "cardCompletePrompt" | "batchPrompt" | "templateEditPrompt">
+
+export function promptsOf(settings: Pick<AiSettings, keyof AiPrompts>): AiPrompts {
+  return {
+    systemPrompt: settings.systemPrompt,
+    cardCompletePrompt: settings.cardCompletePrompt,
+    batchPrompt: settings.batchPrompt,
+    templateEditPrompt: settings.templateEditPrompt,
+  }
+}
+
 export const AI_SETTINGS_KEY = "anki-studio.ai-settings.v2"
 export const AI_SETTINGS_CHANGED_EVENT = "anki-studio:ai-settings-changed"
 const LEGACY_SETTINGS_KEY = "anki-studio.ai-settings.v1"
 
 export const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-export const DEFAULT_GEMINI_MODEL = "gemma-4-26b-a4b-it"
+export const DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
 
 const LEGACY_DEFAULT_SYSTEM_PROMPT =
   "你在帮用户制作 Anki 单词卡片。只输出要求的内容，不要解释，不要加引号或 markdown。"
@@ -67,9 +78,30 @@ TTS 字段（复习时播放音频，模板里只写 {{字段名}}，不要写 a
 - 输出完整的 front、back、css，不要 markdown`
 
 export const DEFAULT_SYSTEM_PROMPT =
-  "You help users create Anki vocabulary cards. Return only the requested content. Do not explain your answer, add quotation marks, or use Markdown."
+  "You are Anki Studio's card-generation engine. Follow the task-specific instructions exactly. Return only the requested JSON or template content, with no commentary, Markdown fences, quotation marks, or extra keys. Never invent fields that are not provided. Preserve user-provided text unless the task explicitly asks you to change it."
 
 export const DEFAULT_CARD_COMPLETE_PROMPT = `Fill only the fields that are still empty. Never modify fields that already contain content.
+Rules:
+- Treat every non-empty value in the current note as immutable.
+- Complete only the empty fields listed in the field set.
+- Follow each field note and keep the card's language and register consistent with its existing content.
+- Prefer concise, useful study content. Do not add explanations, Markdown, labels, or duplicate information.
+- If the source does not support a reliable value, return an empty string for that field.
+- Return one JSON object whose keys are field names and whose values are strings.
+
+Available fields:
+{{fields}}
+Field notes:
+{{notes}}
+Current card:
+{{context}}
+Reference notes (use only as style and terminology guidance; never copy their entries):
+{{references}}`
+
+const PREVIOUS_DEFAULT_SYSTEM_PROMPT =
+  "You help users create Anki vocabulary cards. Return only the requested content. Do not explain your answer, add quotation marks, or use Markdown."
+
+const PREVIOUS_DEFAULT_CARD_COMPLETE_PROMPT = `Fill only the fields that are still empty. Never modify fields that already contain content.
 Field notes:
 {{notes}}
 Current card:
@@ -89,6 +121,14 @@ Reference notes (match their style, but do not copy their entries):
 {{references}}`
 
 export const DEFAULT_BATCH_PROMPT = `Create Anki vocabulary notes from the source material below.
+Generation rules:
+- When Amount is a number, return exactly that many notes; when it is descriptive, return only as many distinct useful notes as the source supports, up to 50.
+- Every note must be meaningfully different. Avoid duplicates, trivial variants, and repeated examples.
+- The primary key must be unique within this batch and must not match any existing key.
+- Use only the provided fields and follow their notes. Do not invent unsupported facts.
+- Keep values concise, natural, and in the language implied by the source and field notes.
+- Return a JSON object with a cards array. Each array item must contain every provided field as a string value and no other keys.
+
 Source material:
 {{topic}}
 Amount:
@@ -96,12 +136,46 @@ Amount:
 Fields: {{fields}}
 Field notes:
 {{notes}}
-Do not use these existing key values: {{existing}}
-Every note must have a unique value for "{{key}}".
-Reference notes (match their style, but do not copy their entries):
+Existing key values to avoid:
+{{existing}}
+Primary key field: {{key}}
+Reference notes (use only as style and terminology guidance; never copy their entries):
 {{references}}`
 
 export const DEFAULT_TEMPLATE_EDIT_PROMPT = `Modify the Anki card template according to the user's instruction.
+User instruction:
+{{instruction}}
+
+Current pane: {{pane}}
+Available fields (use only these fields):
+{{fields}}
+Field notes:
+{{notes}}
+TTS fields (render them using normal Anki field syntax; do not add audio tags):
+{{tts}}
+Sample card:
+{{sample}}
+
+Current front template:
+{{front}}
+
+Current back template:
+{{back}}
+
+Current CSS:
+{{css}}
+
+Requirements:
+- Apply only the requested change. Preserve all unrelated structure, content, and styling.
+- Use only the listed fields. Do not invent field names or silently rename fields.
+- Use standard Anki field syntax, conditional blocks, and FrontSide only where valid.
+- Keep TTS fields as normal Anki field references; do not add audio tags or playback logic.
+- Keep media fields as normal field references; do not replace them with hard-coded URLs.
+- Keep CSS valid, scoped, and compatible with the existing markup.
+- Return a JSON object with exactly these string keys: front, back, css.
+- Return complete values without Markdown fences or explanatory text.`
+
+const PREVIOUS_DEFAULT_TEMPLATE_EDIT_PROMPT = `Modify the Anki card template according to the user's instruction.
 User instruction:
 {{instruction}}
 
@@ -134,7 +208,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   model: DEFAULT_GEMINI_MODEL,
   apiKey: "",
   baseURL: DEFAULT_GEMINI_BASE_URL,
-  thinkingLevel: "minimal",
+  thinkingLevel: "high",
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   cardCompletePrompt: DEFAULT_CARD_COMPLETE_PROMPT,
   batchPrompt: DEFAULT_BATCH_PROMPT,
@@ -147,6 +221,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function text(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback
+}
+
+export function parseAiPrompts(raw: unknown, fallback: AiPrompts = DEFAULT_AI_SETTINGS): AiPrompts | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const value = raw as Record<string, unknown>
+  return {
+    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : fallback.systemPrompt,
+    cardCompletePrompt: typeof value.cardCompletePrompt === "string" ? value.cardCompletePrompt : fallback.cardCompletePrompt,
+    batchPrompt: typeof value.batchPrompt === "string" ? value.batchPrompt : fallback.batchPrompt,
+    templateEditPrompt: typeof value.templateEditPrompt === "string" ? value.templateEditPrompt : fallback.templateEditPrompt,
+  }
 }
 
 function parseThinkingLevel(value: unknown): ThinkingLevel {
@@ -167,14 +252,26 @@ export function parseAiSettings(raw: unknown): AiSettings {
     apiKey: text(raw.apiKey, ""),
     baseURL: text(raw.baseURL, DEFAULT_AI_SETTINGS.baseURL),
     thinkingLevel: parseThinkingLevel(raw.thinkingLevel),
-    systemPrompt: migrateDefault(raw.systemPrompt, LEGACY_DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT),
-    cardCompletePrompt: migrateDefault(raw.cardCompletePrompt, LEGACY_DEFAULT_CARD_COMPLETE_PROMPT, DEFAULT_CARD_COMPLETE_PROMPT),
+    systemPrompt: migrateDefault(
+      migrateDefault(raw.systemPrompt, LEGACY_DEFAULT_SYSTEM_PROMPT, PREVIOUS_DEFAULT_SYSTEM_PROMPT),
+      PREVIOUS_DEFAULT_SYSTEM_PROMPT,
+      DEFAULT_SYSTEM_PROMPT
+    ),
+    cardCompletePrompt: migrateDefault(
+      migrateDefault(raw.cardCompletePrompt, LEGACY_DEFAULT_CARD_COMPLETE_PROMPT, PREVIOUS_DEFAULT_CARD_COMPLETE_PROMPT),
+      PREVIOUS_DEFAULT_CARD_COMPLETE_PROMPT,
+      DEFAULT_CARD_COMPLETE_PROMPT
+    ),
     batchPrompt: migrateDefault(
       migrateDefault(raw.batchPrompt, LEGACY_DEFAULT_BATCH_PROMPT, PREVIOUS_DEFAULT_BATCH_PROMPT),
       PREVIOUS_DEFAULT_BATCH_PROMPT,
       DEFAULT_BATCH_PROMPT
     ),
-    templateEditPrompt: migrateDefault(raw.templateEditPrompt, LEGACY_DEFAULT_TEMPLATE_EDIT_PROMPT, DEFAULT_TEMPLATE_EDIT_PROMPT),
+    templateEditPrompt: migrateDefault(
+      migrateDefault(raw.templateEditPrompt, LEGACY_DEFAULT_TEMPLATE_EDIT_PROMPT, PREVIOUS_DEFAULT_TEMPLATE_EDIT_PROMPT),
+      PREVIOUS_DEFAULT_TEMPLATE_EDIT_PROMPT,
+      DEFAULT_TEMPLATE_EDIT_PROMPT
+    ),
   }
 }
 

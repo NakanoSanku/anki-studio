@@ -1,4 +1,4 @@
-import { readAiSettings, type AiSettings } from "./ai-settings"
+import { readAiSettings, type AiPrompts, type AiSettings } from "./ai-settings"
 import { withBrowserCorsHint } from "./ai-upstream"
 import type { TtsField } from "./deck"
 
@@ -7,11 +7,13 @@ export type CardAiInput = {
   values: Record<string, string>
   notes?: Record<string, string>
   references?: Record<string, string>[]
+  prompts?: AiPrompts
   settings?: AiSettings
 }
 
-function withSettings<T extends { settings?: AiSettings }>(input: T) {
-  return { ...input, settings: input.settings ?? readAiSettings() }
+function withSettings<T extends { settings?: AiSettings; prompts?: AiPrompts }>(input: T) {
+  const settings = input.settings ?? readAiSettings()
+  return { ...input, settings: input.prompts ? { ...settings, ...input.prompts } : settings }
 }
 
 export function formatFieldNotes(fields: string[], notes: Record<string, string> = {}): string {
@@ -85,6 +87,7 @@ export type BatchAiInput = {
   existingKeys: string[]
   notes?: Record<string, string>
   references?: Record<string, string>[]
+  prompts?: AiPrompts
   settings?: AiSettings
 }
 
@@ -111,6 +114,7 @@ export type TemplateAiInput = {
   back: string
   css: string
   sample?: string
+  prompts?: AiPrompts
   settings?: AiSettings
 }
 

@@ -19,10 +19,12 @@ import {
   validateProviderEndpoint,
   writeAiSettings,
   type AiSettings,
+  type AiPrompts,
   type PromptKey,
   type PromptSpec,
   type ThinkingLevel,
 } from "@/lib/ai-settings"
+import type { Deck } from "@/lib/deck"
 import { listProviderModels, withBrowserCorsHint } from "@/lib/ai-upstream"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -47,8 +49,11 @@ const THINKING_OPTIONS: Array<{ value: ThinkingLevel; label: string }> = [
   { value: "high", label: "High" },
 ]
 
-export function AiSettingsPanel() {
-  const [settings, setSettings] = useState<AiSettings>(readAiSettings)
+export function AiSettingsPanel({ deck, onDeckChange }: { deck?: Deck; onDeckChange?: (deck: Deck) => void }) {
+  const [settings, setSettings] = useState<AiSettings>(() => {
+    const global = readAiSettings()
+    return deck?.aiPrompts ? { ...global, ...deck.aiPrompts } : global
+  })
   const [models, setModels] = useState<string[]>([])
   const [showApiKey, setShowApiKey] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -160,7 +165,18 @@ export function AiSettingsPanel() {
   const savePromptDraft = () => {
     if (!editingPromptKey) return
     patch({ [editingPromptKey]: promptDraft })
-    writeAiSettings({ ...settings, [editingPromptKey]: promptDraft })
+    if (deck && onDeckChange) {
+      const prompts: AiPrompts = {
+        systemPrompt: deck.aiPrompts?.systemPrompt ?? DEFAULT_AI_SETTINGS.systemPrompt,
+        cardCompletePrompt: deck.aiPrompts?.cardCompletePrompt ?? DEFAULT_AI_SETTINGS.cardCompletePrompt,
+        batchPrompt: deck.aiPrompts?.batchPrompt ?? DEFAULT_AI_SETTINGS.batchPrompt,
+        templateEditPrompt: deck.aiPrompts?.templateEditPrompt ?? DEFAULT_AI_SETTINGS.templateEditPrompt,
+        [editingPromptKey]: promptDraft,
+      }
+      onDeckChange({ ...deck, aiPrompts: prompts })
+    } else {
+      writeAiSettings({ ...settings, [editingPromptKey]: promptDraft })
+    }
     setEditingPromptKey(null)
     setStatus({ type: "success", message: "Prompt updated" })
   }
@@ -208,7 +224,7 @@ export function AiSettingsPanel() {
                 </SelectContent>
               </Select>
             ) : (
-              <Input id="model-input" value={settings.model} placeholder="gemma-4-26b-a4b-it" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
+              <Input id="model-input" value={settings.model} placeholder="gemini-flash-lite-latest" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
             )}
           </div>
 
@@ -251,7 +267,12 @@ export function AiSettingsPanel() {
 
       <section className="overflow-hidden rounded-[20px] border border-black/[0.065] bg-card dark:border-white/[0.09]">
         <div className="flex items-center justify-between px-4 py-3">
-          <h2 className="text-base font-semibold tracking-[-0.025em]">Prompts</h2>
+          <div>
+            <h2 className="text-base font-semibold tracking-[-0.025em]">Prompts</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {deck ? `Saved with “${deck.name.trim() || "Untitled deck"}”` : "Saved with the current deck"}
+            </p>
+          </div>
           <span className="text-[10px] font-medium text-muted-foreground">{customPromptCount > 0 ? `${customPromptCount} custom` : "Default"}</span>
         </div>
         {PROMPT_SPECS.map((spec, index) => {

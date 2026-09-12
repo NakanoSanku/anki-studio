@@ -421,6 +421,7 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
           back: template.back,
           css: deck.css,
           sample: previewCard ? formatCardContext(textFields(deck), previewCard.values, notesOf(deck)) : "",
+          prompts: deck.aiPrompts,
         })
         let changed = deck
         if (typeof next.front === "string" || typeof next.back === "string") {

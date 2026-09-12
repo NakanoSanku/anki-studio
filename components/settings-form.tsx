@@ -143,7 +143,7 @@ export function SettingsForm({
 
         <TabsContent value="ai" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
           <div className="space-y-5">
-            <AiSettingsPanel />
+            <AiSettingsPanel deck={deck} onDeckChange={onDeckChange} />
             <GeminiLiveSetup />
           </div>
         </TabsContent>
