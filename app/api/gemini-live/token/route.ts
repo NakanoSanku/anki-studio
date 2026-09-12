@@ -1,4 +1,5 @@
 import { GEMINI_LIVE_MODEL } from "@/lib/gemini-live-settings"
+import { getGoogleAppAuthorization } from "@/lib/app-auth"
 import { createWindowRateLimiter, readJsonBodyWithLimit, RequestBodyTooLargeError, requestClientKey } from "@/lib/request-guard"
 
 export const dynamic = "force-dynamic"
@@ -27,6 +28,8 @@ function responseError(payload: unknown): string {
 }
 
 export async function POST(request: Request) {
+  const authorization = await getGoogleAppAuthorization()
+  if (!authorization.ok) return authorization.response
   const rate = allowRequest(requestClientKey(request))
   if (!rate.allowed) {
     return Response.json(

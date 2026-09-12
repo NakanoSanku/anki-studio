@@ -2,26 +2,27 @@ import { getServerSession, type NextAuthOptions, type Profile, type Session } fr
 import type { JWT } from "next-auth/jwt"
 import GoogleProvider from "next-auth/providers/google"
 
+import { safeAuthCallback } from "./auth-redirect"
+import {
+  GOOGLE_IDENTITY_SCOPE,
+  GOOGLE_SHEETS_SCOPE,
+  GOOGLE_PICKER_SCOPE,
+  isAllowedGoogleEmail,
+  isAllowedGoogleIdentity,
+  readGoogleOAuthConfiguration,
+  type GoogleOAuthConfiguration,
+} from "./google-auth-config"
+export { GOOGLE_SHEETS_SCOPE, GOOGLE_PICKER_SCOPE, parseAllowedGoogleEmails, readGoogleOAuthConfiguration } from "./google-auth-config"
+export type { GoogleOAuthConfiguration } from "./google-auth-config"
+
 type Environment = Record<string, string | undefined>
 
-export type GoogleOAuthConfiguration =
-  | { state: "disabled"; issue: string }
-  | { state: "invalid"; issue: string }
-  | {
-      state: "ready"
-      clientId: string
-      clientSecret: string
-      authSecret: string
-      allowedEmails: string[]
-    }
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-export const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
-export const GOOGLE_PICKER_SCOPE = "https://www.googleapis.com/auth/drive.file"
 const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60_000
 const GOOGLE_TOKEN_TIMEOUT_MS = 15_000
 
 type GoogleToken = JWT & {
+  googleProvider?: "google"
+  googleEmailVerified?: boolean
   googleAccessToken?: string
   googleRefreshToken?: string
   googleAccessTokenExpires?: number
@@ -30,6 +31,8 @@ type GoogleToken = JWT & {
 }
 
 export type GoogleSession = Session & {
+  googleProvider?: "google"
+  googleEmailVerified?: boolean
   googleAccessToken?: string
   googleScope?: string
   googleAccessError?: "RefreshAccessTokenError"
@@ -42,65 +45,22 @@ type GoogleTokenResponse = {
   scope?: unknown
 }
 
-export function parseAllowedGoogleEmails(raw: string | undefined): string[] {
-  return [...new Set(
-    (raw ?? "")
-      .split(/[\s,;]+/)
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  )]
-}
-
-export function readGoogleOAuthConfiguration(
-  environment: Environment = process.env
-): GoogleOAuthConfiguration {
-  const clientId = environment.GOOGLE_CLIENT_ID?.trim() ?? ""
-  const clientSecret = environment.GOOGLE_CLIENT_SECRET?.trim() ?? ""
-  const authSecret = environment.AUTH_SECRET?.trim()
-    || environment.NEXTAUTH_SECRET?.trim()
-    || ""
-  const allowedEmails = parseAllowedGoogleEmails(environment.GOOGLE_ALLOWED_EMAILS)
-  const hasAnySetting = Boolean(
-    clientId || clientSecret || authSecret || environment.GOOGLE_ALLOWED_EMAILS?.trim()
-  )
-
-  if (!hasAnySetting) {
-    return { state: "disabled", issue: "Google OAuth is not configured" }
-  }
-
-  const missing: string[] = []
-  if (!clientId) missing.push("GOOGLE_CLIENT_ID")
-  if (!clientSecret) missing.push("GOOGLE_CLIENT_SECRET")
-  if (!authSecret) missing.push("AUTH_SECRET")
-  if (missing.length > 0) {
-    return { state: "invalid", issue: `Google OAuth is missing ${missing.join(", ")}` }
-  }
-
-  if (allowedEmails.length > 0 && allowedEmails.some((email) => !EMAIL_PATTERN.test(email))) {
-    return { state: "invalid", issue: "GOOGLE_ALLOWED_EMAILS contains an invalid email address" }
-  }
-
-  return { state: "ready", clientId, clientSecret, authSecret, allowedEmails }
-}
-
 export function isAllowedGoogleProfile(
   profile: (Profile & { email_verified?: unknown }) | undefined,
   allowedEmails: readonly string[]
 ): boolean {
-  const email = typeof profile?.email === "string" ? profile.email.toLowerCase() : ""
-  if (!email) return false
-  if (allowedEmails.length === 0) return true
-  return (profile?.email_verified === true || profile?.email_verified === undefined) && allowedEmails.includes(email)
+  return profile?.email_verified === true && isAllowedGoogleEmail(profile.email, allowedEmails)
 }
 
 export function isAllowedGoogleSession(
-  session: Session | null,
+  session: GoogleSession | null,
   allowedEmails: readonly string[]
 ): boolean {
-  const email = session?.user?.email?.toLowerCase()
-  if (!email) return false
-  if (allowedEmails.length === 0) return true
-  return allowedEmails.includes(email)
+  return isAllowedGoogleIdentity({
+    email: session?.user?.email,
+    googleProvider: session?.googleProvider,
+    googleEmailVerified: session?.googleEmailVerified,
+  }, allowedEmails)
 }
 
 export function hasGoogleSheetsScope(scope: string | undefined): boolean {
@@ -175,36 +135,52 @@ export function createGoogleAuthOptions(
               params: {
                 access_type: "offline",
                 include_granted_scopes: "true",
-                prompt: "consent",
-                scope: `openid email profile ${GOOGLE_SHEETS_SCOPE} ${GOOGLE_PICKER_SCOPE}`,
+                prompt: "select_account",
+                scope: GOOGLE_IDENTITY_SCOPE,
               },
             },
           }),
         ]
       : [],
     pages: {
+      signIn: "/login",
       error: "/auth/error",
     },
     callbacks: {
+      async redirect({ url, baseUrl }) {
+        if (url.startsWith("/")) return `${baseUrl}${safeAuthCallback(url)}`
+        try {
+          return new URL(url).origin === baseUrl ? url : baseUrl
+        } catch {
+          return baseUrl
+        }
+      },
       async signIn({ account, profile }) {
         if (account?.provider !== "google") return false
         const currentConfiguration = readGoogleOAuthConfiguration(environment)
         return currentConfiguration.state === "ready"
           && isAllowedGoogleProfile(profile, currentConfiguration.allowedEmails)
       },
-      async jwt({ token, account }) {
+      async jwt({ token, account, profile }) {
         const googleToken = token as GoogleToken
         if (account?.provider === "google") {
           return {
             ...googleToken,
+            googleProvider: "google",
+            googleEmailVerified: (profile as (Profile & { email_verified?: unknown }) | undefined)?.email_verified === true,
             googleAccessToken: account.access_token,
-            googleRefreshToken: account.refresh_token ?? googleToken.googleRefreshToken,
+            googleRefreshToken: account.refresh_token ?? (googleToken.sub === profile?.sub ? googleToken.googleRefreshToken : undefined),
             googleAccessTokenExpires: typeof account.expires_at === "number"
               ? account.expires_at * 1000
               : Date.now() + 3600 * 1000,
             googleScope: account.scope,
             googleAccessError: undefined,
           }
+        }
+
+        const currentConfiguration = readGoogleOAuthConfiguration(environment)
+        if (currentConfiguration.state !== "ready" || !isAllowedGoogleIdentity(googleToken, currentConfiguration.allowedEmails)) {
+          return { ...googleToken, googleAccessToken: undefined, googleRefreshToken: undefined, googleScope: undefined }
         }
 
         if (
@@ -225,6 +201,8 @@ export function createGoogleAuthOptions(
       async session({ session, token }) {
         const googleSession = session as GoogleSession
         const googleToken = token as GoogleToken
+        googleSession.googleProvider = googleToken.googleProvider
+        googleSession.googleEmailVerified = googleToken.googleEmailVerified
         googleSession.googleAccessToken = googleToken.googleAccessToken
         googleSession.googleScope = googleToken.googleScope
         googleSession.googleAccessError = googleToken.googleAccessError

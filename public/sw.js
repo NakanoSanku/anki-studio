@@ -1,4 +1,4 @@
-const CACHE_NAME = "anki-studio-shell-v5"
+const CACHE_NAME = "anki-studio-shell-v6"
 const STATIC_PATHS = ["/manifest.webmanifest", "/icon.svg", "/icon-maskable.svg"]
 
 function isCacheableAsset(url, request) {
@@ -21,15 +21,6 @@ self.addEventListener("install", (event) => {
       const cache = await caches.open(CACHE_NAME)
       await Promise.allSettled(STATIC_PATHS.map((path) => cache.add(path)))
 
-      const response = await fetch("/", { cache: "no-store", credentials: "same-origin" })
-      if (!response.ok) return
-      await cache.put("/", response.clone())
-
-      const html = await response.text()
-      const assets = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
-        .map((match) => match[1])
-        .filter((path) => path.startsWith("/_next/static/"))
-      await Promise.allSettled([...new Set(assets)].map((path) => cache.add(path)))
       await self.skipWaiting()
     })()
   )
@@ -79,12 +70,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       (async () => {
         try {
-          const response = (await event.preloadResponse) || await fetch(request)
-          if (url.pathname !== "/") return response
-          const cache = await caches.open(CACHE_NAME)
-          return cacheResponse(cache, "/", response)
+          return (await event.preloadResponse) || await fetch(request)
         } catch {
-          return (await caches.match(request)) || (await caches.match("/")) || Response.error()
+          // Never serve an HTML shell without a fresh authentication check.
+          return Response.error()
         }
       })()
     )

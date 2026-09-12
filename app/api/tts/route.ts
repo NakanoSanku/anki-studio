@@ -1,6 +1,7 @@
 import { isTtsLang, type TtsLang } from "@/lib/deck"
 import { RateGate } from "@/lib/rate-gate"
 import { createWindowRateLimiter, readJsonBodyWithLimit, RequestBodyTooLargeError, requestClientKey } from "@/lib/request-guard"
+import { getGoogleAppAuthorization } from "@/lib/app-auth"
 
 export const dynamic = "force-dynamic"
 
@@ -49,6 +50,8 @@ async function fetchGoogle(text: string, lang: TtsLang, slow: boolean): Promise<
 }
 
 export async function POST(request: Request) {
+  const authorization = await getGoogleAppAuthorization()
+  if (!authorization.ok) return authorization.response
   const rate = allowRequest(requestClientKey(request))
   if (!rate.allowed) {
     return Response.json(

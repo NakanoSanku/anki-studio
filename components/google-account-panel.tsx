@@ -62,10 +62,21 @@ export function GoogleAccountPanel({ onReadyChange }: { onReadyChange?: (ready: 
     return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisibility) }
   }, [])
 
-  const connect = async () => {
+  const connect = async (withSheets = false) => {
     setBusy(true)
     try {
-      await signIn("google", { callbackUrl: window.location.href })
+      await signIn(
+        "google",
+        { callbackUrl: window.location.href },
+        withSheets
+          ? {
+              access_type: "offline",
+              include_granted_scopes: "true",
+              prompt: "consent",
+              scope: "openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
+            }
+          : undefined
+      )
     } catch (error) {
       console.error("NextAuth sign in error:", error)
       setAccount({ phase: "error", issue: "Unable to start Google sign-in. Try again." })
@@ -128,7 +139,7 @@ export function GoogleAccountPanel({ onReadyChange }: { onReadyChange?: (ready: 
         {!account.sheetsAuthorized ? (
           <div className="mt-3 flex items-center justify-between gap-3 rounded-[13px] bg-muted/55 px-3 py-2.5">
             <p className="min-w-0 text-[11px] leading-4 text-muted-foreground">Sheets access needs to be restored before sync can run.</p>
-            <Button type="button" size="sm" className="h-8 shrink-0 text-[10px]" disabled={busy} onClick={() => void connect()}>{busy ? <LoaderCircle className="size-3 animate-spin" /> : <KeyRound className="size-3" />}Reauthorize</Button>
+            <Button type="button" size="sm" className="h-8 shrink-0 text-[10px]" disabled={busy} onClick={() => void connect(true)}>{busy ? <LoaderCircle className="size-3 animate-spin" /> : <KeyRound className="size-3" />}Reauthorize</Button>
           </div>
         ) : null}
       </section>

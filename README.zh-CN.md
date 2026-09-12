@@ -116,7 +116,7 @@ Anki Studio 将内容创作和学习整合在一个浏览器优先的工作区�
 4. 打开 `http://localhost:3000`。
 
 > [!TIP]
-> 本地开发并不要求启用 Google Sheets 同步。AI Provider 在 **Settings → AI** 中配置，并保存在当前设备上。
+> Anki Studio 是私有工作区。所有页面和应用 API 都要求使用 `GOOGLE_ALLOWED_EMAILS` 中列出的已验证 Google 账号登录；登录后仍可选择是否启用 Google Sheets 同步。
 
 <details>
 <summary><strong>质量检查</strong></summary>
@@ -234,7 +234,7 @@ cp .env.example .env.local
 | --- | --- |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
-| `GOOGLE_ALLOWED_EMAILS` | 可选，逗号分隔的登录邮箱白名单 |
+| `GOOGLE_ALLOWED_EMAILS` | 必填，逗号分隔的登录邮箱白名单；留空会拒绝所有账号 |
 | `GOOGLE_PICKER_API_KEY` | 限制到 Google Picker API 的浏览器 Key |
 | `GOOGLE_CLOUD_PROJECT_NUMBER` | Picker 使用的 Google Cloud 数字项目编号 |
 | `AUTH_SECRET` | NextAuth Session Secret |

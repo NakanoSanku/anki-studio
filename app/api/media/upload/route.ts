@@ -8,6 +8,7 @@ import {
   validateImageFile,
 } from "@/lib/media-host"
 import { createWindowRateLimiter, requestClientKey } from "@/lib/request-guard"
+import { getGoogleAppAuthorization } from "@/lib/app-auth"
 
 export const runtime = "nodejs"
 
@@ -18,6 +19,8 @@ function errorResponse(message: string, status: number) {
 }
 
 export async function POST(request: Request) {
+  const appAuthorization = await getGoogleAppAuthorization()
+  if (!appAuthorization.ok) return appAuthorization.response
   const rate = limiter(requestClientKey(request))
   if (!rate.allowed) {
     return NextResponse.json(

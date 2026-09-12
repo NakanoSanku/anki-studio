@@ -116,7 +116,7 @@ Node.js 22 is also used by the repository's `UI checks` workflow.
 4. Open `http://localhost:3000`.
 
 > [!TIP]
-> Google Sheets sync is optional for local development. AI provider settings are configured inside **Settings → AI** and are stored on the device.
+> Anki Studio is a private workspace. Every app page and app API requires a verified Google account listed in `GOOGLE_ALLOWED_EMAILS`. Google Sheets sync remains optional after sign-in.
 
 <details>
 <summary><strong>Quality checks</strong></summary>
@@ -234,7 +234,7 @@ Set the values defined in `.env.example`:
 | --- | --- |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `GOOGLE_ALLOWED_EMAILS` | Optional comma-separated sign-in allowlist |
+| `GOOGLE_ALLOWED_EMAILS` | Required comma-separated allowlist; an empty value denies every account |
 | `GOOGLE_PICKER_API_KEY` | Browser key restricted to Google Picker API |
 | `GOOGLE_CLOUD_PROJECT_NUMBER` | Numeric Google Cloud project number used by Picker |
 | `AUTH_SECRET` | NextAuth session secret |
