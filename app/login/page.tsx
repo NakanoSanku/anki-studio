@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
-import { signIn } from "next-auth/react"
+import { useEffect, useState } from "react"
+import { getSession, signIn } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { ShieldCheck } from "lucide-react"
 
 import { safeAuthCallback } from "@/lib/auth-redirect"
 import { Button } from "@/components/ui/button"
 
 export default function LoginPage() {
+  const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(() => {
     if (typeof window === "undefined") return ""
@@ -18,6 +20,21 @@ export default function LoginPage() {
         ? "Google sign-in is not configured correctly. Contact the administrator."
         : ""
   })
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("error") !== "OAuthCallback") return
+
+    const callbackUrl = safeAuthCallback(params.get("callbackUrl") ?? "/")
+    let cancelled = false
+    void getSession().then((session) => {
+      if (!cancelled && session?.user?.email) router.replace(callbackUrl)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [router])
 
   const connect = async () => {
     setBusy(true)
