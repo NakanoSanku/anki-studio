@@ -1,7 +1,10 @@
+export type ThinkingLevel = "auto" | "minimal" | "low" | "medium" | "high"
+
 export type AiSettings = {
   model: string
   apiKey: string
   baseURL: string
+  thinkingLevel: ThinkingLevel
   systemPrompt: string
   cardCompletePrompt: string
   batchPrompt: string
@@ -13,7 +16,7 @@ export const AI_SETTINGS_CHANGED_EVENT = "anki-studio:ai-settings-changed"
 const LEGACY_SETTINGS_KEY = "anki-studio.ai-settings.v1"
 
 export const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
+export const DEFAULT_GEMINI_MODEL = "gemma-4-26b-a4b-it"
 
 const LEGACY_DEFAULT_SYSTEM_PROMPT =
   "你在帮用户制作 Anki 单词卡片。只输出要求的内容，不要解释，不要加引号或 markdown。"
@@ -131,6 +134,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   model: DEFAULT_GEMINI_MODEL,
   apiKey: "",
   baseURL: DEFAULT_GEMINI_BASE_URL,
+  thinkingLevel: "minimal",
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   cardCompletePrompt: DEFAULT_CARD_COMPLETE_PROMPT,
   batchPrompt: DEFAULT_BATCH_PROMPT,
@@ -145,6 +149,12 @@ function text(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback
 }
 
+function parseThinkingLevel(value: unknown): ThinkingLevel {
+  return value === "auto" || value === "minimal" || value === "low" || value === "medium" || value === "high"
+    ? value
+    : DEFAULT_AI_SETTINGS.thinkingLevel
+}
+
 function migrateDefault(value: unknown, legacy: string, current: string): string {
   const parsed = text(value, current)
   return parsed === legacy ? current : parsed
@@ -156,6 +166,7 @@ export function parseAiSettings(raw: unknown): AiSettings {
     model: text(raw.model, DEFAULT_AI_SETTINGS.model),
     apiKey: text(raw.apiKey, ""),
     baseURL: text(raw.baseURL, DEFAULT_AI_SETTINGS.baseURL),
+    thinkingLevel: parseThinkingLevel(raw.thinkingLevel),
     systemPrompt: migrateDefault(raw.systemPrompt, LEGACY_DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT),
     cardCompletePrompt: migrateDefault(raw.cardCompletePrompt, LEGACY_DEFAULT_CARD_COMPLETE_PROMPT, DEFAULT_CARD_COMPLETE_PROMPT),
     batchPrompt: migrateDefault(

@@ -60,8 +60,10 @@ async function completeOpenAiChat(settings: AiSettings, input: CompletionInput):
       headers,
       body: JSON.stringify({
         model: settings.model.trim(),
-        temperature: 0.7,
         messages,
+        ...(settings.thinkingLevel === "auto"
+          ? { temperature: 0.7 }
+          : { reasoning_effort: settings.thinkingLevel }),
       }),
     },
     input.signal
@@ -87,6 +89,9 @@ async function completeGeminiInteraction(
     store: false,
   }
   if (input.system?.trim()) requestBody.system_instruction = input.system.trim()
+  if (settings.thinkingLevel !== "auto") {
+    requestBody.generation_config = { thinking_level: settings.thinkingLevel }
+  }
   if (jsonMode) {
     requestBody.response_format = {
       type: "text",

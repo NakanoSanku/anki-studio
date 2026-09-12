@@ -21,6 +21,7 @@ import {
   type AiSettings,
   type PromptKey,
   type PromptSpec,
+  type ThinkingLevel,
 } from "@/lib/ai-settings"
 import { listProviderModels, withBrowserCorsHint } from "@/lib/ai-upstream"
 import { Badge } from "@/components/ui/badge"
@@ -28,7 +29,7 @@ import { Button } from "@/components/ui/button"
 import { CodeEditor, type CodeEditorHandle } from "@/components/code-editor"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -37,6 +38,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
+
+const THINKING_OPTIONS: Array<{ value: ThinkingLevel; label: string }> = [
+  { value: "auto", label: "Auto (model default)" },
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+]
 
 export function AiSettingsPanel() {
   const [settings, setSettings] = useState<AiSettings>(readAiSettings)
@@ -199,8 +208,21 @@ export function AiSettingsPanel() {
                 </SelectContent>
               </Select>
             ) : (
-              <Input id="model-input" value={settings.model} placeholder="gemini-3.1-flash-lite" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
+              <Input id="model-input" value={settings.model} placeholder="gemma-4-26b-a4b-it" className="mt-1.5 h-10 bg-background font-mono text-xs" onChange={(event) => patch({ model: event.target.value })} />
             )}
+          </div>
+
+          <div>
+            <Label htmlFor="thinking-level-input" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Thinking level</Label>
+            <Select value={settings.thinkingLevel} onValueChange={(value) => patch({ thinkingLevel: value as ThinkingLevel })}>
+              <SelectTrigger id="thinking-level-input" aria-describedby="thinking-level-description" className="mt-1.5 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent position="popper" align="start" className="max-h-64">
+                <SelectGroup>
+                  {THINKING_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <p id="thinking-level-description" className="mt-1.5 text-[11px] leading-4 text-muted-foreground">For AI Fill, note generation, and template editing. Higher levels may take longer and use more tokens. Available levels depend on the model.</p>
           </div>
 
           <div>
