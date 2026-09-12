@@ -25,6 +25,12 @@ export type TtsField = {
   slow: boolean
 }
 
+export type MediaKind = "image" | "audio"
+
+export type MediaField = {
+  kind: MediaKind
+}
+
 export type CardTemplate = {
   id: string
   name: string
@@ -79,6 +85,7 @@ export type Deck = {
   fields: string[]
   fieldNotes: Record<string, string>
   fieldTts: Record<string, TtsField>
+  fieldMedia?: Record<string, MediaField>
   /** Legacy mirrors for the first template. Kept for V1 JSON compatibility. */
   front: string
   back: string
@@ -110,6 +117,7 @@ export const TTS_LANGS: { id: TtsLang; label: string }[] = [
 ]
 
 export const TTS_FIELD_META = "anki-studio.tts:"
+export const MEDIA_FIELD_META = "anki-studio.media:"
 export const TTS_PREVIEW_MARK = "\u2063"
 
 export const STORAGE_KEY = "anki-studio.deck.v1"
@@ -192,9 +200,64 @@ export function isTtsField(deck: Pick<Deck, "fields"> & { fieldTts?: Record<stri
   return Boolean(ttsOf(deck)[name])
 }
 
-export function textFields(deck: Pick<Deck, "fields"> & { fieldTts?: Record<string, TtsField> }): string[] {
+export function encodeMediaMeta(media: MediaField): string {
+  return MEDIA_FIELD_META + media.kind
+}
+
+export function decodeMediaMeta(raw: string | undefined): MediaField | null {
+  if (!raw?.startsWith(MEDIA_FIELD_META)) return null
+  const kind = raw.slice(MEDIA_FIELD_META.length)
+  return kind === "image" || kind === "audio" ? { kind } : null
+}
+
+export function mediaOf(
+  deck: Pick<Deck, "fields"> & { fieldTts?: Record<string, TtsField>; fieldMedia?: Record<string, MediaField> },
+): Record<string, MediaField> {
+  const tts = ttsOf(deck)
+  const first = deck.fields[0]
+  const next: Record<string, MediaField> = {}
+  for (const field of deck.fields) {
+    if (field === first || tts[field]) continue
+    const raw = deck.fieldMedia?.[field]
+    if (raw?.kind === "image" || raw?.kind === "audio") next[field] = { kind: raw.kind }
+  }
+  return next
+}
+
+export function isMediaField(
+  deck: Pick<Deck, "fields"> & { fieldTts?: Record<string, TtsField>; fieldMedia?: Record<string, MediaField> },
+  name: string,
+): boolean {
+  return Boolean(mediaOf(deck)[name])
+}
+
+export function editableFields(
+  deck: Pick<Deck, "fields"> & { fieldTts?: Record<string, TtsField> },
+): string[] {
   const tts = ttsOf(deck)
   return deck.fields.filter((field) => !tts[field])
+}
+
+export function textFields(
+  deck: Pick<Deck, "fields"> & { fieldTts?: Record<string, TtsField>; fieldMedia?: Record<string, MediaField> },
+): string[] {
+  const tts = ttsOf(deck)
+  const media = mediaOf(deck)
+  return deck.fields.filter((field) => !tts[field] && !media[field])
+}
+
+export function isSecureMediaUrl(value: string): boolean {
+  if (value.length === 0 || value.length > 2048) return false
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
+export function normalizeMediaUrl(value: string): string {
+  const next = value.trim()
+  return isSecureMediaUrl(next) ? next : ""
 }
 
 export function previewValues(deck: Deck, values: Record<string, string> = {}): Record<string, string> {
@@ -519,6 +582,7 @@ export function createBlankDeck(name = "新卡包"): Deck {
     fields,
     fieldNotes: { ...DEFAULT_FIELD_NOTES },
     fieldTts: {},
+    fieldMedia: {},
     front: DEFAULT_FRONT,
     back: DEFAULT_BACK,
     templates: [
@@ -761,10 +825,18 @@ export function parseDeckJson(raw: string): Deck {
     fields,
     fieldTts: isRecord(data.fieldTts) ? (data.fieldTts as Record<string, TtsField>) : {},
   })
+  const fieldMedia = mediaOf({
+    fields,
+    fieldTts,
+    fieldMedia: isRecord(data.fieldMedia) ? (data.fieldMedia as Record<string, MediaField>) : {},
+  })
 
   for (const card of cards) {
     for (const name of Object.keys(fieldTts)) {
       card.values[name] = ""
+    }
+    for (const name of Object.keys(fieldMedia)) {
+      card.values[name] = normalizeMediaUrl(card.values[name] ?? "")
     }
   }
 
@@ -781,6 +853,7 @@ export function parseDeckJson(raw: string): Deck {
     fields,
     fieldNotes,
     fieldTts,
+    fieldMedia,
     front: templates[0]!.front,
     back: templates[0]!.back,
     templates,
@@ -869,6 +942,7 @@ export function tryRenameField(deck: Deck, from: string, to: string): FieldChang
       fields: deck.fields.map((field) => (field === from ? next : field)),
       fieldNotes: renameFieldNote(notesOf(deck), from, next),
       fieldTts: renameFieldTts(ttsOf(deck), from, next),
+      fieldMedia: renameFieldMedia(mediaOf(deck), from, next),
       cards: deck.cards.map((card) => {
         const values = { ...card.values }
         values[next] = values[from] ?? ""
@@ -881,7 +955,7 @@ export function tryRenameField(deck: Deck, from: string, to: string): FieldChang
 
 export function tryAddField(
   deck: Deck,
-  input: { name?: string; note?: string } = {}
+  input: { name?: string; note?: string; kind?: MediaKind } = {}
 ): FieldChangeResult {
   const name = input.name === undefined ? uniqueFieldName(deck.fields) : input.name.trim()
   if (!name) return { ok: false, error: "字段名不能为空" }
@@ -889,18 +963,31 @@ export function tryAddField(
     return { ok: false, error: `字段「${name}」已存在` }
   }
 
+  const fieldMedia = mediaOf(deck)
+  if (input.kind) fieldMedia[name] = { kind: input.kind }
+  const templates = templatesOf(deck)
+  const primary = templates[0]!
+  const nextTemplates = [
+    {
+      ...primary,
+      front: templateUsesField(primary.front, name) ? primary.front : `${primary.front}\n{{${name}}}`,
+    },
+    ...templates.slice(1),
+  ]
+
   return {
     ok: true,
-    deck: {
+    deck: withTemplates({
       ...deck,
       fields: [...deck.fields, name],
       fieldNotes: { ...notesOf(deck), [name]: input.note?.trim() ?? "" },
       fieldTts: ttsOf(deck),
+      fieldMedia,
       cards: deck.cards.map((card) => ({
         ...card,
         values: { ...card.values, [name]: "" },
       })),
-    },
+    }, nextTemplates),
   }
 }
 
@@ -910,6 +997,10 @@ export function tryRemoveField(deck: Deck, name: string): FieldChangeResult {
   }
 
   const tts = ttsOf(deck)
+  const media = mediaOf(deck)
+  if (name === deck.fields[0] && (media[deck.fields[1] ?? ""] || tts[deck.fields[1] ?? ""])) {
+    return { ok: false, error: "不能删除主字段，否则特殊字段会成为卡片主键" }
+  }
   if (!tts[name] && textFields(deck).length <= 1) {
     return { ok: false, error: "至少保留一个普通字段" }
   }
@@ -931,6 +1022,8 @@ export function tryRemoveField(deck: Deck, name: string): FieldChangeResult {
 
   const fieldTts = { ...tts }
   delete fieldTts[name]
+  const fieldMedia = { ...media }
+  delete fieldMedia[name]
 
   return {
     ok: true,
@@ -939,6 +1032,7 @@ export function tryRemoveField(deck: Deck, name: string): FieldChangeResult {
       fields: deck.fields.filter((field) => field !== name),
       fieldNotes: omitFieldNote(notesOf(deck), name),
       fieldTts,
+      fieldMedia,
       cards: deck.cards.map((card) => {
         const values = { ...card.values }
         delete values[name]
@@ -960,6 +1054,15 @@ function renameFieldTts(fieldTts: Record<string, TtsField>, from: string, to: st
   return next
 }
 
+function renameFieldMedia(fieldMedia: Record<string, MediaField>, from: string, to: string): Record<string, MediaField> {
+  const next = { ...fieldMedia }
+  if (next[from]) {
+    next[to] = next[from]
+    delete next[from]
+  }
+  return next
+}
+
 export function tryAddTtsField(
   deck: Deck,
   input: { name?: string; source: string; lang: TtsLang; slow?: boolean }
@@ -967,6 +1070,9 @@ export function tryAddTtsField(
   const source = input.source.trim()
   if (!source || !deck.fields.includes(source)) {
     return { ok: false, error: "请选择要朗读的字段" }
+  }
+  if (isMediaField(deck, source)) {
+    return { ok: false, error: "不能朗读媒体字段" }
   }
   if (isTtsField(deck, source)) {
     return { ok: false, error: "不能朗读另一个 TTS 字段" }
@@ -1020,6 +1126,9 @@ export function tryUpdateTtsField(deck: Deck, name: string, patch: Partial<TtsFi
   }
   if (!deck.fields.includes(next.source)) {
     return { ok: false, error: "请选择要朗读的字段" }
+  }
+  if (isMediaField(deck, next.source)) {
+    return { ok: false, error: "不能朗读媒体字段" }
   }
   if (next.source === name || isTtsField(deck, next.source)) {
     return { ok: false, error: "不能朗读另一个 TTS 字段" }
@@ -1147,11 +1256,18 @@ export function setCardField(
   if (!deck.fields.includes(field)) {
     return { ok: false, error: `字段「${field}」不存在` }
   }
+  const media = mediaOf(deck)[field]
+  const nextValue = media
+    ? normalizeMediaUrl(value)
+    : value
+  if (media && value.trim() && !nextValue) {
+    return { ok: false, error: "媒体字段只接受有效的 HTTPS URL（最多 2048 个字符）" }
+  }
   const card = deck.cards.find((item) => item.id === cardId)
   if (!card) return { ok: false, error: "卡片已删除" }
 
   if (field === deck.fields[0]) {
-    const duplicate = findDuplicateCard(deck.cards, deck.fields, value, cardId)
+    const duplicate = findDuplicateCard(deck.cards, deck.fields, nextValue, cardId)
     if (duplicate) {
       return { ok: false, error: `已存在卡片「${value.trim()}」` }
     }
@@ -1163,7 +1279,7 @@ export function setCardField(
       ...deck,
       cards: deck.cards.map((item) =>
         item.id === cardId
-          ? withCardReviewStatus({ ...item, values: { ...item.values, [field]: value } }, "pending")
+          ? withCardReviewStatus({ ...item, values: { ...item.values, [field]: nextValue } }, "pending")
           : item
       ),
     },

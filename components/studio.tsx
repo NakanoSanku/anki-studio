@@ -33,6 +33,7 @@ import {
   approvedDeck,
   createPendingCard,
   createDefaultDeck,
+  mediaOf,
   safeFilename,
   serializeDeck,
   ttsOf,
@@ -518,7 +519,9 @@ return readDirtyCount()
         })
         if (controller.signal.aborted) return
         downloadBlob(blob, safeFilename(snapshot.name, "apkg"))
-        showStatus("已导出 APKG")
+        showStatus(Object.keys(mediaOf(snapshot)).length > 0
+          ? "已导出 APKG；外链媒体未嵌入，离线环境可能无法加载"
+          : "已导出 APKG")
       } catch (error) {
         if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
           showStatus("已取消导出")
@@ -554,9 +557,15 @@ return readDirtyCount()
           ? "ai"
           : activePath === PATHS.settingsSync
             ? "sync"
+            : activePath === PATHS.settingsMedia
+              ? "media"
             : null
   const hasTts = useMemo(
     () => settingsSection === "deck" && Object.keys(ttsOf(deck)).length > 0,
+    [deck, settingsSection]
+  )
+  const hasMedia = useMemo(
+    () => settingsSection === "deck" && Object.keys(mediaOf(deck)).length > 0,
     [deck, settingsSection]
   )
 
@@ -642,6 +651,7 @@ return readDirtyCount()
       exporting={exporting}
       exportProgress={exportProgress}
       hasTts={hasTts}
+      hasMedia={hasMedia}
       onImport={() => fileRef.current?.click()}
       onExportJson={onExportJson}
       onExportCsv={onExportCsv}

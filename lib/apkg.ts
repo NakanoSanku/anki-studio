@@ -7,16 +7,21 @@ import {
   createCard,
   DEFAULT_FSRS_STATE,
   decodeTtsMeta,
+  decodeMediaMeta,
   dedupeCardsByFirstField,
+  encodeMediaMeta,
   encodeTtsMeta,
+  isSecureMediaUrl,
   parseDeckJson,
   templatesOf,
   ttsOf,
+  mediaOf,
   type CardTemplate,
   type Card,
   type Deck,
 } from "./deck"
 import { cacheSet, getTtsClip, listTtsJobs, parseTtsFilename, resolveTtsFieldValue } from "./tts"
+import { renderMediaValue } from "./template"
 
 const FIELD_SEP = "\x1f"
 export const MAX_TEXT_IMPORT_BYTES = 20 * 1024 * 1024
@@ -159,6 +164,13 @@ async function fieldChecksum(value: string): Promise<number> {
   return Number.parseInt(hex.slice(0, 8), 16)
 }
 
+function extractExternalMediaUrl(value: string, kind: "image" | "audio"): string {
+  const tag = kind === "image" ? "img" : "audio"
+  const match = value.match(new RegExp(`<${tag}[^>]+src=["']([^"']+)["']`, "i"))
+  const candidate = match?.[1] ?? (isSecureMediaUrl(value.trim()) ? value.trim() : "")
+  return isSecureMediaUrl(candidate) ? candidate : ""
+}
+
 function guid(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 10)
 }
@@ -222,6 +234,7 @@ export async function exportApkg(
   const deckId = deck.anki?.deckId && deck.anki.deckId > 0 ? deck.anki.deckId : now + 1
   const modelName = `${deck.name} 模板`
   const fieldTts = ttsOf(deck)
+  const fieldMedia = mediaOf(deck)
   const cardTemplates = templatesOf(deck)
 
   const flds = deck.fields.map((name, ord) => ({
@@ -231,7 +244,11 @@ export async function exportApkg(
     rtl: false,
     font: "Arial",
     size: 20,
-    description: fieldTts[name] ? encodeTtsMeta(fieldTts[name]) : "",
+    description: fieldTts[name]
+      ? encodeTtsMeta(fieldTts[name])
+      : fieldMedia[name]
+        ? encodeMediaMeta(fieldMedia[name])
+        : "",
     plainText: false,
     collapsed: false,
     excludeFromSearch: false,
@@ -397,7 +414,8 @@ export async function exportApkg(
       deck.fields.map((field) => {
         const tts = fieldTts[field]
         if (tts) return resolveTtsFieldValue(tts, card.values)
-        return card.values[field] ?? ""
+        const media = fieldMedia[field]
+        return media ? renderMediaValue(field, card.values[field] ?? "", media) : card.values[field] ?? ""
       })
     )
     const fldsText = fieldValues.join(FIELD_SEP)
@@ -574,6 +592,14 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
     })
   )
   const fieldTts = ttsOf({ fields, fieldTts: importedTts })
+  const importedMedia = Object.fromEntries(
+    sortedFlds.flatMap((field, index) => {
+      const name = fields[index]
+      const media = decodeMediaMeta(field.description)
+      return name && media ? [[name, media] as const] : []
+    })
+  )
+  const fieldMedia = mediaOf({ fields, fieldTts, fieldMedia: importedMedia })
 
   const sortedTmpls = [...(model.tmpls ?? [])].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
   const tmpl = sortedTmpls[0]
@@ -599,11 +625,16 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
     (item) => item && item.dyn !== 1 && item.name && item.name !== "Default"
   )
   const importedRows = noteRows.filter((row) => String(row[0]) === mid)
+  let droppedEmbeddedMedia = 0
   const cards = importedRows.map((row) => {
     const parts = String(row[1] ?? "").split(FIELD_SEP)
     const values: Record<string, string> = {}
     fields.forEach((field, index) => {
-      values[field] = fieldTts[field] ? "" : (parts[index] ?? "")
+      if (fieldTts[field]) values[field] = ""
+      else if (fieldMedia[field]) {
+        values[field] = extractExternalMediaUrl(parts[index] ?? "", fieldMedia[field].kind)
+        if ((parts[index] ?? "").trim() && !values[field]) droppedEmbeddedMedia += 1
+      } else values[field] = parts[index] ?? ""
     })
     const guid = typeof row[2] === "string" && row[2].trim() ? row[2].trim() : undefined
     return { ...createCard(fields, values), ...(guid ? { guid } : {}) }
@@ -620,6 +651,9 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
     chosenDeckName: deckName,
     allTemplatesImported: true,
   })
+  if (droppedEmbeddedMedia > 0) {
+    warnings.push(`${droppedEmbeddedMedia} 个本地媒体文件未导入；请将媒体上传到外部存储后填入 HTTPS URL`)
+  }
 
   db.close()
 
@@ -651,6 +685,7 @@ export async function importApkg(buffer: ArrayBuffer): Promise<ImportResult> {
     fields,
     fieldNotes: Object.fromEntries(fields.map((field) => [field, ""])),
     fieldTts,
+    fieldMedia,
     front: templates[0]!.front,
     back: templates[0]!.back,
     templates,

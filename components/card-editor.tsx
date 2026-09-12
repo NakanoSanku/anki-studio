@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { BookOpen, Check, ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, X } from "lucide-react"
+/* eslint-disable @next/next/no-img-element */
+
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { BookOpen, Check, ChevronLeft, ChevronRight, Eye, ImageUp, Loader2, Pencil, Plus, Search, X } from "lucide-react"
 
 import { requestBatchAi, requestCardAi, referenceValuesForComplete } from "@/lib/ai"
 import { idAfterDelete, idAtIndex, insertItemsAfter, moveItemAfter, neighborId } from "@/lib/card-nav"
@@ -12,8 +14,11 @@ import {
   cardSubtitle,
   approveCard,
   createPendingCard,
+  editableFields as deckEditableFields,
   isCardApproved,
   isCardEmpty,
+  isSecureMediaUrl,
+  mediaOf,
   markCardPending,
   mergeCardAiValues,
   mergeGeneratedCards,
@@ -26,6 +31,7 @@ import {
   type Deck,
   type FieldChangeResult,
 } from "@/lib/deck"
+import { readImageUploadSettings, uploadImage, validateImageFile } from "@/lib/media-host"
 import {
   markReviewed,
   markUnreviewed,
@@ -124,16 +130,23 @@ export function CardEditor({
   const [batchAmountMode, setBatchAmountMode] = useState<BatchAmountMode>("auto")
   const [batchCount, setBatchCount] = useState("10")
   const [query, setQuery] = useState("")
+  const [mediaDrafts, setMediaDrafts] = useState<Record<string, string>>({})
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const uploadFieldRef = useRef<string | null>(null)
+  const uploadCardRef = useRef<string | null>(null)
   const [filter, setFilter] = useState<ReviewFilter>("all")
   const [review, setReview] = useState<EditorState>(() => readEditorState(deckId, deck))
   const selected = deck.cards.find((card) => card.id === selectedId) ?? deck.cards[0]
-  const editableFields = textFields(deck)
-  const hasFilledField = editableFields.some((field) => Boolean(selected?.values[field]?.trim()))
-  const hasEmptyField = editableFields.some((field) => !selected?.values[field]?.trim())
+  const editableFields = deckEditableFields(deck)
+  const aiFields = textFields(deck)
+  const hasFilledField = aiFields.some((field) => Boolean(selected?.values[field]?.trim()))
+  const hasEmptyField = aiFields.some((field) => !selected?.values[field]?.trim())
   const canCompleteSelected = Boolean(selected && hasFilledField && hasEmptyField)
-  const filledFields = editableFields.filter((field) => Boolean(selected?.values[field]?.trim()))
-  const emptyFields = editableFields.filter((field) => !selected?.values[field]?.trim())
+  const filledFields = aiFields.filter((field) => Boolean(selected?.values[field]?.trim()))
+  const emptyFields = aiFields.filter((field) => !selected?.values[field]?.trim())
   const fieldTts = ttsOf(deck)
+  const fieldMedia = mediaOf(deck)
   const visibleCards = deck.cards.filter(
     (card) => cardMatchesQuery(card, editableFields, query)
       && (filter !== "unreviewed" || !isCardApproved(card))
@@ -344,6 +357,81 @@ export function CardEditor({
     return true
   }
 
+  const handleImageUpload = async (file: File, field: string, cardId = activeRef.current) => {
+    if (!cardId) return
+    const fileError = validateImageFile(file)
+    if (fileError) {
+      setAlert(fileError)
+      return
+    }
+    const token = readImageUploadSettings().apiToken
+    if (!token.trim()) {
+      setAlert("Configure an image hosting API token in Settings first.")
+      return
+    }
+    setUploadingKey(`${cardId}:${field}`)
+    try {
+      const url = await uploadImage(file, token)
+      const result = updateCard(cardId, field, url)
+      if (!result) return
+      setMediaDrafts((current) => {
+        const next = { ...current }
+        delete next[`${cardId}:${field}`]
+        return next
+      })
+    } catch (error) {
+      setAlert(error instanceof Error ? error.message : "Image upload failed.")
+    } finally {
+      setUploadingKey(null)
+    }
+  }
+
+  const handleImagePick = (field: string) => {
+    uploadFieldRef.current = field
+    uploadCardRef.current = activeRef.current
+    uploadInputRef.current?.click()
+  }
+
+  const handleMediaDrop = (event: DragEvent<HTMLInputElement>, field: string) => {
+    event.preventDefault()
+    if (event.dataTransfer.files.length > 0) {
+      if (mediaOf(deck)[field]?.kind === "image") {
+        void handleImageUpload(event.dataTransfer.files[0], field, activeRef.current)
+      } else {
+        setAlert("Audio fields accept HTTPS URLs. Upload the file to external storage first.")
+      }
+      return
+    }
+    const value = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain")
+    if (value.trim()) updateCard(selected?.id ?? "", field, value.trim())
+  }
+
+  const handleMediaChange = (id: string, field: string, value: string) => {
+    const key = `${id}:${field}`
+    setMediaDrafts((current) => ({ ...current, [key]: value }))
+    if (!value.trim() || isSecureMediaUrl(value.trim())) {
+      updateCard(id, field, value)
+      setMediaDrafts((current) => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
+  const handleMediaBlur = (id: string, field: string) => {
+    const key = `${id}:${field}`
+    const draft = mediaDrafts[key]
+    if (draft !== undefined && draft.trim() && !isSecureMediaUrl(draft.trim())) {
+      setAlert("Please enter a valid HTTPS URL (maximum 2048 characters)")
+      setMediaDrafts((current) => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
   const runAi = async (task: string, work: () => Promise<void>) => {
     if (busyRef.current.has(task)) return
     busyRef.current.add(task)
@@ -369,7 +457,7 @@ export function CardEditor({
       return
     }
     const topic = batchTopic.trim()
-    const fields = editableFields
+    const fields = aiFields
     const notes = notesOf(deck)
     const keyField = deck.fields[0]
     const existingKeys = deck.cards.map((card) => (keyField ? card.values[keyField] ?? "" : "")).map((value) => value.trim()).filter(Boolean)
@@ -405,7 +493,7 @@ export function CardEditor({
       cardId
     )
     void runAi("card:complete", async () => {
-      const generated = await requestCardAi({ fields: editableFields, values, notes: notesOf(deck), references })
+      const generated = await requestCardAi({ fields: aiFields, values, notes: notesOf(deck), references })
       const result = commitChange((current) => mergeCardAiValues(current, cardId, generated))
       if (!result.ok) throw new Error(result.error)
       setReview((state) => markUnreviewed(state, cardId))
@@ -650,6 +738,14 @@ export function CardEditor({
                   const sourceText = selected.values[tts.source] ?? ""
                   return <div key={field} className="relative space-y-2 overflow-hidden rounded-[17px] border border-black/[0.06] bg-card p-3.5 dark:border-white/[0.08]"><span className="absolute inset-y-0 left-0 w-0.5 bg-energy" aria-hidden="true" /><div className="flex items-center justify-between gap-2"><div className="min-w-0"><Label>{field}</Label><p className="mt-0.5 text-xs text-muted-foreground">{ttsLangLabel(tts.lang)} · from “{tts.source}”{tts.slow ? " · slow" : ""}</p></div><TtsPlayButton text={sourceText} lang={tts.lang} slow={tts.slow} /></div><div className="rounded-[12px] bg-muted/50 px-3 py-2.5 text-sm text-foreground/75">{sourceText.trim() || "Source field is empty; export will skip it."}</div></div>
                 }
+                const media = fieldMedia[field]
+                if (media) {
+                  const mediaValue = selected.values[field] ?? ""
+                  const mediaDraft = mediaDrafts[`${selected.id}:${field}`]
+                  const inputValue = mediaDraft ?? mediaValue
+                  const valid = isSecureMediaUrl(inputValue.trim())
+                  return <div key={field} className="relative space-y-2 overflow-hidden rounded-[17px] border border-black/[0.06] bg-card p-3.5 dark:border-white/[0.08]"><span className="absolute inset-y-0 left-0 w-0.5 bg-energy" aria-hidden="true" /><div className="flex items-center justify-between gap-2"><Label htmlFor={`field-${field}`}>{field}</Label><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{media.kind}</span></div><div className="flex gap-2"><Input id={`field-${field}`} type="url" inputMode="url" value={inputValue} placeholder="https://…" className="bg-background font-mono text-xs" onChange={(event) => handleMediaChange(selected.id, field, event.target.value)} onBlur={() => handleMediaBlur(selected.id, field)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleMediaDrop(event, field)} />{media.kind === "image" ? <Button type="button" variant="outline" className="h-11 shrink-0 px-3 text-xs" disabled={uploadingKey === `${selected.id}:${field}`} onClick={() => handleImagePick(field)}>{uploadingKey === `${selected.id}:${field}` ? <Loader2 className="size-3.5 animate-spin" /> : <ImageUp className="size-3.5" />}<span className="hidden sm:inline">Upload</span></Button> : null}</div>{inputValue.trim() && !valid ? <p className="text-xs font-medium text-destructive">Enter a valid HTTPS URL (maximum 2048 characters).</p> : null}{valid ? media.kind === "image" ? <img src={inputValue.trim()} alt={field} loading="lazy" decoding="async" className="max-h-48 w-full rounded-[12px] border border-black/[0.06] object-contain dark:border-white/[0.08]" /> : <audio controls preload="metadata" src={inputValue.trim()} className="w-full" aria-label={field} /> : <p className="text-xs text-muted-foreground">{media.kind === "image" ? "Paste an HTTPS URL or upload an image. Files are not stored locally." : "Paste an HTTPS URL. Local files are not stored by Anki Studio."}</p>}</div>
+                }
                 const fieldNote = notesOf(deck)[field]?.trim() || undefined
                 return <div key={field} className="space-y-2 rounded-[17px] border border-black/[0.06] bg-card p-3.5 dark:border-white/[0.08]"><Label htmlFor={`field-${field}`}>{field}</Label>{editableFields.indexOf(field) >= 2 ? <Textarea id={`field-${field}`} value={selected.values[field] ?? ""} placeholder={fieldNote} className="min-h-28 bg-background placeholder:text-muted-foreground/65" onChange={(event) => updateCard(selected.id, field, event.target.value)} /> : <Input id={`field-${field}`} value={selected.values[field] ?? ""} placeholder={fieldNote} className="bg-background placeholder:text-muted-foreground/65" onChange={(event) => updateCard(selected.id, field, event.target.value)} />}</div>
               })}
@@ -663,6 +759,7 @@ export function CardEditor({
       {aiDialog}
       {batchDialog}
       {completeDialog}
+      <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; const field = uploadFieldRef.current; const cardId = uploadCardRef.current; if (file && field && cardId) void handleImageUpload(file, field, cardId) }} />
       <ReferenceNotesPicker cards={deck.cards} fields={editableFields} referenceIds={review.referenceIds} onChange={(ids) => setReview((state) => ({ ...state, referenceIds: ids }))} open={referencePickerOpen} onOpenChange={setReferencePickerOpen} />
     </div>
   )

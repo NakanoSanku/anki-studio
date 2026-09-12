@@ -155,6 +155,7 @@ function viewName(pathname: string) {
   if (pathname === PATHS.settingsStudy) return "settings-study"
   if (pathname === PATHS.settingsAi) return "settings-ai"
   if (pathname === PATHS.settingsSync) return "settings-sync"
+  if (pathname === PATHS.settingsMedia) return "settings-media"
   if (pathname === PATHS.settings) return "settings"
   return "other"
 }

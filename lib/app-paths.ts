@@ -10,6 +10,7 @@ export const PATHS = {
   settingsStudy: "/settings/study",
   settingsAi: "/settings/ai",
   settingsSync: "/settings/sync",
+  settingsMedia: "/settings/media",
   templatesLegacy: "/templates",
 } as const
 
@@ -27,6 +28,7 @@ export const SETTINGS_ROWS = [
   { href: PATHS.settingsStudy, label: SETTINGS_STUDY_LABEL },
   { href: PATHS.settingsAi, label: "AI" },
   { href: PATHS.settingsSync, label: "Sync" },
+  { href: PATHS.settingsMedia, label: "Image hosting" },
 ] as const
 
 const LEGACY_TAB_PATHS: Record<string, string> = {

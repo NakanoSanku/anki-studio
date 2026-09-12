@@ -46,6 +46,7 @@ export function SettingsOverview({ deck, syncMessage }: SettingsOverviewProps) {
     [PATHS.settingsStudy]: `${retentionPercent}%`,
     [PATHS.settingsAi]: aiModel,
     [PATHS.settingsSync]: syncValue,
+    [PATHS.settingsMedia]: "K-Vault",
   }
 
   return (

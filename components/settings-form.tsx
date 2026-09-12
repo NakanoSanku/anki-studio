@@ -14,6 +14,7 @@ import { GeminiLiveSetup } from "@/components/gemini-live-setup"
 import { GoogleAccountPanel } from "@/components/google-account-panel"
 import { GoogleSheetPickerPanel } from "@/components/google-sheet-picker-panel"
 import { StudySettingsPanel } from "@/components/study-settings-panel"
+import { ImageHostingPanel } from "@/components/image-hosting-panel"
 
 export type SyncPanelState = {
   syncing: boolean
@@ -28,9 +29,10 @@ const SETTINGS_SECTIONS = [
   { value: "study", shortLabel: "Study" },
   { value: "ai", shortLabel: "AI" },
   { value: "sync", shortLabel: "Sync" },
+  { value: "media", shortLabel: "Image hosting" },
 ] as const
 
-export type SettingsSection = "deck" | "study" | "ai" | "sync"
+export type SettingsSection = "deck" | "study" | "ai" | "sync" | "media"
 
 function useDesktopSettingsLayout() {
   const [desktop, setDesktop] = useState(false)
@@ -102,7 +104,7 @@ export function SettingsForm({
     >
       {section ? null : (
         <div className="sticky top-14 z-20 -mx-4 bg-background/90 px-4 py-2 backdrop-blur-xl sm:top-16 sm:-mx-6 sm:px-6 lg:top-24 lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-          <TabsList className="grid h-12 w-full grid-cols-4 lg:h-auto lg:grid-cols-1 lg:gap-1 lg:p-1.5">
+          <TabsList className="grid h-12 w-full grid-cols-5 lg:h-auto lg:grid-cols-1 lg:gap-1 lg:p-1.5">
             {SETTINGS_SECTIONS.map((item) => {
               return (
                 <TabsTrigger
@@ -120,11 +122,17 @@ export function SettingsForm({
 
       <div className="min-w-0">
         <TabsContent value="deck" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          {deckTools ?? (
-            <div className="rounded-[20px] border border-black/[0.065] bg-card p-8 text-center text-sm font-medium text-muted-foreground dark:border-white/[0.09]">
-              No deck is available to manage.
-            </div>
-          )}
+          <div className="space-y-5">
+            {deckTools ?? (
+              <div className="rounded-[20px] border border-black/[0.065] bg-card p-8 text-center text-sm font-medium text-muted-foreground dark:border-white/[0.09]">
+                No deck is available to manage.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="media" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+          <ImageHostingPanel />
         </TabsContent>
 
         <TabsContent value="study" className="mt-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">

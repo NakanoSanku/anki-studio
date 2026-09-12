@@ -1,6 +1,7 @@
 import {
   isCardEmpty,
   templatesOf,
+  mediaOf,
   ttsOf,
   type AnkiIdentity,
   type Card,
@@ -35,6 +36,7 @@ export function templateHash(deck: Deck): string {
       templates: templatesOf(deck),
       css: deck.css,
       fieldTts: ttsOf(deck),
+      fieldMedia: mediaOf(deck),
     })
   )
 }

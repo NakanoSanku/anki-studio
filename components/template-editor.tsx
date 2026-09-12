@@ -23,7 +23,9 @@ import {
   TTS_LANGS,
   type Card,
   type Deck,
+  type MediaKind,
   type TtsLang,
+  mediaOf,
 } from "@/lib/deck"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -77,6 +79,7 @@ function useCommittedDraft(value: string): [string, Dispatch<SetStateAction<stri
 function FieldChip({
   name,
   note,
+  kind,
   canRemove,
   onRename,
   onNoteChange,
@@ -86,6 +89,7 @@ function FieldChip({
 }: {
   name: string
   note: string
+  kind?: MediaKind
   canRemove: boolean
   onRename: (next: string) => boolean
   onNoteChange: (note: string) => void
@@ -115,6 +119,7 @@ function FieldChip({
             if (event.key === "Enter") event.currentTarget.blur()
           }}
         />
+        {kind ? <span className="shrink-0 rounded-[8px] bg-muted px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{kind}</span> : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" size="icon-sm" variant="ghost" aria-label={`${name} field actions`}>
@@ -273,6 +278,7 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
   const [fieldOpen, setFieldOpen] = useState(false)
   const [newFieldName, setNewFieldName] = useState("")
   const [newFieldNote, setNewFieldNote] = useState("")
+  const [newFieldKind, setNewFieldKind] = useState<"text" | MediaKind>("text")
   const [ttsOpen, setTtsOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
@@ -285,6 +291,7 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
   const [ttsSlow, setTtsSlow] = useState(false)
   const editorRef = useRef<CodeEditorHandle>(null)
   const fieldTts = ttsOf(deck)
+  const fieldMedia = mediaOf(deck)
   const templates = templatesOf(deck)
   const activeTemplateId = templates.some((item) => item.id === templateId) ? templateId : templates[0]!.id
   const template = getCardTemplate(deck, activeTemplateId)
@@ -368,11 +375,12 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
   const openFieldDialog = () => {
     setNewFieldName("")
     setNewFieldNote("")
+    setNewFieldKind("text")
     setFieldOpen(true)
   }
 
   const addField = () => {
-    const result = tryAddField(deck, { name: newFieldName, note: newFieldNote })
+    const result = tryAddField(deck, { name: newFieldName, note: newFieldNote, kind: newFieldKind === "text" ? undefined : newFieldKind })
     if (!applyFieldChange(result)) return
     setFieldOpen(false)
   }
@@ -520,7 +528,7 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
                 if (tts) {
                   return <TtsFieldChip key={field} name={field} source={tts.source} lang={tts.lang} slow={tts.slow} sources={sources} canRemove onRename={(next) => applyFieldChange(tryRenameField(deck, field, next))} onPatch={(patch) => applyFieldChange(tryUpdateTtsField(deck, field, patch))} onRemove={() => applyFieldChange(tryRemoveField(deck, field))} onInsert={() => insertFieldSnippet(`{{${field}}}`)} onWrap={() => wrapFieldSnippet(field)} />
                 }
-                return <FieldChip key={field} name={field} note={notesOf(deck)[field] ?? ""} canRemove={textFields(deck).length > 1} onRename={(next) => applyFieldChange(tryRenameField(deck, field, next))} onNoteChange={(note) => onChange(setFieldNote(deck, field, note))} onRemove={() => applyFieldChange(tryRemoveField(deck, field))} onInsert={() => insertFieldSnippet(`{{${field}}}`)} onWrap={() => wrapFieldSnippet(field)} />
+                return <FieldChip key={field} name={field} kind={fieldMedia[field]?.kind} note={notesOf(deck)[field] ?? ""} canRemove={textFields(deck).length > 1} onRename={(next) => applyFieldChange(tryRenameField(deck, field, next))} onNoteChange={(note) => onChange(setFieldNote(deck, field, note))} onRemove={() => applyFieldChange(tryRemoveField(deck, field))} onInsert={() => insertFieldSnippet(`{{${field}}}`)} onWrap={() => wrapFieldSnippet(field)} />
               })}
             </div>
             <p className="px-1 text-xs leading-5 text-muted-foreground">Field notes are included in AI context. Use each field menu to insert variables, wrap conditionals, or delete a field.</p>
@@ -591,6 +599,18 @@ export function TemplateEditor({ deck, previewCard, previewSide, onChange, onPre
               <Label htmlFor="field-note">Field note</Label>
               <Textarea id="field-note" value={newFieldNote} placeholder="Describe the field meaning, format, or generation requirements" className="min-h-24 resize-y" onChange={(event) => setNewFieldNote(event.target.value)} />
               <p className="text-xs leading-5 text-muted-foreground">This hint appears in empty inputs and is included in AI context.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="field-kind">Field type</Label>
+              <Select value={newFieldKind} onValueChange={(next) => setNewFieldKind(next as "text" | MediaKind)}>
+                <SelectTrigger id="field-kind" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                  <SelectItem value="audio">Audio</SelectItem>
+                </SelectContent>
+              </Select>
+              {newFieldKind !== "text" ? <p className="text-xs leading-5 text-muted-foreground">Store one HTTPS URL from external storage. Local files are not uploaded.</p> : null}
             </div>
           </div>
           <DialogFooter><Button type="button" variant="outline" onClick={() => setFieldOpen(false)}>Cancel</Button><Button type="button" disabled={!newFieldName.trim()} onClick={addField}>Add</Button></DialogFooter>

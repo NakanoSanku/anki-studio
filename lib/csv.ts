@@ -1,4 +1,4 @@
-import { appendUniqueCards, createCard, textFields, type Deck } from "./deck"
+import { appendUniqueCards, createCard, editableFields, mediaOf, normalizeMediaUrl, type Deck } from "./deck"
 
 export type CsvParseResult = {
   rows: string[][]
@@ -89,7 +89,7 @@ export function serializeCsv(rows: string[][]): string {
 }
 
 export function deckToCsv(deck: Deck): string {
-  const header = textFields(deck)
+  const header = editableFields(deck)
   const data = deck.cards.map((card) => header.map((field) => card.values[field] ?? ""))
   return serializeCsv([header, ...data])
 }
@@ -116,8 +116,13 @@ export function csvToDeck(text: string, current: Deck): Deck {
     return createCard(fields, values)
   })
 
+  const merged = appendUniqueCards(current.cards, current.fields, incoming, fields)
+  const media = mediaOf(current)
+  for (const card of merged) {
+    for (const field of Object.keys(media)) card.values[field] = normalizeMediaUrl(card.values[field] ?? "")
+  }
   return {
     ...current,
-    cards: appendUniqueCards(current.cards, current.fields, incoming, fields),
+    cards: merged,
   }
 }

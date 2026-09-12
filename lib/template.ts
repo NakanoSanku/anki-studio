@@ -1,10 +1,31 @@
+import { isSecureMediaUrl, type MediaField } from "./deck"
+
 const CONDITIONAL_RE = /\{\{([#^])([^}]+)\}\}([\s\S]*?)\{\{\/\2\}\}/g
 const FIELD_RE = /\{\{([^#/^][^}]*)\}\}/g
+
+function escapeAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+}
+
+export function renderMediaValue(name: string, value: string, media?: MediaField): string {
+  const url = value.trim()
+  if (!media || !isSecureMediaUrl(url)) return ""
+  const source = escapeAttribute(url)
+  if (media.kind === "image") {
+    return `<img src="${source}" alt="${escapeAttribute(name)}" loading="lazy" decoding="async">`
+  }
+  return `<audio src="${source}" controls preload="metadata" aria-label="${escapeAttribute(name)}"></audio>`
+}
 
 export function renderTemplate(
   template: string,
   values: Record<string, string>,
-  extras: Record<string, string> = {}
+  extras: Record<string, string> = {},
+  mediaFields: Record<string, MediaField> = {},
 ): string {
   const resolve = (name: string): string => {
     if (Object.hasOwn(extras, name)) return extras[name] ?? ""
@@ -14,11 +35,18 @@ export function renderTemplate(
   const walk = (input: string): string =>
     input
       .replace(CONDITIONAL_RE, (_, kind: string, rawName: string, inner: string) => {
-        const filled = resolve(rawName.trim()).trim().length > 0
+        const name = rawName.trim()
+        const filled = mediaFields[name]
+          ? Boolean(renderMediaValue(name, resolve(name), mediaFields[name]))
+          : resolve(name).trim().length > 0
         const keep = kind === "#" ? filled : !filled
         return keep ? walk(inner) : ""
       })
-      .replace(FIELD_RE, (_, rawName: string) => resolve(rawName.trim()))
+      .replace(FIELD_RE, (_, rawName: string) => {
+        const name = rawName.trim()
+        const media = mediaFields[name]
+        return media ? renderMediaValue(name, resolve(name), media) : resolve(name)
+      })
 
   return walk(template)
 }
@@ -26,10 +54,11 @@ export function renderTemplate(
 export function renderCard(
   frontTemplate: string,
   backTemplate: string,
-  values: Record<string, string>
+  values: Record<string, string>,
+  mediaFields: Record<string, MediaField> = {},
 ): { front: string; back: string } {
-  const front = renderTemplate(frontTemplate, values)
-  const back = renderTemplate(backTemplate, values, { FrontSide: front })
+  const front = renderTemplate(frontTemplate, values, {}, mediaFields)
+  const back = renderTemplate(backTemplate, values, { FrontSide: front }, mediaFields)
   return { front, back }
 }
 

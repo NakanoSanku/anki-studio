@@ -1,7 +1,7 @@
 import { useCallback, useMemo, type SyntheticEvent } from "react"
 
 import { previewDocument, renderCard } from "@/lib/template"
-import { getCardTemplate, previewValues, ttsOf, type Deck } from "@/lib/deck"
+import { getCardTemplate, mediaOf, previewValues, ttsOf, type Deck } from "@/lib/deck"
 import { playTtsText } from "@/lib/tts"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -34,6 +34,7 @@ export function CardPreview({
   const preview = useMemo(() => previewValues(deck, values), [deck, values])
   const template = useMemo(() => getCardTemplate(deck, templateId), [deck, templateId])
   const configs = useMemo(() => ttsOf(deck), [deck])
+  const mediaFields = useMemo(() => mediaOf(deck), [deck])
   const renderValues = useMemo(() => {
     const next = { ...preview }
     for (const [name, tts] of Object.entries(configs)) {
@@ -42,8 +43,8 @@ export function CardPreview({
     return next
   }, [configs, preview, values])
   const rendered = useMemo(
-    () => renderCard(template.front, template.back, renderValues),
-    [template.front, template.back, renderValues]
+    () => renderCard(template.front, template.back, renderValues, mediaFields),
+    [mediaFields, template.front, template.back, renderValues]
   )
   const html = side === "front" ? rendered.front : rendered.back
   const doc = useMemo(() => previewDocument(deck.css, html), [deck.css, html])

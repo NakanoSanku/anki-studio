@@ -239,6 +239,8 @@ cp .env.example .env.local
 | `GOOGLE_CLOUD_PROJECT_NUMBER` | Picker 使用的 Google Cloud 数字项目编号 |
 | `AUTH_SECRET` | NextAuth Session Secret |
 | `NEXTAUTH_URL` | 应用公开 URL；示例默认是 `http://localhost:3000` |
+| `MEDIA_UPLOAD_ENDPOINT` | 图床代理使用的 HTTPS K-Vault 上传地址 |
+| `MEDIA_UPLOAD_STORAGE` | K-Vault 存储目标，默认是 `telegram` |
 
 生成 `AUTH_SECRET`：
 

@@ -31,6 +31,7 @@ type DeckToolsPanelProps = {
   exporting: boolean
   exportProgress: { done: number; total: number } | null
   hasTts: boolean
+  hasMedia: boolean
   onImport: () => void
   onExportJson: () => void
   onExportCsv: () => void
@@ -47,6 +48,7 @@ export function DeckToolsPanel({
   exporting,
   exportProgress,
   hasTts,
+  hasMedia,
   onImport,
   onExportJson,
   onExportCsv,
@@ -95,8 +97,12 @@ export function DeckToolsPanel({
       <section>
         <div className="mb-3 flex items-end justify-between px-1">
           <div><p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">Data</p><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em]">Import & export</h3></div>
-          {hasTts ? <Badge className="border border-energy/25 bg-energy/15 px-2.5 py-1 text-[10px] font-medium text-foreground shadow-none"><Sparkles className="mr-1 size-3" />Voice enabled</Badge> : null}
+          <div className="flex items-center gap-1.5">
+            {hasTts ? <Badge className="border border-energy/25 bg-energy/15 px-2.5 py-1 text-[10px] font-medium text-foreground shadow-none"><Sparkles className="mr-1 size-3" />Voice enabled</Badge> : null}
+            {hasMedia ? <Badge className="border border-black/[0.08] bg-muted px-2.5 py-1 text-[10px] font-medium text-foreground shadow-none dark:border-white/[0.1]">External media</Badge> : null}
+          </div>
         </div>
+        {hasMedia ? <p className="mb-3 rounded-[12px] border border-black/[0.06] bg-muted/45 px-3 py-2 text-xs leading-5 text-muted-foreground dark:border-white/[0.08]">External media links are not embedded in APKG exports and may not load offline.</p> : null}
 
         <div className="grid grid-cols-2 gap-2.5">
           <button type="button" disabled={actionsDisabled} className="group flex min-h-36 flex-col items-start justify-between rounded-[20px] border border-black/[0.065] bg-card p-4 text-left transition-[background-color,transform] hover:bg-muted/45 active:scale-[0.99] disabled:opacity-50 dark:border-white/[0.09]" onClick={onImport}>

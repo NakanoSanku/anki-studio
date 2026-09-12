@@ -239,6 +239,8 @@ Set the values defined in `.env.example`:
 | `GOOGLE_CLOUD_PROJECT_NUMBER` | Numeric Google Cloud project number used by Picker |
 | `AUTH_SECRET` | NextAuth session secret |
 | `NEXTAUTH_URL` | Public app URL; defaults to `http://localhost:3000` in the example |
+| `MEDIA_UPLOAD_ENDPOINT` | HTTPS K-Vault upload endpoint used by the image hosting proxy |
+| `MEDIA_UPLOAD_STORAGE` | K-Vault storage target; defaults to `telegram` |
 
 Generate `AUTH_SECRET` with:
 

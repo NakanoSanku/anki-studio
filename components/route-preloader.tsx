@@ -50,7 +50,8 @@ function warmRoute(pathname: string): Promise<unknown> | null {
   if (
     pathname === PATHS.settingsStudy ||
     pathname === PATHS.settingsAi ||
-    pathname === PATHS.settingsSync
+    pathname === PATHS.settingsSync ||
+    pathname === PATHS.settingsMedia
   ) {
     return cachedWarmup("settings-form", () => import("@/components/settings-form"))
   }
@@ -95,6 +96,7 @@ export function RoutePreloader() {
       router.prefetch(PATHS.settingsStudy)
       router.prefetch(PATHS.settingsAi)
       router.prefetch(PATHS.settingsSync)
+      router.prefetch(PATHS.settingsMedia)
       warmWithoutWaiting(warmRoute(PATHS.settingsStudy))
       warmWithoutWaiting(warmRoute(PATHS.settingsDeck))
     }

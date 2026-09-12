@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { notesOf, setCardField, textFields, ttsOf, type Deck } from "@/lib/deck"
+import { editableFields, mediaOf, notesOf, setCardField, ttsOf, type Deck } from "@/lib/deck"
 import { CARD_MOTION_DURATION_S, cardMotionPose, type CardMotionAction } from "@/lib/card-motion"
 import {
   Rating,
@@ -137,14 +137,15 @@ function StudyCard({
   const present = useIsPresent()
   const [frameRevision, setFrameRevision] = useState(0)
   const configs = useMemo(() => ttsOf(deck), [deck])
+  const mediaFields = useMemo(() => mediaOf(deck), [deck])
   const srcDoc = useMemo(() => {
     const values = { ...item.note.values }
     for (const [name, tts] of Object.entries(configs)) {
       values[name] = (item.note.values[tts.source] ?? "").trim() ? studyTtsButton(name) : ""
     }
-    const rendered = renderCard(item.template.front, item.template.back, values)
+    const rendered = renderCard(item.template.front, item.template.back, values, mediaFields)
     return previewDocument(deck.css, revealed ? rendered.back : rendered.front)
-  }, [configs, deck.css, item.note.values, item.template.back, item.template.front, revealed])
+  }, [configs, deck.css, item.note.values, item.template.back, item.template.front, mediaFields, revealed])
 
   useEffect(() => {
     if (!present) return
@@ -761,15 +762,24 @@ export function StudySession({
               <SheetDescription>Save your changes and return to this card.</SheetDescription>
             </SheetHeader>
             <div className="flex max-h-[52dvh] flex-col gap-3 overflow-y-auto px-4">
-              {textFields(deck).map((field) => {
+              {editableFields(deck).map((field) => {
                 const note = notesOf(deck)[field]?.trim()
-                const long = textFields(deck).indexOf(field) >= 2
+                const long = editableFields(deck).indexOf(field) >= 2
                 return (
                   <div key={field} className="space-y-2 rounded-[16px] border border-black/[0.065] bg-background/45 p-3.5 dark:border-white/[0.09]">
                     <Label htmlFor={`study-edit-${field}`} className="text-xs font-semibold tracking-[-0.01em]">
                       {field}
                     </Label>
-                    {long ? (
+                    {mediaOf(deck)[field] ? (
+                      <Input
+                        id={`study-edit-${field}`}
+                        type="url"
+                        inputMode="url"
+                        value={editValues[field] ?? ""}
+                        placeholder="https://…"
+                        onChange={(event) => setEditValues((current) => ({ ...current, [field]: event.target.value }))}
+                      />
+                    ) : long ? (
                       <Textarea
                         id={`study-edit-${field}`}
                         value={editValues[field] ?? ""}
@@ -796,7 +806,7 @@ export function StudySession({
                 className="h-[52px] rounded-[16px] text-sm font-semibold"
                 onClick={() => {
                   let next = deck
-                  for (const field of textFields(deck)) {
+                  for (const field of editableFields(deck)) {
                     const result = setCardField(next, current.note.id, field, editValues[field] ?? "")
                     if (!result.ok) {
                       setEditError(result.error)
